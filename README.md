@@ -3,6 +3,8 @@
   <h1>Glyph</h1>
   <p><strong>A Modern, Agentic SSH & Server Management Client</strong></p>
   <p>Built for speed, security, and elegance.</p>
+  <br />
+  <img src="./preview.png" alt="Glyph Preview" width="800" />
 </div>
 
 ---
