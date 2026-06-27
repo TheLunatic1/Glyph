@@ -71,9 +71,10 @@ Glyph was designed from the ground up to feel premium. We discarded generic, bor
 Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/TheLunatic1/Glyph/issues) if you want to contribute.
 
 ## 📄 License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details. 
+Please note the attribution requirements specified in the [NOTICE](NOTICE) file.
 
 ---
 <div align="center">
-  <p>Made by <a href="https://github.com/TheLunatic1">TheLunatic1</a></p>
+  <p>Made by <a href="https://github.com/TheLunatic1">TheLunatic1 (Salman Toha)</a></p>
 </div>

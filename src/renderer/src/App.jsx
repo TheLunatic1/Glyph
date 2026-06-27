@@ -189,7 +189,7 @@ export default function App() {
         </main>
         
         <footer className="py-4 text-center text-xs text-gray-500 font-medium">
-          Made by <a href="https://github.com/TheLunatic1" target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 transition-colors">TheLunatic1</a>
+          Made by <a href="https://github.com/TheLunatic1" target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 transition-colors">TheLunatic1 (Salman Toha)</a>
         </footer>
       </div>
     );

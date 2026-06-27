@@ -46,7 +46,7 @@ export default function Sidebar({ activeTab, onTabChange, onDisconnect }) {
           Disconnect
         </button>
         <div className="text-center text-xs text-gray-500 font-medium">
-          Made by <a href="https://github.com/TheLunatic1" target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 transition-colors">TheLunatic1</a>
+          Made by <a href="https://github.com/TheLunatic1" target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 transition-colors">TheLunatic1 (Salman Toha)</a>
         </div>
       </div>
     </div>
