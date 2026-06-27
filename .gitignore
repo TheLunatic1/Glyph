@@ -2,8 +2,30 @@ node_modules/
 dist/
 out/
 build/
-.env
-.DS_Store
-*.log
 release/
+zt_storage/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor directories and files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Vite
 .vite/
