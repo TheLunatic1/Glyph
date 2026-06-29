@@ -1,6 +1,7 @@
 name: Release Glyph
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
@@ -49,7 +50,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish to GitHub Releases (Windows)
-        if: matrix.os == 'windows-latest'
+        if: matrix.os == 'windows-latest' && startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           files: |
@@ -57,7 +58,7 @@ jobs:
           generate_release_notes: true
 
       - name: Publish to GitHub Releases (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           files: |
@@ -65,7 +66,7 @@ jobs:
           generate_release_notes: true
 
       - name: Publish to GitHub Releases (macOS)
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-latest' && startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           files: |
