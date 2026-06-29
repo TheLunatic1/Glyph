@@ -8,6 +8,7 @@ import SFTP from './pages/SFTP';
 import Commands from './pages/Commands';
 import Containers from './pages/Containers';
 import Secrets from './pages/Secrets';
+import Tunnels from './pages/Tunnels';
 import OsLogo from './components/OsLogo';
 
 const LiveTimer = ({ error }) => {
@@ -399,6 +400,9 @@ export default function App() {
         </div>
         <div style={{ display: activeTab === 'secrets' ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
           <Secrets />
+        </div>
+        <div style={{ display: activeTab === 'tunnels' ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
+          <Tunnels />
         </div>
         <div style={{ display: activeTab === 'containers' ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
           <Containers />

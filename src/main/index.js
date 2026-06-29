@@ -130,6 +130,26 @@ ipcMain.handle('ssh-sftp-readdir', async (event, path) => {
   return await sshManager.readDir(path);
 });
 
+ipcMain.handle('ssh-sftp-read-file', async (event, path) => {
+  return await sshManager.sftpReadFile(path);
+});
+
+ipcMain.handle('ssh-sftp-write-file', async (event, path, content) => {
+  return await sshManager.sftpWriteFile(path, content);
+});
+
+ipcMain.handle('ssh-start-tunnel', async (event, localPort, remoteHost, remotePort) => {
+  return await sshManager.startLocalTunnel(localPort, remoteHost, remotePort);
+});
+
+ipcMain.handle('ssh-stop-tunnel', async (event, localPort) => {
+  return await sshManager.stopLocalTunnel(localPort);
+});
+
+ipcMain.handle('ssh-get-tunnels', () => {
+  return sshManager.getActiveTunnels();
+});
+
 ipcMain.handle('get-app-version', () => {
   return app.getVersion();
 });

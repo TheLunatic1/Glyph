@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { Folder, File, ArrowUp, FolderOpen, RefreshCw } from 'lucide-react';
+import { Folder, File, ArrowUp, FolderOpen, RefreshCw, Edit3, X, Save } from 'lucide-react';
+import Editor from '@monaco-editor/react';
 
 export default function SFTP() {
   const [currentPath, setCurrentPath] = useState('/');
@@ -7,6 +8,10 @@ export default function SFTP() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [editingFile, setEditingFile] = useState(null);
+  const [editorContent, setEditorContent] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isFetchingFile, setIsFetchingFile] = useState(false);
 
   const loadDirectory = useCallback(async (path) => {
     setLoading(true);
@@ -42,7 +47,44 @@ export default function SFTP() {
         ? `/${file.filename}`
         : `${currentPath}/${file.filename}`;
       loadDirectory(newPath);
+    } else {
+      openEditor(file);
     }
+  };
+
+  const openEditor = async (file) => {
+    setIsFetchingFile(true);
+    const filePath = currentPath === '/' ? `/${file.filename}` : `${currentPath}/${file.filename}`;
+    try {
+      const content = await window.api.sshSftpReadFile(filePath);
+      setEditorContent(content);
+      setEditingFile({ ...file, path: filePath });
+    } catch (err) {
+      console.error('Failed to read file:', err);
+      alert('Could not open file. It might be binary or you may lack permissions.');
+    } finally {
+      setIsFetchingFile(false);
+    }
+  };
+
+  const handleSaveFile = async (currentContent) => {
+    if (!editingFile) return;
+    setIsSaving(true);
+    try {
+      await window.api.sshSftpWriteFile(editingFile.path, currentContent);
+      // Optional: show a quick success toast here
+    } catch (err) {
+      console.error('Failed to save file:', err);
+      alert('Failed to save file!');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEditorDidMount = (editor, monaco) => {
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      handleSaveFile(editor.getValue());
+    });
   };
 
   const formatSize = (bytes) => {
@@ -117,7 +159,7 @@ export default function SFTP() {
               <div
                 key={idx}
                 onClick={() => handleNavigate(file)}
-                className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${file.isDirectory ? 'cursor-pointer hover:bg-dark-700/70' : 'cursor-default hover:bg-dark-700/30'}`}
+                className="flex items-center gap-3 p-3 rounded-lg transition-colors cursor-pointer hover:bg-dark-700/70 group"
               >
                 {file.isDirectory
                   ? <Folder className="text-brand-400 shrink-0" size={20} />
@@ -137,6 +179,67 @@ export default function SFTP() {
           </div>
         )}
       </div>
+
+      {/* Editor Overlay */}
+      {isFetchingFile && (
+        <div className="absolute inset-0 bg-dark-900/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="text-brand-400 flex flex-col items-center gap-4">
+            <RefreshCw className="animate-spin" size={32} />
+            <span className="font-medium text-lg">Fetching remote file...</span>
+          </div>
+        </div>
+      )}
+
+      {editingFile && (
+        <div className="absolute inset-0 bg-dark-900 z-50 flex flex-col animation-slide-up">
+          <div className="h-14 bg-dark-800/80 backdrop-blur-md border-b border-dark-700 flex items-center justify-between px-6 shrink-0 shadow-lg">
+            <div className="flex items-center gap-3">
+              <File className="text-brand-400" size={20} />
+              <div>
+                <h3 className="text-gray-100 font-semibold tracking-wide leading-tight">{editingFile.filename}</h3>
+                <p className="text-xs text-gray-500 font-mono leading-tight">{editingFile.path}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => handleSaveFile(editorContent)}
+                disabled={isSaving}
+                className="px-4 py-2 bg-brand-500 hover:bg-brand-400 disabled:opacity-50 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-brand-500/20"
+              >
+                {isSaving ? <RefreshCw className="animate-spin" size={16} /> : <Save size={16} />}
+                {isSaving ? 'Saving...' : 'Save (Ctrl+S)'}
+              </button>
+              <div className="w-px h-6 bg-dark-700 mx-1"></div>
+              <button 
+                onClick={() => setEditingFile(null)}
+                className="p-2 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition-colors"
+                title="Close Editor"
+              >
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 w-full bg-[#1e1e1e]">
+            <Editor
+              height="100%"
+              theme="vs-dark"
+              path={editingFile.filename}
+              value={editorContent}
+              onChange={(val) => setEditorContent(val)}
+              onMount={handleEditorDidMount}
+              options={{
+                minimap: { enabled: true },
+                fontSize: 14,
+                fontFamily: '"Fira Code", monospace',
+                wordWrap: 'on',
+                smoothScrolling: true,
+                cursorBlinking: 'smooth',
+                padding: { top: 16 }
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

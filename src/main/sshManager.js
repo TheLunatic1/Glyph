@@ -1,4 +1,5 @@
 import { Client } from 'ssh2';
+import * as net from 'net';
 
 export default class SSHManager {
   constructor() {
@@ -8,6 +9,7 @@ export default class SSHManager {
     this.isConnected = false;
     this.mainWindow = null;
     this.statInterval = null;
+    this.activeTunnels = new Map();
   }
 
   // ── Internal: reset all per-session state ─────────────────────────────────
@@ -20,6 +22,7 @@ export default class SSHManager {
       try { this.shellStream.end(); } catch (_) {}
       this.shellStream = null;
     }
+    this._closeAllTunnels();
     if (this.sftp) {
       try { this.sftp.end(); } catch (_) {}
       this.sftp = null;
@@ -266,6 +269,28 @@ export default class SSHManager {
     });
   }
 
+  // ── SFTP Read File ────────────────────────────────────────────────────────
+  async sftpReadFile(path) {
+    return new Promise((resolve, reject) => {
+      if (!this.sftp) return reject(new Error('SFTP not initialized'));
+      this.sftp.readFile(path, 'utf8', (err, data) => {
+        if (err) return reject(err);
+        resolve(data);
+      });
+    });
+  }
+
+  // ── SFTP Write File ───────────────────────────────────────────────────────
+  async sftpWriteFile(path, content) {
+    return new Promise((resolve, reject) => {
+      if (!this.sftp) return reject(new Error('SFTP not initialized'));
+      this.sftp.writeFile(path, content, 'utf8', (err) => {
+        if (err) return reject(err);
+        resolve(true);
+      });
+    });
+  }
+
   // ── Stat polling ───────────────────────────────────────────────────────────
   startStatPolling() {
     if (this.statInterval) clearInterval(this.statInterval);
@@ -425,5 +450,87 @@ export default class SSHManager {
         // silent fail — polling must never crash
       }
     }, INTERVAL_MS);
+  }
+
+  // ── Port Forwarding (Tunnels) ──────────────────────────────────────────────
+  async startLocalTunnel(localPort, remoteHost, remotePort) {
+    return new Promise((resolve, reject) => {
+      if (!this.isConnected || !this.client) {
+        return reject(new Error('SSH client is not connected'));
+      }
+      if (this.activeTunnels.has(localPort)) {
+        return reject(new Error(`Local port ${localPort} is already in use by an active tunnel.`));
+      }
+
+      const connections = new Set();
+
+      const server = net.createServer((socket) => {
+        connections.add(socket);
+        socket.on('close', () => connections.delete(socket));
+        this.client.forwardOut(
+          '127.0.0.1', localPort,
+          remoteHost, remotePort,
+          (err, stream) => {
+            if (err) {
+              console.error('forwardOut error:', err);
+              socket.end();
+              return;
+            }
+            socket.pipe(stream);
+            stream.pipe(socket);
+          }
+        );
+      });
+
+      server.listen(localPort, '127.0.0.1', () => {
+        this.activeTunnels.set(localPort, {
+          server,
+          connections,
+          remoteHost,
+          remotePort
+        });
+        resolve({ success: true, localPort, remoteHost, remotePort });
+      });
+
+      server.on('error', (err) => {
+        reject(err);
+      });
+    });
+  }
+
+  async stopLocalTunnel(localPort) {
+    return new Promise((resolve, reject) => {
+      const tunnel = this.activeTunnels.get(localPort);
+      if (!tunnel) return resolve(true);
+
+      // Forcefully destroy any lingering connections (e.g. browser HTTP keep-alives)
+      for (const socket of tunnel.connections) {
+        socket.destroy();
+      }
+
+      tunnel.server.close((err) => {
+        if (err) {
+          console.error(`Error closing tunnel on port ${localPort}:`, err);
+          return reject(err);
+        }
+        this.activeTunnels.delete(localPort);
+        resolve(true);
+      });
+    });
+  }
+
+  getActiveTunnels() {
+    return Array.from(this.activeTunnels.entries()).map(([localPort, data]) => ({
+      localPort,
+      remoteHost: data.remoteHost,
+      remotePort: data.remotePort
+    }));
+  }
+
+  _closeAllTunnels() {
+    for (const [localPort, tunnel] of this.activeTunnels.entries()) {
+      try { tunnel.server.close(); } catch (_) {}
+    }
+    this.activeTunnels.clear();
   }
 }

@@ -13,6 +13,11 @@ const api = {
   sshShellResize: (cols, rows) => ipcRenderer.send('ssh-shell-resize', cols, rows),
   sshExec: (command) => ipcRenderer.invoke('ssh-exec', command),
   sshSftpReaddir: (path) => ipcRenderer.invoke('ssh-sftp-readdir', path),
+  sshSftpReadFile: (path) => ipcRenderer.invoke('ssh-sftp-read-file', path),
+  sshSftpWriteFile: (path, content) => ipcRenderer.invoke('ssh-sftp-write-file', path, content),
+  sshStartTunnel: (local, remoteHost, remotePort) => ipcRenderer.invoke('ssh-start-tunnel', local, remoteHost, remotePort),
+  sshStopTunnel: (local) => ipcRenderer.invoke('ssh-stop-tunnel', local),
+  sshGetTunnels: () => ipcRenderer.invoke('ssh-get-tunnels'),
   getZtNodeId: () => ipcRenderer.invoke('get-zt-node-id'),
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   
