@@ -28,6 +28,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [newServer, setNewServer] = useState({ name: '', host: '', username: '', password: '', port: 22, privateKey: '', zerotier: '' });
   const [connectingId, setConnectingId] = useState(null);
+  const connectingIdRef = React.useRef(null);
   const [connectLogs, setConnectLogs] = useState([]);
   const [connectError, setConnectError] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -104,10 +105,12 @@ export default function App() {
   const handleConnect = async (id) => {
     if (connectingId !== null) return;
     setConnectingId(id);
+    connectingIdRef.current = id;
     setConnectLogs(['Starting connection sequence...']);
     setConnectError(null);
     try {
       const res = await window.api.sshConnectSaved(id);
+      if (connectingIdRef.current !== id) return; // User cancelled
       if (res.success) {
         setConnectLogs(prev => [...prev, 'Authentication successful, initializing session...']);
         const server = servers.find(s => s.id === id);
@@ -116,8 +119,10 @@ export default function App() {
         setActiveTab('dashboard');
         // Clear modal state on success
         setConnectingId(null);
+        connectingIdRef.current = null;
       }
     } catch (err) {
+      if (connectingIdRef.current !== id) return; // User cancelled
       let msg = 'Unknown error';
       if (err) {
         if (typeof err === 'string') msg = err;
@@ -132,6 +137,12 @@ export default function App() {
     }
   };
 
+  const handleCancelConnect = () => {
+    connectingIdRef.current = null;
+    setConnectingId(null);
+    window.api.sshDisconnect();
+  };
+
   if (!connected) {
     const activeConnectingServer = servers.find(s => s.id === connectingId);
     
@@ -140,17 +151,17 @@ export default function App() {
         
         {/* Update Banner */}
         {updateAvailable && (
-          <div className="z-50 bg-brand-500 text-white px-4 py-2 flex items-center justify-center gap-4 shadow-lg">
-            <span className="text-sm font-medium">✨ Glyph version {updateAvailable.version} is now available!</span>
-            <div className="flex gap-2">
-              <button onClick={() => window.open(updateAvailable.url, '_blank')} className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors">
-                Download <ArrowRight size={14} />
-              </button>
-              <button onClick={() => setUpdateAvailable(null)} className="px-2 py-1 bg-black/20 hover:bg-black/30 rounded-md text-xs font-semibold transition-colors">
-                Dismiss
-              </button>
-            </div>
+          <div className="z-50 bg-brand-500 text-white px-4 py-2 flex items-center justify-center gap-4 shadow-lg relative">
+          <span className="text-sm font-medium">✨ Glyph version {updateAvailable.version} is now available!</span>
+          <div className="flex gap-2">
+            <button onClick={() => window.open(updateAvailable.url, '_blank')} className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors">
+              Download <ArrowRight size={14} />
+            </button>
           </div>
+          <button onClick={() => setUpdateAvailable(null)} className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-white/20 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
         )}
 
         {/* Connecting Modal */}
@@ -160,7 +171,7 @@ export default function App() {
               {/* Header */}
               <div className="flex items-center justify-between p-4 border-b border-dark-800 bg-dark-800/30">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-dark-700 flex items-center justify-center border border-dark-600">
+                  <div className="w-10 h-10 shrink-0 rounded-full bg-dark-700 flex items-center justify-center border border-dark-600">
                     <OsLogo server={activeConnectingServer} />
                   </div>
                   <div>
@@ -171,11 +182,9 @@ export default function App() {
                     <p className="text-gray-400 text-xs font-mono">{activeConnectingServer.username}@{activeConnectingServer.host}:{activeConnectingServer.port || 22}</p>
                   </div>
                 </div>
-                {connectError && (
-                  <button onClick={() => setConnectingId(null)} className="p-2 text-gray-500 hover:text-gray-200 transition-colors">
-                    <X size={20}/>
-                  </button>
-                )}
+                <button onClick={handleCancelConnect} className="p-2 text-gray-500 hover:text-gray-200 transition-colors">
+                  <X size={20}/>
+                </button>
               </div>
 
               {/* Terminal Logs */}
@@ -309,7 +318,7 @@ export default function App() {
                   <Trash2 size={18} />
                 </button>
                 <div className="flex items-center gap-4 mb-4">
-                  <div className="w-12 h-12 rounded-full bg-dark-700 overflow-hidden flex items-center justify-center border border-dark-600 group-hover:border-brand-500 transition-colors">
+                  <div className="w-12 h-12 shrink-0 rounded-full bg-dark-700 overflow-hidden flex items-center justify-center border border-dark-600 group-hover:border-brand-500 transition-colors">
                     <OsLogo server={server} />
                   </div>
                   <div>
@@ -350,16 +359,16 @@ export default function App() {
     <div className="flex flex-col h-screen w-full bg-dark-900 overflow-hidden relative">
       {/* Update Banner */}
       {updateAvailable && (
-        <div className="z-50 bg-brand-500 text-white px-4 py-2 flex items-center justify-center gap-4 shadow-lg shrink-0">
+        <div className="z-50 bg-brand-500 text-white px-4 py-2 flex items-center justify-center gap-4 shadow-lg relative">
           <span className="text-sm font-medium">✨ Glyph version {updateAvailable.version} is now available!</span>
           <div className="flex gap-2">
             <button onClick={() => window.open(updateAvailable.url, '_blank')} className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors">
               Download <ArrowRight size={14} />
             </button>
-            <button onClick={() => setUpdateAvailable(null)} className="px-2 py-1 bg-black/20 hover:bg-black/30 rounded-md text-xs font-semibold transition-colors">
-              Dismiss
-            </button>
           </div>
+          <button onClick={() => setUpdateAvailable(null)} className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-white/20 transition-colors">
+            <X size={16} />
+          </button>
         </div>
       )}
       <div className="flex flex-1 overflow-hidden">

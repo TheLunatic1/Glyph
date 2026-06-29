@@ -25,8 +25,11 @@ export default class SSHManager {
       this.sftp = null;
     }
     if (this.client) {
-      this.client.removeAllListeners();
-      try { if (this.isConnected) this.client.end(); } catch (_) {}
+      // Catch any late-firing timeout/socket errors to prevent Uncaught Exceptions
+      this.client.on('error', () => {});
+      try { 
+        this.client.destroy(); 
+      } catch (_) {}
       this.client = null;
     }
     this.isConnected = false;
@@ -220,17 +223,30 @@ export default class SSHManager {
 
   // ── Exec ───────────────────────────────────────────────────────────────────
   async exec(command) {
-    return new Promise((resolve, reject) => {
-      if (!this.isConnected || !this.client) return reject(new Error('Not connected'));
-      this.client.exec(command, (err, stream) => {
-        if (err) return reject(err);
-        let output = '';
-        stream
-          .on('close', () => resolve(output))
-          .on('data', (data) => { output += data; })
-          .stderr.on('data', (data) => { output += data; });
+    this.execLock = this.execLock || Promise.resolve();
+    
+    // Chain the new command onto the end of the lock queue
+    const nextTask = this.execLock.then(() => {
+      return new Promise((resolve, reject) => {
+        if (!this.isConnected || !this.client) return reject(new Error('Not connected'));
+        this.client.exec(command, (err, stream) => {
+          if (err) return reject(err);
+          let output = '';
+          stream
+            .on('close', () => resolve(output))
+            .on('data', (data) => { output += data; })
+            .stderr.on('data', (data) => { output += data; });
+        });
       });
+    }).catch(err => {
+      // Prevent a failed command from breaking the entire queue
+      throw err;
     });
+
+    // Update the lock to point to this task, but catch errors so the next task can still run
+    this.execLock = nextTask.catch(() => {});
+    
+    return nextTask;
   }
 
   // ── SFTP readdir ───────────────────────────────────────────────────────────
