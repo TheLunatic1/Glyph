@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Server, Plus, Play, Trash2, ShieldCheck, Terminal, HardDrive, Cpu, Search, X } from 'lucide-react';
+import { Server, Plus, Play, Trash2, ShieldCheck, Terminal, HardDrive, Cpu, Search, X, ArrowRight } from 'lucide-react';
 import logoSrc from './assets/logo.png';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -31,6 +31,7 @@ export default function App() {
   const [connectLogs, setConnectLogs] = useState([]);
   const [connectError, setConnectError] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(null);
   
   const [ztNodeId, setZtNodeId] = useState('');
   
@@ -43,6 +44,38 @@ export default function App() {
   useEffect(() => {
     loadServers();
     window.api.getZtNodeId().then(id => { if (id) setZtNodeId(id); });
+    
+    // Check for updates
+    const checkUpdate = async () => {
+      try {
+        const localVer = await window.api.getAppVersion();
+        const res = await fetch('https://api.github.com/repos/TheLunatic1/Glyph/releases/latest');
+        if (!res.ok) return;
+        const data = await res.json();
+        const remoteVer = data.tag_name.replace('v', '');
+        
+        // Simple semver comparison
+        const isNewer = (local, remote) => {
+          const l = local.split('.').map(Number);
+          const r = remote.split('.').map(Number);
+          for (let i = 0; i < Math.max(l.length, r.length); i++) {
+            const lVal = l[i] || 0;
+            const rVal = r[i] || 0;
+            if (rVal > lVal) return true;
+            if (rVal < lVal) return false;
+          }
+          return false;
+        };
+
+        if (remoteVer && isNewer(localVer, remoteVer)) {
+           setUpdateAvailable({ version: remoteVer, url: data.html_url });
+        }
+      } catch (err) {
+        console.error('Update check failed:', err);
+      }
+    };
+    checkUpdate();
+    
     const removeSshStatus = window.api.onSshStatus((msg) => {
       setConnectLogs(prev => [...prev, msg]);
     });
@@ -105,6 +138,21 @@ export default function App() {
     return (
       <div className="flex flex-col h-screen w-full bg-dark-900 overflow-y-auto relative">
         
+        {/* Update Banner */}
+        {updateAvailable && (
+          <div className="z-50 bg-brand-500 text-white px-4 py-2 flex items-center justify-center gap-4 shadow-lg">
+            <span className="text-sm font-medium">✨ Glyph version {updateAvailable.version} is now available!</span>
+            <div className="flex gap-2">
+              <button onClick={() => window.open(updateAvailable.url, '_blank')} className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors">
+                Download <ArrowRight size={14} />
+              </button>
+              <button onClick={() => setUpdateAvailable(null)} className="px-2 py-1 bg-black/20 hover:bg-black/30 rounded-md text-xs font-semibold transition-colors">
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Connecting Modal */}
         {activeConnectingServer && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -299,18 +347,33 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-full bg-dark-900 overflow-hidden">
-      <Sidebar
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        onDisconnect={async () => {
-          await window.api.sshDisconnect();
-          setConnected(false);
-          setConnectedServer(null);
-          loadServers();
-        }}
-      />
-      <main className="flex-1 flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-screen w-full bg-dark-900 overflow-hidden relative">
+      {/* Update Banner */}
+      {updateAvailable && (
+        <div className="z-50 bg-brand-500 text-white px-4 py-2 flex items-center justify-center gap-4 shadow-lg shrink-0">
+          <span className="text-sm font-medium">✨ Glyph version {updateAvailable.version} is now available!</span>
+          <div className="flex gap-2">
+            <button onClick={() => window.open(updateAvailable.url, '_blank')} className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded-md text-xs font-semibold flex items-center gap-1 transition-colors">
+              Download <ArrowRight size={14} />
+            </button>
+            <button onClick={() => setUpdateAvailable(null)} className="px-2 py-1 bg-black/20 hover:bg-black/30 rounded-md text-xs font-semibold transition-colors">
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          onDisconnect={async () => {
+            await window.api.sshDisconnect();
+            setConnected(false);
+            setConnectedServer(null);
+            loadServers();
+          }}
+        />
+        <main className="flex-1 flex flex-col h-full overflow-hidden">
         {/* All panels stay mounted — terminal keeps its session. CSS controls visibility */}
         <div style={{ display: activeTab === 'dashboard' ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
           <Dashboard server={connectedServer} />
@@ -328,6 +391,7 @@ export default function App() {
           <Containers />
         </div>
       </main>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 {
   "name": "glyph",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "An Electron/React SSH client",
   "main": "./out/main/index.js",
   "author": "TheLunatic1 (Salman Toha)",
@@ -12,7 +12,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder",
+    "dist": "node archive.js && electron-builder",
     "preview": "electron-vite preview"
   },
   "dependencies": {

@@ -105,6 +105,10 @@ ipcMain.handle('ssh-sftp-readdir', async (event, path) => {
   return await sshManager.readDir(path);
 });
 
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
+});
+
 ipcMain.handle('get-zt-node-id', async () => {
   try {
     const zt = require('libzt');

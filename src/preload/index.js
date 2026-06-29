@@ -14,6 +14,7 @@ const api = {
   sshExec: (command) => ipcRenderer.invoke('ssh-exec', command),
   sshSftpReaddir: (path) => ipcRenderer.invoke('ssh-sftp-readdir', path),
   getZtNodeId: () => ipcRenderer.invoke('get-zt-node-id'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
   
   onSshShellOutput: (callback) => {
     const listener = (event, data) => callback(data);
