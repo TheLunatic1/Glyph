@@ -1,12 +1,14 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import SSHManager from './sshManager.js'
 import Vault from './vault.js'
+import SecretsVault from './secretsVault.js'
 
 let mainWindow;
 const sshManager = new SSHManager();
 const vault = new Vault();
+const secretsVault = new SecretsVault();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -95,6 +97,29 @@ ipcMain.on('ssh-shell-data', (event, data) => {
 
 ipcMain.on('ssh-shell-resize', (event, cols, rows) => {
   sshManager.resizeShell(cols, rows);
+});
+
+// Secrets Vault IPC Handlers
+ipcMain.handle('get-secrets', () => {
+  return secretsVault.getSecrets();
+});
+
+ipcMain.handle('add-secret', (event, name, value) => {
+  return secretsVault.addSecret(name, value);
+});
+
+ipcMain.handle('delete-secret', (event, id) => {
+  secretsVault.deleteSecret(id);
+  return true;
+});
+
+ipcMain.on('inject-secret', (event, id) => {
+  const decrypted = secretsVault.getDecryptedSecretValue(id);
+  if (decrypted) {
+    sshManager.writeShell(decrypted);
+  } else {
+    console.error('Failed to inject secret: secret not found or decryption failed.');
+  }
 });
 
 ipcMain.handle('ssh-exec', async (event, command) => {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, Terminal, FolderOpen, Code, Box, LogOut } from 'lucide-react';
+import { Activity, Terminal, FolderOpen, Code, Box, LogOut, Lock } from 'lucide-react';
 import logoSrc from '../assets/logo.png';
 
 export default function Sidebar({ activeTab, onTabChange, onDisconnect }) {
@@ -8,6 +8,7 @@ export default function Sidebar({ activeTab, onTabChange, onDisconnect }) {
     { id: 'terminal', icon: <Terminal size={20} />, label: 'Terminal' },
     { id: 'sftp', icon: <FolderOpen size={20} />, label: 'SFTP' },
     { id: 'commands', icon: <Code size={20} />, label: 'Commands' },
+    { id: 'secrets', icon: <Lock size={20} />, label: 'Secrets' },
     { id: 'containers', icon: <Box size={20} />, label: 'Containers' },
   ];
 

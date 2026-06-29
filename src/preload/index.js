@@ -29,10 +29,16 @@ const api = {
   },
   
   onSshStatus: (callback) => {
-    const listener = (event, data) => callback(data);
-    ipcRenderer.on('ssh-status', listener);
-    return () => ipcRenderer.removeListener('ssh-status', listener);
-  }
+    const subscription = (event, status) => callback(status);
+    ipcRenderer.on('ssh-status', subscription);
+    return () => ipcRenderer.removeListener('ssh-status', subscription);
+  },
+  
+  // Secrets Vault
+  getSecrets: () => ipcRenderer.invoke('get-secrets'),
+  addSecret: (name, value) => ipcRenderer.invoke('add-secret', name, value),
+  deleteSecret: (id) => ipcRenderer.invoke('delete-secret', id),
+  injectSecret: (id) => ipcRenderer.send('inject-secret', id)
 }
 
 if (process.contextIsolated) {

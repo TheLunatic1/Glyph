@@ -7,6 +7,7 @@ import TerminalPage from './pages/Terminal';
 import SFTP from './pages/SFTP';
 import Commands from './pages/Commands';
 import Containers from './pages/Containers';
+import Secrets from './pages/Secrets';
 import OsLogo from './components/OsLogo';
 
 const LiveTimer = ({ error }) => {
@@ -388,13 +389,16 @@ export default function App() {
           <Dashboard server={connectedServer} />
         </div>
         <div style={{ display: activeTab === 'terminal' ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
-          <TerminalPage />
+          <TerminalPage server={connectedServer} />
         </div>
         <div style={{ display: activeTab === 'sftp' ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
           <SFTP />
         </div>
         <div style={{ display: activeTab === 'commands' ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
-          <Commands />
+          <Commands server={connectedServer} />
+        </div>
+        <div style={{ display: activeTab === 'secrets' ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
+          <Secrets />
         </div>
         <div style={{ display: activeTab === 'containers' ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
           <Containers />

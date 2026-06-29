@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Plus, TrendingUp, Trash2 } from 'lucide-react';
 
-export default function Commands() {
+export default function Commands({ server }) {
   const [commands, setCommands] = useState([]);
   const [newCmdName, setNewCmdName] = useState('');
   const [newCmd, setNewCmd] = useState('');
 
+  const storageKey = server ? `glyph_commands_${server.id}` : 'glyph_commands';
+
   useEffect(() => {
-    const saved = localStorage.getItem('glyph_commands');
+    const saved = localStorage.getItem(storageKey);
     if (saved) {
       setCommands(JSON.parse(saved));
     } else {
@@ -17,11 +19,11 @@ export default function Commands() {
         { id: 3, name: 'List Ports', cmd: 'netstat -tulpn', uses: 0 }
       ]);
     }
-  }, []);
+  }, [storageKey]);
 
   const saveCommands = (cmds) => {
     setCommands(cmds);
-    localStorage.setItem('glyph_commands', JSON.stringify(cmds));
+    localStorage.setItem(storageKey, JSON.stringify(cmds));
   };
 
   const executeCommand = (id, cmdStr) => {
