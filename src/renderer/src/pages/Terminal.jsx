@@ -86,10 +86,8 @@ export default function TerminalPage() {
   }, []);
 
   return (
-    <div className="w-full h-full p-4 bg-dark-900 flex flex-col">
-      <div className="glass-panel w-full h-full p-2 overflow-hidden flex flex-col">
-        <div ref={terminalRef} className="w-full h-full overflow-hidden" />
-      </div>
+    <div className="w-full h-full bg-dark-900 flex flex-col p-4 overflow-hidden">
+      <div ref={terminalRef} className="flex-1 min-h-0 w-full overflow-hidden" />
     </div>
   );
 }

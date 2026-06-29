@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Server, Plus, Play, Trash2, ShieldCheck, Terminal, HardDrive, Cpu, Search } from 'lucide-react';
+import { Server, Plus, Play, Trash2, ShieldCheck, Terminal, HardDrive, Cpu, Search, X } from 'lucide-react';
 import logoSrc from './assets/logo.png';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -9,21 +9,44 @@ import Commands from './pages/Commands';
 import Containers from './pages/Containers';
 import OsLogo from './components/OsLogo';
 
+const LiveTimer = ({ error }) => {
+  const [ms, setMs] = useState(0);
+  useEffect(() => {
+    if (error) return;
+    const start = Date.now();
+    const intv = setInterval(() => setMs(Date.now() - start), 47);
+    return () => clearInterval(intv);
+  }, [error]);
+  return <span className="font-mono text-xs bg-dark-800 px-2.5 py-1 rounded-lg text-brand-400 border border-brand-500/20 ml-3">{ms}ms</span>;
+};
+
 export default function App() {
   const [connected, setConnected] = useState(false);
   const [connectedServer, setConnectedServer] = useState(null);
   const [servers, setServers] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [newServer, setNewServer] = useState({ name: '', host: '', username: '', password: '', port: 22 });
+  const [newServer, setNewServer] = useState({ name: '', host: '', username: '', password: '', port: 22, privateKey: '', zerotier: '' });
   const [connectingId, setConnectingId] = useState(null);
+  const [connectLogs, setConnectLogs] = useState([]);
+  const [connectError, setConnectError] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
-
+  
   const [ztNodeId, setZtNodeId] = useState('');
+  
+  // Ref for auto-scrolling logs
+  const logsEndRef = React.useRef(null);
+  useEffect(() => {
+    if (logsEndRef.current) logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [connectLogs, connectError]);
 
   useEffect(() => {
     loadServers();
     window.api.getZtNodeId().then(id => { if (id) setZtNodeId(id); });
+    const removeSshStatus = window.api.onSshStatus((msg) => {
+      setConnectLogs(prev => [...prev, msg]);
+    });
+    return () => removeSshStatus();
   }, []);
 
   const loadServers = async () => {
@@ -46,26 +69,97 @@ export default function App() {
   };
 
   const handleConnect = async (id) => {
+    if (connectingId !== null) return;
     setConnectingId(id);
+    setConnectLogs(['Starting connection sequence...']);
+    setConnectError(null);
     try {
       const res = await window.api.sshConnectSaved(id);
       if (res.success) {
+        setConnectLogs(prev => [...prev, 'Authentication successful, initializing session...']);
         const server = servers.find(s => s.id === id);
         setConnectedServer(server);
         setConnected(true);
         setActiveTab('dashboard');
+        // Clear modal state on success
+        setConnectingId(null);
       }
     } catch (err) {
-      alert('Connection failed: ' + (err.error || err.message));
+      let msg = 'Unknown error';
+      if (err) {
+        if (typeof err === 'string') msg = err;
+        else if (err.error && typeof err.error === 'string') msg = err.error;
+        else if (err.message) msg = err.message;
+        else if (err.error && err.error.message) msg = err.error.message;
+        else msg = JSON.stringify(err);
+      }
+      setConnectError(msg);
     } finally {
-      setConnectingId(null);
       loadServers();
     }
   };
 
   if (!connected) {
+    const activeConnectingServer = servers.find(s => s.id === connectingId);
+    
     return (
-      <div className="flex flex-col h-screen w-full bg-dark-900 overflow-y-auto">
+      <div className="flex flex-col h-screen w-full bg-dark-900 overflow-y-auto relative">
+        
+        {/* Connecting Modal */}
+        {activeConnectingServer && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-dark-900 border border-dark-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b border-dark-800 bg-dark-800/30">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-dark-700 flex items-center justify-center border border-dark-600">
+                    <OsLogo server={activeConnectingServer} />
+                  </div>
+                  <div>
+                    <h3 className="text-gray-100 font-semibold leading-tight flex items-center">
+                      {activeConnectingServer.name}
+                      <LiveTimer error={connectError} />
+                    </h3>
+                    <p className="text-gray-400 text-xs font-mono">{activeConnectingServer.username}@{activeConnectingServer.host}:{activeConnectingServer.port || 22}</p>
+                  </div>
+                </div>
+                {connectError && (
+                  <button onClick={() => setConnectingId(null)} className="p-2 text-gray-500 hover:text-gray-200 transition-colors">
+                    <X size={20}/>
+                  </button>
+                )}
+              </div>
+
+              {/* Terminal Logs */}
+              <div className="p-5 bg-[#0f111a] font-mono text-sm h-64 overflow-y-auto flex flex-col gap-1.5 custom-scrollbar">
+                {connectLogs.map((log, i) => (
+                  <div key={i} className="text-brand-300 flex gap-2">
+                    <span className="text-dark-600 select-none">❯</span> {log}
+                  </div>
+                ))}
+                {!connectError && (
+                  <div className="text-gray-400 flex gap-2 animate-pulse">
+                    <span className="text-dark-600 select-none">❯</span> <span className="w-2 h-4 bg-brand-500 inline-block mt-0.5"></span>
+                  </div>
+                )}
+                {connectError && (
+                  <div className="text-red-400 flex gap-2 mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg break-words">
+                    <span className="text-red-500 select-none font-bold shrink-0">✖</span> <span>{connectError}</span>
+                  </div>
+                )}
+                <div ref={logsEndRef} />
+              </div>
+
+              {/* Footer */}
+              {connectError && (
+                <div className="p-4 bg-dark-800/50 flex justify-end">
+                  <button onClick={() => setConnectingId(null)} className="px-5 py-2 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-lg transition-colors font-medium">Close</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <header className="p-8 pb-0">
           <div className="flex items-center gap-3">
             <img src={logoSrc} alt="Glyph" className="w-11 h-11 rounded-xl object-contain" />
@@ -112,15 +206,22 @@ export default function App() {
                   <input type="password" required value={newServer.password} onChange={e => setNewServer({...newServer, password: e.target.value})} className="w-full px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg focus:outline-none focus:border-brand-500" placeholder="••••••••" />
                 </div>
                 {showAdvanced && (
-                  <div className="lg:col-span-4 bg-dark-800/50 p-4 rounded-xl border border-brand-500/10">
-                    <label className="block text-gray-400 text-sm mb-1">ZeroTier Network ID (Optional)</label>
-                    <input value={newServer.zerotier || ''} onChange={e => setNewServer({...newServer, zerotier: e.target.value})} className="w-full px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg focus:outline-none focus:border-brand-500 font-mono text-sm" placeholder="e5cd7a9e1cae134f" />
-                    {ztNodeId && (
-                      <p className="text-xs text-gray-500 mt-1.5 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-brand-500/50"></span>
-                        Your ZT Node ID: <span className="font-mono text-gray-300 font-medium select-all">{ztNodeId}</span> (authorize this in ZT Central)
-                      </p>
-                    )}
+                  <div className="lg:col-span-4 bg-dark-800/50 p-4 rounded-xl border border-brand-500/10 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-gray-400 text-sm mb-1">ZeroTier Network ID <span className="text-gray-500">(Optional)</span></label>
+                      <input value={newServer.zerotier || ''} onChange={e => setNewServer({...newServer, zerotier: e.target.value})} className="w-full px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg focus:outline-none focus:border-brand-500 font-mono text-sm" placeholder="e5cd7a9e1cae134f" />
+                      {ztNodeId && (
+                        <p className="text-xs text-gray-500 mt-1.5 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-brand-500/50"></span>
+                          Your ZT Node ID: <span className="font-mono text-gray-300 font-medium select-all">{ztNodeId}</span> (authorize this in ZT Central)
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-gray-400 text-sm mb-1">SSH Private Key Path <span className="text-gray-500">(Optional)</span></label>
+                      <input value={newServer.privateKey || ''} onChange={e => setNewServer({...newServer, privateKey: e.target.value})} className="w-full px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg focus:outline-none focus:border-brand-500 font-mono text-sm" placeholder="/home/user/.ssh/id_rsa" />
+                      <p className="text-xs text-gray-500 mt-1.5">Absolute path to your private key file on <em>this</em> machine</p>
+                    </div>
                   </div>
                 )}
                 
@@ -149,7 +250,9 @@ export default function App() {
               <div
                 key={server.id}
                 onClick={() => handleConnect(server.id)}
-                className="glass-panel p-6 group hover:border-brand-500/50 cursor-pointer transition-all hover:shadow-brand-500/10 hover:-translate-y-1 relative"
+                className={`glass-panel p-6 group hover:border-brand-500/50 transition-all hover:shadow-brand-500/10 hover:-translate-y-1 relative ${
+                  connectingId !== null ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
+                }`}
               >
                 <button
                   onClick={(e) => handleDelete(server.id, e)}
@@ -180,7 +283,7 @@ export default function App() {
                     )}
                   </div>
                   <button className="flex items-center gap-2 text-sm font-medium text-brand-400 group-hover:text-brand-300">
-                    {connectingId === server.id ? 'Connecting...' : 'Connect'} <Play size={14} fill="currentColor" />
+                    Connect <Play size={14} fill="currentColor" />
                   </button>
                 </div>
               </div>

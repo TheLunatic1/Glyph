@@ -54,9 +54,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   sshManager.disconnect();
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  app.quit();
 })
 
 // IPC Handlers for SSH
@@ -106,10 +104,6 @@ ipcMain.handle('ssh-exec', async (event, command) => {
 ipcMain.handle('ssh-sftp-readdir', async (event, path) => {
   return await sshManager.readDir(path);
 });
-
-ipcMain.handle('ssh-read-dir', async (_, { path }) => {
-  return await sshManager.readDir(path)
-})
 
 ipcMain.handle('get-zt-node-id', async () => {
   try {

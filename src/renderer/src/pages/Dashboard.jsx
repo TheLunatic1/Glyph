@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Cpu, MemoryStick, HardDrive, Wifi, ArrowDown, ArrowUp } from 'lucide-react';
+import { X, Cpu, MemoryStick, HardDrive, Wifi, ArrowDown, ArrowUp, CircuitBoard, Info } from 'lucide-react';
 import OsLogo from '../components/OsLogo';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ function CpuModal({ raw, cores, temp, onClose }) {
         </div>
       )}
 
-      {tempRows.length > 0 && (
+      {tempRows.length > 0 ? (
         <div>
           <p className="text-gray-400 text-xs uppercase tracking-wider mb-3">Temperature</p>
           <div className="grid grid-cols-2 gap-2">
@@ -138,6 +138,17 @@ function CpuModal({ raw, cores, temp, onClose }) {
                 </div>
               );
             })}
+          </div>
+        </div>
+      ) : (
+        <div className="mb-5">
+          <p className="text-gray-400 text-xs uppercase tracking-wider mb-3">Temperature</p>
+          <div className="bg-dark-900 rounded-xl p-4 border border-dark-700">
+            <p className="text-gray-400 text-sm mb-3">No thermal sensors detected. If this is a physical server, you may need to install the sensors package:</p>
+            <div className="bg-dark-800/50 rounded-lg p-3 border border-dark-700">
+              <code className="block bg-dark-900 text-brand-300 p-2 rounded font-mono text-sm border border-dark-600">sudo apt install lm-sensors</code>
+              <p className="text-xs text-gray-500 mt-2">Note: Virtual Machines (VPS) and Shared Hosting environments rarely expose physical hardware sensors to the guest OS.</p>
+            </div>
           </div>
         </div>
       )}
@@ -253,65 +264,154 @@ function NetModal({ raw, onClose }) {
   );
 }
 
+// ── GPU Modal ─────────────────────────────────────────────────────────────────
+function GpuModal({ raw, onClose }) {
+  if (raw === 'NO_GPU') {
+    return (
+      <ModalShell title="GPU Details" icon={<CircuitBoard size={20} className="text-emerald-400" />} onClose={onClose}>
+        <div className="bg-dark-900 rounded-xl p-6 border border-dark-700">
+          <h4 className="text-gray-100 font-bold text-lg mb-2">No GPU Stats Available</h4>
+          <p className="text-gray-400 text-sm mb-6">We could not detect any GPU monitoring tools on this server. If you have a GPU installed, you may need to install the appropriate drivers and tools:</p>
+          
+          <div className="space-y-4">
+            <div className="bg-dark-800/50 rounded-lg p-4 border border-dark-700">
+              <h5 className="font-semibold text-green-400 mb-2">NVIDIA GPUs</h5>
+              <code className="block bg-dark-900 text-brand-300 p-3 rounded font-mono text-sm border border-dark-600">sudo apt install nvidia-utils-535</code>
+              <p className="text-xs text-gray-500 mt-2">Glyph uses <code className="text-gray-400">nvidia-smi</code> to fetch metrics.</p>
+            </div>
+            
+            <div className="bg-dark-800/50 rounded-lg p-4 border border-dark-700">
+              <h5 className="font-semibold text-red-400 mb-2">AMD GPUs</h5>
+              <code className="block bg-dark-900 text-brand-300 p-3 rounded font-mono text-sm border border-dark-600">sudo apt install rocm-smi</code>
+              <p className="text-xs text-gray-500 mt-2">Glyph will also try to read <code className="text-gray-400">/sys/class/drm</code> directly if ROCm is unavailable.</p>
+            </div>
+            
+            <div className="bg-dark-800/50 rounded-lg p-4 border border-dark-700">
+              <h5 className="font-semibold text-blue-400 mb-2">Intel GPUs</h5>
+              <code className="block bg-dark-900 text-brand-300 p-3 rounded font-mono text-sm border border-dark-600">sudo apt install intel-gpu-tools</code>
+              <p className="text-xs text-gray-500 mt-2">Provides the <code className="text-gray-400">intel_gpu_top</code> command.</p>
+            </div>
+          </div>
+        </div>
+      </ModalShell>
+    );
+  }
+
+  // Format: index, name, util %, temp, memTotal, memUsed
+  const rows = (raw || '').split('\n').filter(Boolean).map(l => l.split(', '));
+  return (
+    <ModalShell title="GPU Details" icon={<CircuitBoard size={20} className="text-emerald-400" />} onClose={onClose}>
+      {rows.length > 0 ? (
+        <div className="space-y-4">
+          {rows.map(r => {
+            if (r.length < 6) return null;
+            const [id, name, util, temp, memTotalStr, memUsedStr] = r;
+            const pct = parseFloat(util) || 0;
+            const memTotal = parseFloat(memTotalStr) || 0;
+            const memUsed = parseFloat(memUsedStr) || 0;
+            const tempVal = parseFloat(temp) || 0;
+            return (
+              <div key={id} className="bg-dark-900 rounded-xl p-5 border border-dark-700">
+                <div className="flex justify-between items-center mb-4">
+                  <h4 className="text-gray-100 font-bold text-lg">{name}</h4>
+                  <span className="text-gray-500 text-sm font-mono">GPU {id}</span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="bg-dark-800/50 rounded-lg p-3 border border-dark-700">
+                    <p className="text-gray-400 text-xs uppercase mb-1">Temperature</p>
+                    <p className={`font-mono font-bold text-xl ${tempVal > 80 ? 'text-red-400' : tempVal > 65 ? 'text-yellow-400' : 'text-green-400'}`}>
+                      {tempVal > 0 ? `${tempVal}°C` : '—'}
+                    </p>
+                  </div>
+                  <div className="bg-dark-800/50 rounded-lg p-3 border border-dark-700">
+                    <p className="text-gray-400 text-xs uppercase mb-1">Core Usage</p>
+                    <p className={`font-mono font-bold text-xl ${pct > 90 ? 'text-red-400' : pct > 70 ? 'text-yellow-400' : 'text-brand-400'}`}>
+                      {pct}%
+                    </p>
+                  </div>
+                </div>
+
+                <Bar label="VRAM Usage" value={memUsed} max={memTotal} unit=" MB" />
+              </div>
+            );
+          })}
+        </div>
+      ) : <p className="text-gray-500 text-center py-8">No NVIDIA GPUs detected or driver not installed.</p>}
+    </ModalShell>
+  );
+}
+
 // ── Circular Ring ─────────────────────────────────────────────────────────────
 const CircularProgress = ({ percentage, label, onClick }) => {
-  const radius = 36;
+  const isNa = percentage < 0;
+  const dispPct = isNa ? 0 : percentage;
+  const radius = 28;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (percentage / 100) * circumference;
-  const color = percentage > 90 ? '#ef4444' : percentage > 70 ? '#f59e0b' : '#6366f1';
+  const strokeDashoffset = circumference - (dispPct / 100) * circumference;
+  const color = isNa ? '#3f3f46' : percentage > 90 ? '#ef4444' : percentage > 70 ? '#f59e0b' : '#6366f1';
   return (
-    <div onClick={onClick} className="flex flex-col items-center justify-center p-6 glass-panel cursor-pointer hover:border-brand-500/50 transition-colors group">
-      <div className="relative w-32 h-32 flex items-center justify-center group-hover:scale-105 transition-transform">
-        <svg className="transform -rotate-90 w-32 h-32">
-          <circle cx="64" cy="64" r={radius} className="stroke-dark-700" strokeWidth="8" fill="transparent" />
-          <circle cx="64" cy="64" r={radius} stroke={color} strokeWidth="8" fill="transparent"
+    <div onClick={onClick} className={`flex flex-col items-center justify-center py-5 px-2 glass-panel cursor-pointer hover:border-brand-500/50 transition-colors group ${isNa ? 'opacity-50 hover:opacity-100' : ''}`}>
+      <div className="relative w-20 h-20 flex items-center justify-center group-hover:scale-105 transition-transform">
+        <svg className="transform -rotate-90 w-20 h-20">
+          <circle cx="40" cy="40" r={radius} className="stroke-dark-700" strokeWidth="6" fill="transparent" />
+          <circle cx="40" cy="40" r={radius} stroke={color} strokeWidth="6" fill="transparent"
             strokeDasharray={circumference} strokeDashoffset={strokeDashoffset}
             strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s ease' }} />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-bold">{Math.round(percentage)}%</span>
+          <span className="text-xl font-bold">{isNa ? 'N/A' : `${Math.round(percentage)}%`}</span>
         </div>
       </div>
-      <span className="mt-4 text-gray-400 font-medium tracking-wide uppercase text-sm">{label}</span>
+      <span className="mt-3 text-gray-400 font-medium tracking-wide uppercase text-xs">{label}</span>
     </div>
   );
 };
 
+// Interfaces to exclude from the network aggregate total
+// (loopback, Docker bridges, veth pairs, virtual adaptors)
+const VIRTUAL_IFACE_RE = /^(lo|docker\d*|br-|veth|virbr|dummy|bond|ifb|nlmon|teql|tun\d*|tap\d*)/;
+
 // ── Network Speed Card ────────────────────────────────────────────────────────
 const NetworkCard = ({ raw, onClick }) => {
   const rows = parseNet(raw);
-  const totRxs = rows.filter(r => r.iface !== 'lo').reduce((s, r) => s + parseFloat(r.rxs), 0);
-  const totTxs = rows.filter(r => r.iface !== 'lo').reduce((s, r) => s + parseFloat(r.txs), 0);
+  const physRows = rows.filter(r => !VIRTUAL_IFACE_RE.test(r.iface));
+  // Fall back to all interfaces if physical filtering leaves nothing
+  const activeRows = physRows.length > 0 ? physRows : rows;
+  const totRxs = activeRows.reduce((s, r) => s + parseFloat(r.rxs), 0);
+  const totTxs = activeRows.reduce((s, r) => s + parseFloat(r.txs), 0);
 
   return (
-    <div onClick={onClick} className="flex flex-col items-center justify-center p-6 glass-panel cursor-pointer hover:border-brand-500/50 transition-colors group">
-      {/* Same size container as the 128×128 SVG ring */}
-      <div className="w-32 h-32 flex flex-col items-center justify-center gap-2 group-hover:scale-105 transition-transform">
-        <div className="flex items-center gap-1.5">
-          <ArrowDown size={16} className="text-green-400 shrink-0" />
-          <span className="font-mono font-bold text-xl text-green-400 leading-none">{fmtSpeed(totRxs)}</span>
+    <div onClick={onClick} className="flex flex-col items-center justify-center py-5 px-2 glass-panel cursor-pointer hover:border-brand-500/50 transition-colors group">
+      <div className="h-20 flex flex-col items-center justify-center gap-1.5 group-hover:scale-105 transition-transform whitespace-nowrap">
+        <div className="flex items-center justify-center gap-1.5">
+          <ArrowDown size={14} className="text-green-400 shrink-0" />
+          <span className="font-mono font-bold text-lg text-green-400 leading-none">{fmtSpeed(totRxs)}</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <ArrowUp size={16} className="text-blue-400 shrink-0" />
-          <span className="font-mono font-bold text-xl text-blue-400 leading-none">{fmtSpeed(totTxs)}</span>
+        <div className="flex items-center justify-center gap-1.5">
+          <ArrowUp size={14} className="text-blue-400 shrink-0" />
+          <span className="font-mono font-bold text-lg text-blue-400 leading-none">{fmtSpeed(totTxs)}</span>
         </div>
       </div>
-      <span className="mt-4 text-gray-400 font-medium tracking-wide uppercase text-sm group-hover:text-gray-200 transition-colors">Network</span>
+      <span className="mt-3 text-gray-400 font-medium tracking-wide uppercase text-xs group-hover:text-gray-200 transition-colors">Network</span>
     </div>
   );
 };
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export default function Dashboard({ server }) {
-  const [stats, setStats] = useState({ cpu: 0, mem: 0, disk: 0, uptime: 'Loading...', users: '0' });
-  const [rawStats, setRawStats] = useState({ top: '', free: '', df: '', net: '', cores: '', temp: '' });
+  const [stats, setStats] = useState({ cpu: 0, mem: 0, disk: 0, gpu: null, uptime: 'Loading...', users: '0' });
+  const [rawStats, setRawStats] = useState({ top: '', free: '', df: '', net: '', cores: '', temp: '', gpu: '' });
   const [activeModal, setActiveModal] = useState(null);
 
   useEffect(() => {
     const remove = window.api.onSshStats((data) => {
-      let cpu = 0, mem = 0, disk = 0;
+      let cpu = 0, mem = 0, disk = 0, gpuAvg = null;
       try {
-        if (data.top) {
+        // Prefer accurate /proc/stat aggregate; fall back to top 'us' field
+        if (data.cpuPct !== undefined && data.cpuPct >= 0) {
+          cpu = data.cpuPct;
+        } else if (data.top) {
           const m = data.top.match(/([\d.]+)\s*us/);
           if (m) cpu = parseFloat(m[1]);
         }
@@ -323,9 +423,26 @@ export default function Dashboard({ server }) {
           const lines = data.df.split('\n').filter(Boolean);
           if (lines[1]) { const p = lines[1].trim().split(/\s+/); disk = parseFloat((p[4] || '0').replace('%', '')); }
         }
+        
+        if (data.gpu) {
+          if (data.gpu.trim() === 'NO_GPU') {
+            gpuAvg = -1;
+          } else {
+            let total = 0, count = 0;
+            data.gpu.split('\n').filter(Boolean).forEach(l => {
+               const parts = l.split(', ');
+               if (parts.length >= 3) { total += parseFloat(parts[2] || '0'); count++; }
+            });
+            if (count > 0) gpuAvg = total / count;
+          }
+        }
+
       } catch (e) {}
       setStats(prev => ({
-        cpu: cpu || prev.cpu, mem: mem || prev.mem, disk: disk || prev.disk,
+        cpu: cpu >= 0 ? cpu : prev.cpu,
+        mem: mem || prev.mem,
+        disk: disk || prev.disk,
+        gpu: gpuAvg !== null ? gpuAvg : prev.gpu,
         uptime: data.uptime ? data.uptime.trim() : prev.uptime,
         users: data.users ? data.users.trim() : prev.users,
       }));
@@ -336,6 +453,7 @@ export default function Dashboard({ server }) {
         net: data.net !== undefined ? data.net : prev.net,
         cores: data.cores !== undefined ? data.cores : prev.cores,
         temp: data.temp !== undefined ? data.temp : prev.temp,
+        gpu: data.gpu !== undefined ? data.gpu : prev.gpu,
       }));
     });
     return () => remove();
@@ -347,8 +465,9 @@ export default function Dashboard({ server }) {
       {activeModal === 'mem' && <MemModal raw={rawStats.free} onClose={() => setActiveModal(null)} />}
       {activeModal === 'disk' && <DiskModal raw={rawStats.df} onClose={() => setActiveModal(null)} />}
       {activeModal === 'net' && <NetModal raw={rawStats.net} onClose={() => setActiveModal(null)} />}
+      {activeModal === 'gpu' && <GpuModal raw={rawStats.gpu} onClose={() => setActiveModal(null)} />}
 
-      <header className="mb-10 flex items-center justify-between">
+      <header className="mb-8 flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold text-gray-100">Server Dashboard</h2>
           <p className="text-gray-400 mt-2">Live metrics — click any card for details</p>
@@ -368,10 +487,24 @@ export default function Dashboard({ server }) {
         )}
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      {/* Shared Hosting / High Core Warning Banner */}
+      {rawStats.cores && rawStats.cores.split('\n').filter(Boolean).length > 16 && (
+        <div className="mb-6 flex items-start gap-3 p-4 bg-brand-500/10 border border-brand-500/30 rounded-xl text-brand-300 shadow-sm shadow-brand-500/5">
+          <Info size={20} className="shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <p className="font-semibold mb-1 text-brand-400">High-capacity host detected (Shared Hosting / Large VM)</p>
+            <p>Your own container stats may not be available. Displayed metrics (like CPU cores and disk) reflect the entire physical server hardware, not just your specific allocation.</p>
+          </div>
+        </div>
+      )}
+
+      <div className={`grid grid-cols-2 md:grid-cols-3 ${stats.gpu !== null ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4 mb-8`}>
         <CircularProgress onClick={() => setActiveModal('cpu')} percentage={stats.cpu} label="CPU Usage" />
         <CircularProgress onClick={() => setActiveModal('mem')} percentage={stats.mem} label="Memory" />
-        <CircularProgress onClick={() => setActiveModal('disk')} percentage={stats.disk} label="Disk I/O" />
+        <CircularProgress onClick={() => setActiveModal('disk')} percentage={stats.disk} label="Disk Usage" />
+        {stats.gpu !== null && (
+          <CircularProgress onClick={() => setActiveModal('gpu')} percentage={stats.gpu} label="GPU Usage" />
+        )}
         <NetworkCard raw={rawStats.net} onClick={() => setActiveModal('net')} />
       </div>
 

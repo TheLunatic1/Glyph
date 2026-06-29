@@ -48,7 +48,8 @@ export default class Vault {
       host: serverConfig.host,
       username: serverConfig.username,
       port: serverConfig.port || 22,
-      zerotier: serverConfig.zerotier || ''
+      zerotier: serverConfig.zerotier || '',
+      privateKeyPath: serverConfig.privateKey || '',
     };
 
     if (serverConfig.password) {
@@ -56,7 +57,14 @@ export default class Vault {
         const encrypted = safeStorage.encryptString(serverConfig.password);
         newServer.password = encrypted.toString('base64');
       } else {
-        // Fallback if encryption is unavailable (e.g. some Linux setups)
+        // WARNING: safeStorage is unavailable on this system. The password is
+        // stored as base64 — this is NOT encryption. Anyone with filesystem
+        // access to the userData directory can read it. Consider using a
+        // system keychain or running Electron with a keychain service.
+        console.warn(
+          '[Vault] safeStorage unavailable — password stored as base64 (NOT encrypted). ' +
+          'See: https://www.electronjs.org/docs/latest/api/safe-storage'
+        );
         newServer.passwordFallback = Buffer.from(serverConfig.password).toString('base64');
       }
     }
@@ -87,7 +95,8 @@ export default class Vault {
       host: server.host,
       username: server.username,
       port: server.port,
-      zerotier: server.zerotier || ''
+      zerotier: server.zerotier || '',
+      privateKeyPath: server.privateKeyPath || '',
     };
 
     if (server.password && safeStorage.isEncryptionAvailable()) {

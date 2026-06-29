@@ -25,6 +25,12 @@ const api = {
     const listener = (event, data) => callback(data);
     ipcRenderer.on('ssh-stats', listener);
     return () => ipcRenderer.removeListener('ssh-stats', listener);
+  },
+  
+  onSshStatus: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('ssh-status', listener);
+    return () => ipcRenderer.removeListener('ssh-status', listener);
   }
 }
 
