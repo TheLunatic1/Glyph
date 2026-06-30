@@ -6,6 +6,7 @@ export default function Containers() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState({}); // { [containerId]: 'start'|'stop'|'restart' }
   const [error, setError] = useState(null);
+  const [actionError, setActionError] = useState(null); // Fix #9: surface docker action failures
   const [selectedContainer, setSelectedContainer] = useState(null);
 
   const fetchContainers = async () => {
@@ -42,13 +43,16 @@ export default function Containers() {
 
   const containerAction = async (id, action) => {
     setActionLoading(prev => ({ ...prev, [id]: action }));
+    setActionError(null); // Fix #9: clear previous error
     try {
       await window.api.sshExec(`docker ${action} ${id}`);
       // Wait a moment for Docker to register the state change
       await new Promise(r => setTimeout(r, 800));
       await fetchContainers();
     } catch (err) {
+      // Fix #9: Show the error to the user instead of silently swallowing it
       console.error(`docker ${action} failed:`, err);
+      setActionError(`Failed to ${action} container: ${err?.message || String(err)}`);
     } finally {
       setActionLoading(prev => {
         const next = { ...prev };
@@ -94,6 +98,18 @@ export default function Containers() {
         <div className="mb-6 flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400">
           <AlertCircle size={20} className="shrink-0" />
           <span className="text-sm">{error}</span>
+        </div>
+      )}
+      {/* Fix #9: Docker action error banner */}
+      {actionError && (
+        <div className="mb-6 flex items-center justify-between gap-3 p-4 bg-orange-500/10 border border-orange-500/30 rounded-xl text-orange-400">
+          <div className="flex items-center gap-3">
+            <AlertCircle size={20} className="shrink-0" />
+            <span className="text-sm">{actionError}</span>
+          </div>
+          <button onClick={() => setActionError(null)} className="p-1 hover:text-white transition-colors shrink-0">
+            <X size={16} />
+          </button>
         </div>
       )}
 
@@ -202,7 +218,8 @@ const ContainerDetailsModal = ({ container, onClose, onAction, actionLoading }) 
 
   useEffect(() => {
     let active = true;
-    let timer;
+
+    // Fix #6: Use setInterval instead of recursive setTimeout to avoid timer leak race condition
     const tick = async () => {
       if (!active) return;
       try {
@@ -218,11 +235,11 @@ const ContainerDetailsModal = ({ container, onClose, onAction, actionLoading }) 
           setStats({ memUsage: 'Offline' });
         }
       } catch (e) {}
-      if (active) timer = setTimeout(tick, 2000);
     };
 
-    tick();
-    return () => { active = false; clearTimeout(timer); };
+    tick(); // run immediately on mount
+    const timer = setInterval(tick, 2000);
+    return () => { active = false; clearInterval(timer); };
   }, [container.id, container.state]);
 
   // scroll logs

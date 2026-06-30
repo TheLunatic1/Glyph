@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, Plus, Trash2, Key } from 'lucide-react';
+import { Lock, Plus, Trash2, Key, AlertTriangle } from 'lucide-react';
 
 export default function Secrets() {
   const [secrets, setSecrets] = useState([]);
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
+  // Fix #4: Track actual encryption availability
+  const [encryptionAvailable, setEncryptionAvailable] = useState(true);
 
   const loadSecrets = async () => {
     const list = await window.api.getSecrets();
@@ -13,6 +15,10 @@ export default function Secrets() {
 
   useEffect(() => {
     loadSecrets();
+    // Fix #4: Check real encryption status from main process
+    window.api.isEncryptionAvailable().then(available => {
+      setEncryptionAvailable(available);
+    });
   }, []);
 
   const handleAdd = async (e) => {
@@ -38,6 +44,15 @@ export default function Secrets() {
         <p className="text-gray-400 mt-2">
           Store highly sensitive tokens (e.g. GitHub API keys) encrypted on disk. These can be securely injected into any active terminal session without exposing the plaintext.
         </p>
+        {/* Fix #4: Show warning when system encryption is unavailable */}
+        {!encryptionAvailable && (
+          <div className="mt-3 flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-yellow-400 text-sm">
+            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+            <span>
+              <strong>Warning:</strong> Your system's keychain is unavailable. Secrets will be stored as Base64 (not encrypted). Avoid storing highly sensitive values until this is resolved.
+            </span>
+          </div>
+        )}
       </header>
 
       <form onSubmit={handleAdd} className="mb-8 glass-panel p-6 flex gap-4 items-end border border-brand-500/30 bg-brand-500/5">
@@ -80,7 +95,11 @@ export default function Secrets() {
                 </div>
                 <div>
                   <h4 className="font-semibold text-gray-200">{s.name}</h4>
-                  <p className="text-xs text-brand-400 font-mono mt-0.5">Encrypted via safeStorage</p>
+                  {/* Fix #4: Conditional encryption label */}
+                  {encryptionAvailable
+                    ? <p className="text-xs text-brand-400 font-mono mt-0.5">Encrypted via safeStorage</p>
+                    : <p className="text-xs text-yellow-500 font-mono mt-0.5">⚠ Stored as Base64 (not encrypted)</p>
+                  }
                 </div>
               </div>
               <button

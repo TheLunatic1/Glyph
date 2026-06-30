@@ -122,6 +122,12 @@ ipcMain.on('inject-secret', (event, id) => {
   }
 });
 
+// Fix #4: Expose encryption availability to the renderer
+ipcMain.handle('is-encryption-available', () => {
+  const { safeStorage } = require('electron');
+  return safeStorage.isEncryptionAvailable();
+});
+
 ipcMain.handle('ssh-exec', async (event, command) => {
   return await sshManager.exec(command);
 });

@@ -9,6 +9,8 @@ export default function Tunnels() {
   const [loading, setLoading] = useState(false);
   const [deletingPort, setDeletingPort] = useState(null);
   const [error, setError] = useState(null);
+  const [stopError, setStopError] = useState(null); // Fix #8: styled error instead of alert()
+  const [tunnelSchemes, setTunnelSchemes] = useState({}); // Fix #14: per-tunnel HTTP/HTTPS
 
   const fetchTunnels = async () => {
     try {
@@ -43,12 +45,14 @@ export default function Tunnels() {
 
   const handleStopTunnel = async (port) => {
     setDeletingPort(port);
+    setStopError(null); // Fix #8: clear previous error
     try {
       await window.api.sshStopTunnel(port);
       fetchTunnels();
     } catch (err) {
       console.error('Failed to stop tunnel:', err);
-      alert('Failed to stop tunnel');
+      // Fix #8: styled error instead of alert()
+      setStopError(`Failed to stop tunnel on port ${port}: ${err?.message || String(err)}`);
     } finally {
       setDeletingPort(null);
     }
@@ -77,6 +81,13 @@ export default function Tunnels() {
         {error && (
           <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-lg text-sm mb-4">
             {error}
+          </div>
+        )}
+        {/* Fix #8: Stop tunnel error */}
+        {stopError && (
+          <div className="bg-orange-500/10 border border-orange-500/20 text-orange-400 p-3 rounded-lg text-sm mb-4 flex items-center justify-between">
+            <span>{stopError}</span>
+            <button onClick={() => setStopError(null)} className="ml-4 hover:text-white">×</button>
           </div>
         )}
 
@@ -162,13 +173,23 @@ export default function Tunnels() {
               {tunnels.map((t) => (
                 <tr key={t.localPort} className="hover:bg-dark-700/30 transition-colors">
                   <td className="px-6 py-4">
-                    <button 
-                      onClick={() => window.open(`http://localhost:${t.localPort}`, '_blank')}
-                      className="font-mono text-gray-200 hover:text-brand-300 hover:underline transition-all text-left flex items-center gap-2 group"
-                      title="Open in Browser"
-                    >
-                      <span className="text-brand-400 font-semibold group-hover:text-brand-300 transition-colors">localhost:</span>{t.localPort}
-                    </button>
+                    {/* Fix #14: let user toggle HTTP/HTTPS scheme per tunnel */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setTunnelSchemes(prev => ({ ...prev, [t.localPort]: prev[t.localPort] === 'https' ? 'http' : 'https' }))}
+                        className="text-xs px-2 py-0.5 rounded bg-dark-700 text-gray-400 hover:text-gray-200 font-mono transition-colors"
+                        title="Toggle HTTP/HTTPS"
+                      >
+                        {tunnelSchemes[t.localPort] === 'https' ? 'https' : 'http'}
+                      </button>
+                      <button 
+                        onClick={() => window.open(`${tunnelSchemes[t.localPort] === 'https' ? 'https' : 'http'}://localhost:${t.localPort}`, '_blank')}
+                        className="font-mono text-gray-200 hover:text-brand-300 hover:underline transition-all text-left flex items-center gap-2 group"
+                        title="Open in Browser"
+                      >
+                        <span className="text-brand-400 font-semibold group-hover:text-brand-300 transition-colors">localhost:</span>{t.localPort}
+                      </button>
+                    </div>
                   </td>
                   <td className="px-6 py-4">
                     <div className="font-mono text-gray-400 flex items-center gap-2">

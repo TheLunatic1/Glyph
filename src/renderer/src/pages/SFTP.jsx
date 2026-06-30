@@ -12,6 +12,7 @@ export default function SFTP() {
   const [editorContent, setEditorContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isFetchingFile, setIsFetchingFile] = useState(false);
+  const [fileError, setFileError] = useState(null); // Fix #7: styled error instead of alert()
 
   const loadDirectory = useCallback(async (path) => {
     setLoading(true);
@@ -54,6 +55,7 @@ export default function SFTP() {
 
   const openEditor = async (file) => {
     setIsFetchingFile(true);
+    setFileError(null);
     const filePath = currentPath === '/' ? `/${file.filename}` : `${currentPath}/${file.filename}`;
     try {
       const content = await window.api.sshSftpReadFile(filePath);
@@ -61,7 +63,8 @@ export default function SFTP() {
       setEditingFile({ ...file, path: filePath });
     } catch (err) {
       console.error('Failed to read file:', err);
-      alert('Could not open file. It might be binary or you may lack permissions.');
+      // Fix #7: styled error instead of alert()
+      setFileError('Could not open file. It might be binary or you may lack read permissions.');
     } finally {
       setIsFetchingFile(false);
     }
@@ -142,6 +145,13 @@ export default function SFTP() {
         {error && (
           <div className="m-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
             {error}
+          </div>
+        )}
+        {/* Fix #7: styled error for file open failures */}
+        {fileError && (
+          <div className="m-4 p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg text-orange-400 text-sm flex items-center justify-between">
+            <span>{fileError}</span>
+            <button onClick={() => setFileError(null)} className="ml-4 text-orange-300 hover:text-white shrink-0">×</button>
           </div>
         )}
         {loading ? (

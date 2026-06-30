@@ -36,6 +36,8 @@ export default class SSHManager {
       this.client = null;
     }
     this.isConnected = false;
+    // Fix #11: Reset exec serialization lock so new connections start clean
+    this.execLock = Promise.resolve();
   }
 
   // ── Connect ────────────────────────────────────────────────────────────────
@@ -83,10 +85,24 @@ export default class SSHManager {
           resolve({ success: false, error: err.message });
         })
         .on('end', () => {
-          this.isConnected = false;
+          if (this.isConnected) {
+            // Unexpected server-side close — notify the renderer
+            this.isConnected = false;
+            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+              this.mainWindow.webContents.send('ssh-disconnected', 'Connection closed by remote server.');
+            }
+            this._resetState();
+          }
         })
         .on('close', () => {
-          this.isConnected = false;
+          if (this.isConnected) {
+            // Unexpected close (e.g. network dropout) — notify the renderer
+            this.isConnected = false;
+            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+              this.mainWindow.webContents.send('ssh-disconnected', 'Connection was lost.');
+            }
+            this._resetState();
+          }
         });
 
       // Kick off connection (ZeroTier path needs async setup)

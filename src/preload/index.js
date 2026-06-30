@@ -43,7 +43,17 @@ const api = {
   getSecrets: () => ipcRenderer.invoke('get-secrets'),
   addSecret: (name, value) => ipcRenderer.invoke('add-secret', name, value),
   deleteSecret: (id) => ipcRenderer.invoke('delete-secret', id),
-  injectSecret: (id) => ipcRenderer.send('inject-secret', id)
+  injectSecret: (id) => ipcRenderer.send('inject-secret', id),
+
+  // Encryption status
+  isEncryptionAvailable: () => ipcRenderer.invoke('is-encryption-available'),
+
+  // Fix #1: Unexpected disconnect notification
+  onSshDisconnected: (callback) => {
+    const listener = (event, reason) => callback(reason);
+    ipcRenderer.on('ssh-disconnected', listener);
+    return () => ipcRenderer.removeListener('ssh-disconnected', listener);
+  },
 }
 
 if (process.contextIsolated) {

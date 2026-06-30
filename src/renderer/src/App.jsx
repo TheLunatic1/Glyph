@@ -35,6 +35,7 @@ export default function App() {
   const [connectError, setConnectError] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(null);
+  const [disconnectReason, setDisconnectReason] = useState(null);
   
   const [ztNodeId, setZtNodeId] = useState('');
   
@@ -82,7 +83,18 @@ export default function App() {
     const removeSshStatus = window.api.onSshStatus((msg) => {
       setConnectLogs(prev => [...prev, msg]);
     });
-    return () => removeSshStatus();
+
+    // Fix #1: Listen for unexpected server-side disconnects
+    const removeDisconnect = window.api.onSshDisconnected((reason) => {
+      setConnected(false);
+      setConnectedServer(null);
+      setDisconnectReason(reason || 'Connection was lost.');
+    });
+
+    return () => {
+      removeSshStatus();
+      removeDisconnect();
+    };
   }, []);
 
   const loadServers = async () => {
@@ -94,7 +106,9 @@ export default function App() {
     e.preventDefault();
     await window.api.addServer(newServer);
     setShowAddForm(false);
-    setNewServer({ name: '', host: '', username: '', password: '', port: 22 });
+    // Fix #3: Reset ALL fields including advanced ones
+    setNewServer({ name: '', host: '', username: '', password: '', port: 22, privateKey: '', zerotier: '' });
+    setShowAdvanced(false);
     loadServers();
   };
 
@@ -113,16 +127,22 @@ export default function App() {
     try {
       const res = await window.api.sshConnectSaved(id);
       if (connectingIdRef.current !== id) return; // User cancelled
-      if (res.success) {
-        setConnectLogs(prev => [...prev, 'Authentication successful, initializing session...']);
-        const server = servers.find(s => s.id === id);
-        setConnectedServer(server);
-        setConnected(true);
-        setActiveTab('dashboard');
-        // Clear modal state on success
+
+      // Fix #2: sshConnectSaved resolves (not throws) on failure
+      if (!res.success) {
+        setConnectError(res.error || 'Connection failed.');
         setConnectingId(null);
         connectingIdRef.current = null;
+        return;
       }
+
+      setConnectLogs(prev => [...prev, 'Authentication successful, initializing session...']);
+      const server = servers.find(s => s.id === id);
+      setConnectedServer(server);
+      setConnected(true);
+      setActiveTab('dashboard');
+      setConnectingId(null);
+      connectingIdRef.current = null;
     } catch (err) {
       if (connectingIdRef.current !== id) return; // User cancelled
       let msg = 'Unknown error';
@@ -142,6 +162,7 @@ export default function App() {
   const handleCancelConnect = () => {
     connectingIdRef.current = null;
     setConnectingId(null);
+    setConnectError(null); // Fix #12: clear error so it doesn't flash in next modal
     window.api.sshDisconnect();
   };
 
@@ -151,6 +172,16 @@ export default function App() {
     return (
       <div className="flex flex-col h-screen w-full bg-dark-900 overflow-y-auto relative">
         
+        {/* Fix #1: Unexpected disconnect banner */}
+        {disconnectReason && (
+          <div className="z-50 bg-red-600 text-white px-4 py-2 flex items-center justify-center gap-4 shadow-lg relative">
+            <span className="text-sm font-medium">⚠ {disconnectReason}</span>
+            <button onClick={() => setDisconnectReason(null)} className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-white/20 transition-colors">
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
         {/* Update Banner */}
         {updateAvailable && (
           <div className="z-50 bg-brand-500 text-white px-4 py-2 flex items-center justify-center gap-4 shadow-lg relative">
@@ -290,7 +321,7 @@ export default function App() {
                   </button>
                   <div className="flex gap-2">
                     <button type="submit" className="px-6 py-2 bg-brand-500 hover:bg-brand-400 text-white rounded-lg transition-colors font-medium">Save</button>
-                    <button type="button" onClick={() => { setShowAddForm(false); setShowAdvanced(false); }} className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-lg transition-colors">Cancel</button>
+                    <button type="button" onClick={() => { setShowAddForm(false); setShowAdvanced(false); setNewServer({ name: '', host: '', username: '', password: '', port: 22, privateKey: '', zerotier: '' }); }} className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-lg transition-colors">Cancel</button>
                   </div>
                 </div>
               </form>
@@ -330,8 +361,13 @@ export default function App() {
                 </div>
                 <div className="flex items-center justify-between mt-6">
                   <div className="flex gap-2">
-                    <span className="text-xs font-medium px-2.5 py-1 bg-green-500/10 text-green-400 rounded-full flex items-center gap-1.5">
-                      <div className="w-1.5 h-1.5 rounded-full bg-green-400"></div>
+                    {/* Fix #13: Only show green OS badge if OS is known; fallback is neutral */}
+                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full flex items-center gap-1.5 ${
+                      server.os
+                        ? 'bg-green-500/10 text-green-400'
+                        : 'bg-dark-700 text-gray-500'
+                    }`}>
+                      <div className={`w-1.5 h-1.5 rounded-full ${server.os ? 'bg-green-400' : 'bg-gray-500'}`}></div>
                       {server.os ? server.os.toUpperCase() : 'Saved'}
                     </span>
                     {server.zerotier && (
