@@ -10,7 +10,8 @@ publish:
   provider: github
   owner: TheLunatic1
   repo: Glyph
-releaseNotesFile: RELEASE_NOTES.md
+releaseInfo:
+  releaseNotesFile: RELEASE_NOTES.md
 win:
   target:
     - nsis
