@@ -55,7 +55,7 @@ export default function App() {
     loadServers();
     window.api.getZtNodeId().then(id => { if (id) setZtNodeId(id); });
 
-    // ── Auto-updater listeners (electron-updater via IPC) ──────────────────
+    // ── Auto-updater listeners (electron-updater via IPC) ────────────────────
     const removeAvailable = window.api.onUpdaterAvailable((info) => {
       setUpdateInfo(info);
       setUpdateStage('available');
@@ -68,9 +68,17 @@ export default function App() {
       setUpdateStage('downloaded');
       setShowUpdateModal(true); // pop open modal automatically when done
     });
-    const removeError = window.api.onUpdaterError(() => {
-      setUpdateStage('error');
-      setShowUpdateModal(true);
+    const removeError = window.api.onUpdaterError((msg) => {
+      // Only surface the error modal if the user actively started a download.
+      // Silent background check failures (e.g. no latest.yml yet) are just logged.
+      setUpdateStage(prev => {
+        if (prev === 'downloading') {
+          setShowUpdateModal(true); // user was downloading — show the error
+        }
+        // Otherwise (background check failed) — stay silent, don't open modal
+        return prev === 'downloading' ? 'error' : 'idle';
+      });
+      console.warn('[Updater] error:', msg);
     });
 
     // ── SSH status listener ────────────────────────────────────────────────

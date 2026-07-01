@@ -46,7 +46,11 @@ export default function UpdateModal({ info, stage, progress, onDownload, onInsta
             </div>
             <div>
               <h2 className="text-gray-100 font-bold text-lg leading-tight">
-                {stage === 'downloaded' ? 'Ready to Install' : `Glyph v${info?.version}`}
+                {stage === 'downloaded'
+                  ? 'Ready to Install'
+                  : info?.version
+                  ? `Glyph v${info.version}`
+                  : 'Glyph Update'}
               </h2>
               <p className="text-gray-500 text-xs">
                 {stage === 'available'    && 'New version available'}
