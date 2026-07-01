@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import SSHManager from './sshManager.js'
 import Vault from './vault.js'
 import SecretsVault from './secretsVault.js'
+import { initUpdater } from './updater.js'
 
 let mainWindow;
 const sshManager = new SSHManager();
@@ -25,7 +26,9 @@ function createWindow() {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow.show();
+    // Initialize auto-updater once window is visible
+    initUpdater(mainWindow);
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {

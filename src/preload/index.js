@@ -54,6 +54,32 @@ const api = {
     ipcRenderer.on('ssh-disconnected', listener);
     return () => ipcRenderer.removeListener('ssh-disconnected', listener);
   },
+
+  // ── Auto-Updater ────────────────────────────────────────────────────────────
+  updaterCheck:    () => ipcRenderer.invoke('updater-check'),
+  updaterDownload: () => ipcRenderer.invoke('updater-download'),
+  updaterInstall:  () => ipcRenderer.invoke('updater-install'),
+
+  onUpdaterAvailable: (callback) => {
+    const listener = (_, info) => callback(info);
+    ipcRenderer.on('updater-available', listener);
+    return () => ipcRenderer.removeListener('updater-available', listener);
+  },
+  onUpdaterProgress: (callback) => {
+    const listener = (_, progress) => callback(progress);
+    ipcRenderer.on('updater-progress', listener);
+    return () => ipcRenderer.removeListener('updater-progress', listener);
+  },
+  onUpdaterDownloaded: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('updater-downloaded', listener);
+    return () => ipcRenderer.removeListener('updater-downloaded', listener);
+  },
+  onUpdaterError: (callback) => {
+    const listener = (_, msg) => callback(msg);
+    ipcRenderer.on('updater-error', listener);
+    return () => ipcRenderer.removeListener('updater-error', listener);
+  },
 }
 
 if (process.contextIsolated) {

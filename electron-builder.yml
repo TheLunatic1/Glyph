@@ -6,6 +6,10 @@ directories:
 files:
   - out
   - package.json
+publish:
+  provider: github
+  owner: TheLunatic1
+  repo: Glyph
 win:
   target:
     - nsis
