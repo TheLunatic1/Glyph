@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Download, RotateCcw, CheckCircle, AlertTriangle, ExternalLink, Zap } from 'lucide-react';
+import { marked } from 'marked';
 
 const RELEASES_URL = 'https://github.com/TheLunatic1/Glyph/releases/latest';
 
@@ -16,16 +17,19 @@ function fmtBytes(bytes) {
   return bytes + ' B';
 }
 
-// Render GitHub release notes (plain text / basic markdown) safely
+// Render GitHub release notes (plain text / basic markdown / HTML) cleanly
 function ReleaseNotes({ notes }) {
   if (!notes) return <p className="text-gray-500 text-sm italic">No release notes available.</p>;
-  // notes can be HTML string from GitHub API or plain markdown
   const text = typeof notes === 'string' ? notes : notes.map?.(n => n.note).join('\n') || '';
+  
+  // Convert markdown/HTML safely into styled DOM content
+  const htmlContent = marked.parse(text);
 
   return (
-    <div className="text-gray-300 text-sm leading-relaxed space-y-1 font-mono whitespace-pre-wrap max-h-56 overflow-y-auto custom-scrollbar pr-1">
-      {text}
-    </div>
+    <div
+      className="release-notes-prose text-gray-300 text-sm leading-relaxed max-h-56 overflow-y-auto custom-scrollbar pr-2"
+      dangerouslySetInnerHTML={{ __html: htmlContent }}
+    />
   );
 }
 

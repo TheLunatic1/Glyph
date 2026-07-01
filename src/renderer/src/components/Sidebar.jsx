@@ -1,8 +1,16 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Activity, Terminal, FolderOpen, Code, Box, LogOut, Lock, Network } from 'lucide-react';
 import logoSrc from '../assets/logo.png';
 
 export default function Sidebar({ activeTab, onTabChange, onDisconnect }) {
+  const [version, setVersion] = useState('');
+
+  useEffect(() => {
+    window.api?.getAppVersion().then(v => {
+      if (v) setVersion(v);
+    });
+  }, []);
+
   const links = [
     { id: 'dashboard', icon: <Activity size={20} />, label: 'Dashboard' },
     { id: 'terminal', icon: <Terminal size={20} />, label: 'Terminal' },
@@ -22,7 +30,7 @@ export default function Sidebar({ activeTab, onTabChange, onDisconnect }) {
         </h1>
       </div>
       
-      <nav className="flex-1 px-4 flex flex-col gap-2">
+      <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
         {links.map((link) => (
           <button
             key={link.id}
@@ -49,6 +57,7 @@ export default function Sidebar({ activeTab, onTabChange, onDisconnect }) {
         </button>
         <div className="text-center text-xs text-gray-500 font-medium">
           Made by <a href="https://github.com/TheLunatic1" target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 transition-colors">TheLunatic1 (Salman Toha)</a>
+          {version && <span className="block mt-1 text-[11px] text-gray-600 font-mono">v{version}</span>}
         </div>
       </div>
     </div>

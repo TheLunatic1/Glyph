@@ -15,6 +15,7 @@ module.exports = {
         brand: {
           500: '#6366f1',
           400: '#818cf8',
+          300: '#a5b4fc',
         }
       },
       fontFamily: {

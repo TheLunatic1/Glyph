@@ -44,6 +44,7 @@ export default function App() {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   
   const [ztNodeId, setZtNodeId] = useState('');
+  const [appVersion, setAppVersion] = useState('');
   
   // Ref for auto-scrolling logs
   const logsEndRef = React.useRef(null);
@@ -54,6 +55,7 @@ export default function App() {
   useEffect(() => {
     loadServers();
     window.api.getZtNodeId().then(id => { if (id) setZtNodeId(id); });
+    window.api.getAppVersion().then(v => { if (v) setAppVersion(v); });
 
     // ── Auto-updater listeners (electron-updater via IPC) ────────────────────
     const removeAvailable = window.api.onUpdaterAvailable((info) => {
@@ -426,6 +428,7 @@ export default function App() {
         
         <footer className="py-4 text-center text-xs text-gray-500 font-medium">
           Made by <a href="https://github.com/TheLunatic1" target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 transition-colors">TheLunatic1 (Salman Toha)</a>
+          {appVersion && <span className="ml-2 text-gray-600 font-mono">v{appVersion}</span>}
         </footer>
       </div>
     );
