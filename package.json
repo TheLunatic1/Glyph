@@ -1,6 +1,6 @@
 {
   "name": "glyph",
-  "version": "2.2.1",
+  "version": "2.2.0",
   "description": "An Electron/React SSH client",
   "main": "./out/main/index.js",
   "author": "TheLunatic1 (Salman Toha)",
