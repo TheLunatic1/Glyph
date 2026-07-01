@@ -33,7 +33,7 @@ function ReleaseNotes({ notes }) {
   );
 }
 
-export default function UpdateModal({ info, stage, progress, onDownload, onInstall, onRetry, onClose }) {
+export default function UpdateModal({ info, stage, progress, error, onDownload, onInstall, onRetry, onClose }) {
   // stage: 'available' | 'downloading' | 'downloaded' | 'error'
 
   return (
@@ -43,7 +43,7 @@ export default function UpdateModal({ info, stage, progress, onDownload, onInsta
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-dark-800 bg-dark-800/40">
+        <div className="flex items-center justify-between p-6 border-b border-dark-800 bg-dark-800/50">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center">
               <Zap size={20} className="text-brand-400" />
@@ -155,11 +155,21 @@ export default function UpdateModal({ info, stage, progress, onDownload, onInsta
               <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
                 <AlertTriangle size={36} className="text-red-400" />
               </div>
-              <div className="text-center">
+              <div className="text-center w-full">
                 <p className="text-gray-100 font-semibold text-lg">Update Failed</p>
                 <p className="text-gray-400 text-sm mt-1">Something went wrong while downloading the update.</p>
+                {error && (
+                  <div className="mt-3 p-3 bg-dark-800 border border-red-500/30 rounded-xl text-red-300 font-mono text-xs max-w-md mx-auto break-words text-left shadow-inner max-h-32 overflow-y-auto">
+                    {error}
+                  </div>
+                )}
+                {error && (error.toLowerCase().includes('portable') || error.toLowerCase().includes('bootstrapper')) && (
+                  <p className="text-amber-400 text-xs mt-3 font-medium bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20 max-w-md mx-auto text-left leading-relaxed">
+                    💡 <strong className="text-amber-300">Portable Version Detected:</strong> You are running the standalone portable executable of Glyph. Portable builds cannot auto-update in place. Please click <strong>"Download Manually"</strong> below to get the new release, or install via <strong>"Glyph Setup.exe"</strong> for automatic background updates!
+                  </p>
+                )}
               </div>
-              <div className="flex gap-3 w-full">
+              <div className="flex gap-3 w-full mt-2">
                 <button
                   onClick={onRetry}
                   className="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-500 hover:bg-brand-400 text-white font-semibold rounded-xl transition-colors"

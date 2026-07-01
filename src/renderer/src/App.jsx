@@ -41,6 +41,7 @@ export default function App() {
   const [updateInfo, setUpdateInfo]       = useState(null);  // { version, releaseNotes, releaseDate }
   const [updateStage, setUpdateStage]     = useState('idle'); // idle | available | downloading | downloaded | error
   const [updateProgress, setUpdateProgress] = useState(null);
+  const [updateError, setUpdateError]     = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   
   const [ztNodeId, setZtNodeId] = useState('');
@@ -60,6 +61,7 @@ export default function App() {
     // ── Auto-updater listeners (electron-updater via IPC) ────────────────────
     const removeAvailable = window.api.onUpdaterAvailable((info) => {
       setUpdateInfo(info);
+      setUpdateError(null);
       setUpdateStage('available');
     });
     const removeProgress = window.api.onUpdaterProgress((prog) => {
@@ -71,6 +73,7 @@ export default function App() {
       setShowUpdateModal(true); // pop open modal automatically when done
     });
     const removeError = window.api.onUpdaterError((msg) => {
+      setUpdateError(msg);
       // If the user was actively interacting with an update ('available' or 'downloading'), switch to error state so Try Again / Manual buttons appear.
       setUpdateStage(prev => {
         if (prev !== 'idle') {
@@ -229,6 +232,7 @@ export default function App() {
             info={updateInfo}
             stage={updateStage}
             progress={updateProgress}
+            error={updateError}
             onDownload={async () => { setUpdateStage('downloading'); await window.api.updaterDownload(); }}
             onInstall={() => window.api.updaterInstall()}
             onRetry={async () => { setUpdateStage('downloading'); await window.api.updaterDownload(); }}
@@ -473,6 +477,7 @@ export default function App() {
           info={updateInfo}
           stage={updateStage}
           progress={updateProgress}
+          error={updateError}
           onDownload={async () => { setUpdateStage('downloading'); await window.api.updaterDownload(); }}
           onInstall={() => window.api.updaterInstall()}
           onRetry={async () => { setUpdateStage('downloading'); await window.api.updaterDownload(); }}
