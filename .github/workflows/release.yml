@@ -120,7 +120,9 @@ jobs:
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           generate_release_notes: true
-          files: dist/*.exe
+          files: |
+            dist/*.exe
+            dist/latest.yml
 
       - name: Publish to GitHub Releases (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -128,7 +130,9 @@ jobs:
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           generate_release_notes: true
-          files: dist/*.AppImage
+          files: |
+            dist/*.AppImage
+            dist/latest-linux.yml
 
       - name: Publish to GitHub Releases (macOS)
         if: matrix.os == 'macos-latest'
@@ -139,3 +143,4 @@ jobs:
           files: |
             dist/*.dmg
             dist/*.zip
+            dist/latest-mac.yml
