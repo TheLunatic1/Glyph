@@ -36,6 +36,16 @@ Glyph is engineered using a modern, robust technology stack:
 - **Networking:** `libzt` (ZeroTier Sockets) for native, direct peer-to-peer networking.
 - **Icons & Graphics:** [Lucide React](https://lucide.dev/) and [Devicon](https://devicon.dev/).
 
+## 📥 Download & Install
+
+Grab the latest release for Windows, Linux, or macOS directly from the [GitHub Releases](https://github.com/TheLunatic1/Glyph/releases/latest) page. Glyph also features **In-App Auto-Updating**, so once installed via the Setup installer, you can download and apply updates seamlessly from inside the app!
+
+> [!NOTE]
+> **Important Note for Windows Users (Microsoft Defender SmartScreen):**
+> Because Glyph is an open-source application built without a paid corporate code-signing certificate, Windows Defender SmartScreen may display a *"Windows protected your PC"* popup when launching the installer or updating.
+> 
+> To proceed safely, simply click **More info** (under the text) → then click **Run anyway**. Glyph is 100% clean, transparent, and open-source!
+
 ## 🖥 Getting Started
 
 ### Prerequisites

@@ -1,6 +1,12 @@
-## v2.2.0 — In-App Auto-Update
+## v2.2.1 — Windows Auto-Update Fixes & SmartScreen Notice
 
-You no longer need to visit GitHub to update Glyph. Updates now happen entirely inside the app.
+You no longer need to visit GitHub to update Glyph. Updates now happen entirely inside the app!
+
+> [!NOTE]
+> **Windows SmartScreen Notice:**
+> Because Glyph is an open-source application built without a paid corporate code-signing certificate, Microsoft Defender SmartScreen may display a *"Windows protected your PC"* popup when launching the installer or updating.
+> 
+> To proceed safely, simply click **More info** → **Run anyway**. Glyph is 100% clean, transparent, and open-source!
 
 ---
 
