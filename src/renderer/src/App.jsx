@@ -71,14 +71,13 @@ export default function App() {
       setShowUpdateModal(true); // pop open modal automatically when done
     });
     const removeError = window.api.onUpdaterError((msg) => {
-      // Only surface the error modal if the user actively started a download.
-      // Silent background check failures (e.g. no latest.yml yet) are just logged.
+      // If the user was actively interacting with an update ('available' or 'downloading'), switch to error state so Try Again / Manual buttons appear.
       setUpdateStage(prev => {
-        if (prev === 'downloading') {
-          setShowUpdateModal(true); // user was downloading — show the error
+        if (prev !== 'idle') {
+          setShowUpdateModal(true);
+          return 'error';
         }
-        // Otherwise (background check failed) — stay silent, don't open modal
-        return prev === 'downloading' ? 'error' : 'idle';
+        return 'idle';
       });
       console.warn('[Updater] error:', msg);
     });
@@ -230,9 +229,9 @@ export default function App() {
             info={updateInfo}
             stage={updateStage}
             progress={updateProgress}
-            onDownload={async () => { await window.api.updaterDownload(); }}
+            onDownload={async () => { setUpdateStage('downloading'); await window.api.updaterDownload(); }}
             onInstall={() => window.api.updaterInstall()}
-            onRetry={async () => { setUpdateStage('available'); await window.api.updaterDownload(); }}
+            onRetry={async () => { setUpdateStage('downloading'); await window.api.updaterDownload(); }}
             onClose={() => setShowUpdateModal(false)}
           />
         )}
@@ -474,9 +473,9 @@ export default function App() {
           info={updateInfo}
           stage={updateStage}
           progress={updateProgress}
-          onDownload={async () => { await window.api.updaterDownload(); }}
+          onDownload={async () => { setUpdateStage('downloading'); await window.api.updaterDownload(); }}
           onInstall={() => window.api.updaterInstall()}
-          onRetry={async () => { setUpdateStage('available'); await window.api.updaterDownload(); }}
+          onRetry={async () => { setUpdateStage('downloading'); await window.api.updaterDownload(); }}
           onClose={() => setShowUpdateModal(false)}
         />
       )}

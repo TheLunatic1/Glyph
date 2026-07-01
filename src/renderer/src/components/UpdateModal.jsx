@@ -57,7 +57,7 @@ export default function UpdateModal({ info, stage, progress, onDownload, onInsta
                   : 'Glyph Update'}
               </h2>
               <p className="text-gray-500 text-xs">
-                {stage === 'available'    && 'New version available'}
+                {(stage === 'available' || stage === 'idle' || !['downloading', 'downloaded', 'error'].includes(stage)) && 'New version available'}
                 {stage === 'downloading'  && 'Downloading update...'}
                 {stage === 'downloaded'   && 'Download complete'}
                 {stage === 'error'        && 'Update failed'}
@@ -72,8 +72,8 @@ export default function UpdateModal({ info, stage, progress, onDownload, onInsta
         {/* Body */}
         <div className="p-6 flex flex-col gap-5 overflow-auto">
 
-          {/* ── AVAILABLE ─────────────────────────────────────────────────── */}
-          {stage === 'available' && (
+          {/* ── AVAILABLE / DEFAULT ───────────────────────────────────────── */}
+          {(stage === 'available' || stage === 'idle' || !['downloading', 'downloaded', 'error'].includes(stage)) && (
             <>
               <div>
                 <p className="text-xs uppercase tracking-wider text-gray-500 font-medium mb-2">What's New</p>
