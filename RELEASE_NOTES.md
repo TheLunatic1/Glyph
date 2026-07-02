@@ -31,12 +31,4 @@ Click **"Download Manually"** to go directly to the GitHub Releases page and gra
 
 ---
 
-### CI/CD
-
-- Redesigned GitHub Actions release pipeline into a single unified workflow
-- Bumping the version in `package.json` and pushing to `main` now automatically creates the release tag and kicks off the full Windows / Linux / macOS build pipeline
-- The manual **"Run workflow"** button is still available in GitHub Actions for re-releasing or hotfixing
-
----
-
 _Made by [TheLunatic1 (Salman Toha)](https://github.com/TheLunatic1)_
