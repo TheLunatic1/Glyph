@@ -1,17 +1,13 @@
-<table style="border: none; border-collapse: collapse; width: 100%;">
-  <tr style="border: none;">
-    <td width="140" align="center" valign="middle" style="border: none; padding-right: 20px;">
-      <a href="https://github.com/TheLunatic1/Glyph">
-        <img src="./src/renderer/src/assets/logo.png" alt="Glyph Logo" width="120" />
-      </a>
-    </td>
-    <td valign="middle" style="border: none;">
-      <h1 style="margin: 0; font-size: 40px; border-bottom: none;">Glyph</h1>
-      <p style="margin: 6px 0 0 0; font-size: 18px;"><strong>A Sleek, Modern, Agentic SSH & Server Management Client</strong></p>
-      <p style="margin: 6px 0 0 0; color: #888;"><em>An all-in-one desktop workspace built for speed, security, and elegance.</em></p>
-    </td>
-  </tr>
-</table>
+<div align="center">
+  <p>
+    <a href="https://github.com/TheLunatic1/Glyph">
+      <img src="./src/renderer/src/assets/logo.png" alt="Glyph Logo" width="90" style="vertical-align: middle; margin-right: 14px;" />
+    </a>
+    <span style="font-size: 44px; font-weight: 800; vertical-align: middle;">Glyph</span>
+  </p>
+  <p style="font-size: 18px; margin-top: 10px;"><strong>A Sleek, Modern, Agentic SSH & Server Management Client</strong></p>
+  <p style="color: #888;"><em>An all-in-one desktop workspace built for speed, security, and elegance.</em></p>
+</div>
 
 <br />
 
