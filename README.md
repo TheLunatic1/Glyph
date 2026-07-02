@@ -1,11 +1,9 @@
 <div align="center">
-  <p>
-    <a href="https://github.com/TheLunatic1/Glyph">
-      <img src="./src/renderer/src/assets/logo.png" alt="Glyph Logo" width="90" style="vertical-align: middle; margin-right: 14px;" />
-    </a>
-    <span style="font-size: 44px; font-weight: 800; vertical-align: middle;">Glyph</span>
-  </p>
-  <p style="font-size: 18px; margin-top: 10px;"><strong>A Sleek, Modern, Agentic SSH & Server Management Client</strong></p>
+  <h1>
+    <img src="./src/renderer/src/assets/logo.png" alt="Glyph Logo" width="56" />
+    Glyph
+  </h1>
+  <p><strong>A Sleek, Modern, Agentic SSH & Server Management Client</strong></p>
   <p style="color: #888;"><em>An all-in-one desktop workspace built for speed, security, and elegance.</em></p>
 </div>
 
