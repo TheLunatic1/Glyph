@@ -8,7 +8,7 @@
     <td valign="middle" style="border: none;">
       <h1 style="margin: 0; font-size: 40px; border-bottom: none;">Glyph</h1>
       <p style="margin: 6px 0 0 0; font-size: 18px;"><strong>A Sleek, Modern, Agentic SSH & Server Management Client</strong></p>
-      <p style="margin: 6px 0 0 0; color: #888;"><em>An all-in-one desktop workspace built for speed, security, and elegance with web technologies.</em></p>
+      <p style="margin: 6px 0 0 0; color: #888;"><em>An all-in-one desktop workspace built for speed, security, and elegance.</em></p>
     </td>
   </tr>
 </table>
