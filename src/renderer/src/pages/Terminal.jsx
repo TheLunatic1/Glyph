@@ -86,14 +86,13 @@ export default function TerminalPage({ server }) {
     });
 
     term.attachCustomKeyEventHandler((e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && term.hasSelection()) {
+      if (e.type !== 'keydown') return true;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && term.hasSelection()) {
         navigator.clipboard.writeText(term.getSelection());
         return false;
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-        navigator.clipboard.readText().then(text => {
-          if (!isDisposedRef.current) window.api.sshShellData(text);
-        });
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
         return false;
       }
       return true;
