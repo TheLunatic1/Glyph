@@ -141,8 +141,6 @@ export default function App() {
       // Fix #2: sshConnectSaved resolves (not throws) on failure
       if (!res.success) {
         setConnectError(res.error || 'Connection failed.');
-        setConnectingId(null);
-        connectingIdRef.current = null;
         return;
       }
 
