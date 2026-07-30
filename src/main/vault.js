@@ -1,6 +1,7 @@
 import { safeStorage, app } from 'electron';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 export default class Vault {
   constructor() {
@@ -43,7 +44,7 @@ export default class Vault {
 
   addServer(serverConfig) {
     const newServer = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       name: serverConfig.name || serverConfig.host,
       host: serverConfig.host,
       username: serverConfig.username,
@@ -87,6 +88,38 @@ export default class Vault {
     }
   }
 
+  editServer(id, serverConfig) {
+    const idx = this.servers.findIndex(s => s.id === id);
+    if (idx !== -1) {
+      const updatedServer = {
+        ...this.servers[idx],
+        name: serverConfig.name || serverConfig.host,
+        host: serverConfig.host,
+        username: serverConfig.username,
+        port: serverConfig.port || 22,
+        zerotier: serverConfig.zerotier || '',
+        privateKeyPath: serverConfig.privateKey || '',
+      };
+
+      if (serverConfig.password) {
+        if (safeStorage.isEncryptionAvailable()) {
+          const encrypted = safeStorage.encryptString(serverConfig.password);
+          updatedServer.password = encrypted.toString('base64');
+          delete updatedServer.passwordFallback;
+        } else {
+          console.warn(
+            '[Vault] safeStorage unavailable — password stored as base64 (NOT encrypted). '
+          );
+          updatedServer.passwordFallback = Buffer.from(serverConfig.password).toString('base64');
+          delete updatedServer.password;
+        }
+      }
+
+      this.servers[idx] = updatedServer;
+      this.saveServers();
+    }
+  }
+
   getServerConfigForConnection(id) {
     const server = this.servers.find(s => s.id === id);
     if (!server) return null;
@@ -110,5 +143,43 @@ export default class Vault {
     }
 
     return config;
+  }
+
+  exportServersData() {
+    return this.servers.map(server => {
+      const exportServer = { ...server };
+      if (exportServer.password && safeStorage.isEncryptionAvailable()) {
+        try {
+          exportServer.password = safeStorage.decryptString(Buffer.from(exportServer.password, 'base64'));
+        } catch(e) {
+          console.error('Failed to decrypt password during export', e);
+          exportServer.password = ''; 
+        }
+      } else if (exportServer.passwordFallback) {
+        exportServer.password = Buffer.from(exportServer.passwordFallback, 'base64').toString('utf-8');
+        delete exportServer.passwordFallback;
+      }
+      return exportServer;
+    });
+  }
+
+  importServersData(serversList) {
+    if (!Array.isArray(serversList)) throw new Error('Invalid servers list format');
+    
+    let addedCount = 0;
+    serversList.forEach(server => {
+      const config = {
+        name: server.name,
+        host: server.host,
+        username: server.username,
+        port: server.port,
+        zerotier: server.zerotier,
+        privateKey: server.privateKeyPath || server.privateKey,
+        password: server.password || ''
+      };
+      this.addServer(config);
+      addedCount++;
+    });
+    return addedCount;
   }
 }

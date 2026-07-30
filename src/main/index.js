@@ -5,6 +5,8 @@ import SSHManager from './sshManager.js'
 import Vault from './vault.js'
 import SecretsVault from './secretsVault.js'
 import { initUpdater } from './updater.js'
+import { encryptData, decryptData } from './cryptoUtil.js'
+import fs from 'fs'
 
 let mainWindow;
 const sshManager = new SSHManager();
@@ -85,6 +87,61 @@ ipcMain.handle('add-server', (event, config) => {
   return vault.addServer(config);
 });
 
+ipcMain.handle('edit-server', (event, id, config) => {
+  vault.editServer(id, config);
+  return true;
+});
+
+ipcMain.handle('export-servers', async (event, masterPassword) => {
+  if (!masterPassword) throw new Error('Master password is required');
+  
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Export Servers',
+    defaultPath: 'glyph_servers.glyph',
+    filters: [{ name: 'Glyph Export', extensions: ['glyph', 'json'] }]
+  });
+
+  if (canceled || !filePath) return false;
+
+  try {
+    const rawData = vault.exportServersData();
+    const dataStr = JSON.stringify(rawData);
+    const encrypted = encryptData(dataStr, masterPassword);
+    
+    fs.writeFileSync(filePath, encrypted);
+    return true;
+  } catch (error) {
+    console.error('Export error:', error);
+    throw new Error('Failed to export servers: ' + error.message);
+  }
+});
+
+ipcMain.handle('import-servers', async (event, masterPassword) => {
+  if (!masterPassword) throw new Error('Master password is required');
+
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Import Servers',
+    properties: ['openFile'],
+    filters: [{ name: 'Glyph Export', extensions: ['glyph', 'json'] }]
+  });
+
+  if (canceled || filePaths.length === 0) return false;
+
+  try {
+    const filePath = filePaths[0];
+    const encryptedContent = fs.readFileSync(filePath, 'utf8');
+    const decryptedStr = decryptData(encryptedContent, masterPassword);
+    
+    const serversList = JSON.parse(decryptedStr);
+    const addedCount = vault.importServersData(serversList);
+    
+    return addedCount;
+  } catch (error) {
+    console.error('Import error:', error);
+    throw new Error('Failed to import servers. Incorrect password or corrupted file.');
+  }
+});
+
 ipcMain.handle('delete-server', (event, id) => {
   vault.deleteServer(id);
   return true;
@@ -145,6 +202,43 @@ ipcMain.handle('ssh-sftp-read-file', async (event, path) => {
 
 ipcMain.handle('ssh-sftp-write-file', async (event, path, content) => {
   return await sshManager.sftpWriteFile(path, content);
+});
+
+ipcMain.handle('ssh-sftp-download', async (event, remotePath, filename) => {
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Download File',
+    defaultPath: filename,
+  });
+  if (canceled || !filePath) return false;
+  
+  await sshManager.sftpDownloadFile(remotePath, filePath);
+  return true;
+});
+
+ipcMain.handle('ssh-sftp-upload', async (event, remoteDir) => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Upload File',
+    properties: ['openFile']
+  });
+  if (canceled || filePaths.length === 0) return false;
+  
+  const localPath = filePaths[0];
+  const { basename } = require('path');
+  const filename = basename(localPath);
+  const remotePath = remoteDir.endsWith('/') ? `${remoteDir}${filename}` : `${remoteDir}/${filename}`;
+  
+  await sshManager.sftpUploadFile(localPath, remotePath);
+  return true;
+});
+
+ipcMain.handle('ssh-sftp-upload-dropped', async (event, localPaths, remoteDir) => {
+  const { basename } = require('path');
+  for (const localPath of localPaths) {
+    const filename = basename(localPath);
+    const remotePath = remoteDir.endsWith('/') ? `${remoteDir}${filename}` : `${remoteDir}/${filename}`;
+    await sshManager.sftpUploadFile(localPath, remotePath);
+  }
+  return true;
 });
 
 ipcMain.handle('ssh-start-tunnel', async (event, localPort, remoteHost, remotePort) => {

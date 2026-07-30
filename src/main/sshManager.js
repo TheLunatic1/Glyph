@@ -307,6 +307,28 @@ export default class SSHManager {
     });
   }
 
+  // ── SFTP Download File ────────────────────────────────────────────────────
+  async sftpDownloadFile(remotePath, localPath) {
+    return new Promise((resolve, reject) => {
+      if (!this.sftp) return reject(new Error('SFTP not initialized'));
+      this.sftp.fastGet(remotePath, localPath, (err) => {
+        if (err) return reject(err);
+        resolve(true);
+      });
+    });
+  }
+
+  // ── SFTP Upload File ──────────────────────────────────────────────────────
+  async sftpUploadFile(localPath, remotePath) {
+    return new Promise((resolve, reject) => {
+      if (!this.sftp) return reject(new Error('SFTP not initialized'));
+      this.sftp.fastPut(localPath, remotePath, (err) => {
+        if (err) return reject(err);
+        resolve(true);
+      });
+    });
+  }
+
   // ── Stat polling ───────────────────────────────────────────────────────────
   startStatPolling() {
     if (this.statInterval) clearInterval(this.statInterval);

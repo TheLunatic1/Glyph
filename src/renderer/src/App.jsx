@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Server, Plus, Play, Trash2, ShieldCheck, Terminal, HardDrive, Cpu, Search, X, ArrowRight, ExternalLink } from 'lucide-react';
+import { Server, Plus, Play, Trash2, Edit2, ShieldCheck, Terminal, HardDrive, Cpu, Search, X, ArrowRight, ExternalLink, Upload, Download, Key, Eye, EyeOff } from 'lucide-react';
 import logoSrc from './assets/logo.png';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -29,13 +29,20 @@ export default function App() {
   const [servers, setServers] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [newServer, setNewServer] = useState({ name: '', host: '', username: '', password: '', port: 22, privateKey: '', zerotier: '' });
+  const [newServer, setNewServer] = useState({ id: null, name: '', host: '', username: '', password: '', port: 22, privateKey: '', zerotier: '' });
   const [connectingId, setConnectingId] = useState(null);
   const connectingIdRef = React.useRef(null);
   const [connectLogs, setConnectLogs] = useState([]);
   const [connectError, setConnectError] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [disconnectReason, setDisconnectReason] = useState(null);
+  
+  const [showPasswordModal, setShowPasswordModal] = useState({ visible: false, action: null });
+  const [masterPassword, setMasterPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [showMasterPassword, setShowMasterPassword] = useState(false);
+  const [showServerPassword, setShowServerPassword] = useState(false);
+  const [serverToDelete, setServerToDelete] = useState(null);
 
   // ── Auto-update state ──────────────────────────────────────────────────────
   const [updateInfo, setUpdateInfo]       = useState(null);  // { version, releaseNotes, releaseDate }
@@ -114,18 +121,45 @@ export default function App() {
 
   const handleAddServer = async (e) => {
     e.preventDefault();
-    await window.api.addServer(newServer);
+    if (newServer.id) {
+      await window.api.editServer(newServer.id, newServer);
+    } else {
+      await window.api.addServer(newServer);
+    }
     setShowAddForm(false);
     // Fix #3: Reset ALL fields including advanced ones
-    setNewServer({ name: '', host: '', username: '', password: '', port: 22, privateKey: '', zerotier: '' });
+    setNewServer({ id: null, name: '', host: '', username: '', password: '', port: 22, privateKey: '', zerotier: '' });
     setShowAdvanced(false);
     loadServers();
   };
 
-  const handleDelete = async (id, e) => {
+  const handleEdit = (server, e) => {
     e.stopPropagation();
-    await window.api.deleteServer(id);
-    loadServers();
+    setNewServer({
+      id: server.id,
+      name: server.name || '',
+      host: server.host || '',
+      username: server.username || '',
+      password: '',
+      port: server.port || 22,
+      privateKey: server.privateKeyPath || '',
+      zerotier: server.zerotier || ''
+    });
+    setShowAddForm(true);
+    setShowAdvanced(!!(server.zerotier || server.privateKeyPath));
+  };
+
+  const handleDelete = (server, e) => {
+    e.stopPropagation();
+    setServerToDelete(server);
+  };
+
+  const confirmDelete = async () => {
+    if (serverToDelete) {
+      await window.api.deleteServer(serverToDelete.id);
+      setServerToDelete(null);
+      loadServers();
+    }
   };
 
   const handleConnect = async (id) => {
@@ -170,8 +204,35 @@ export default function App() {
   const handleCancelConnect = () => {
     connectingIdRef.current = null;
     setConnectingId(null);
-    setConnectError(null); // Fix #12: clear error so it doesn't flash in next modal
+    setConnectError(null); 
     window.api.sshDisconnect();
+  };
+
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault();
+    if (!masterPassword) {
+      setPasswordError('Password is required');
+      return;
+    }
+    
+    setPasswordError('');
+    try {
+      if (showPasswordModal.action === 'export') {
+        const success = await window.api.exportServers(masterPassword);
+        if (success) {
+          // Modal auto closes on success
+        }
+      } else if (showPasswordModal.action === 'import') {
+        const count = await window.api.importServers(masterPassword);
+        if (count !== false) {
+          loadServers(); // Refresh list after import
+        }
+      }
+      setShowPasswordModal({ visible: false, action: null });
+      setMasterPassword('');
+    } catch (err) {
+      setPasswordError(err.message || 'Operation failed');
+    }
   };
 
   if (!connected) {
@@ -238,6 +299,80 @@ export default function App() {
           />
         )}
 
+        {/* Password Modal */}
+        {showPasswordModal.visible && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-dark-900 border border-dark-700 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between p-4 border-b border-dark-800 bg-dark-800/30">
+                <div className="flex items-center gap-3">
+                  <Key className="text-brand-400" size={20} />
+                  <h3 className="text-gray-100 font-semibold">{showPasswordModal.action === 'export' ? 'Export Master Password' : 'Import Master Password'}</h3>
+                </div>
+                <button onClick={() => { setShowPasswordModal({ visible: false, action: null }); setPasswordError(''); setMasterPassword(''); }} className="p-2 text-gray-500 hover:text-gray-200 transition-colors">
+                  <X size={20}/>
+                </button>
+              </div>
+              <form onSubmit={handlePasswordSubmit} className="p-5 flex flex-col gap-4">
+                {showPasswordModal.action === 'export' ? (
+                  <p className="text-sm text-gray-400">Enter a master password to securely encrypt your servers list. You will need this password to import them later.</p>
+                ) : (
+                  <p className="text-sm text-gray-400">Enter the master password that was used to encrypt the export file.</p>
+                )}
+                <div>
+                  <div className="relative">
+                    <input
+                      type={showMasterPassword ? "text" : "password"}
+                      autoFocus
+                      required
+                      value={masterPassword}
+                      onChange={(e) => setMasterPassword(e.target.value)}
+                      placeholder="Master Password"
+                      className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-lg focus:outline-none focus:border-brand-500 text-gray-200 pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowMasterPassword(!showMasterPassword)}
+                      className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-500 hover:text-gray-300 transition-colors"
+                      tabIndex="-1"
+                    >
+                      {showMasterPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                  {passwordError && <p className="text-xs text-red-400 mt-2">{passwordError}</p>}
+                </div>
+                <div className="flex justify-end gap-2 mt-2">
+                  <button type="button" onClick={() => { setShowPasswordModal({ visible: false, action: null }); setPasswordError(''); setMasterPassword(''); }} className="px-4 py-2 bg-dark-800 hover:bg-dark-700 text-gray-300 rounded-lg transition-colors font-medium text-sm">Cancel</button>
+                  <button type="submit" className="px-4 py-2 bg-brand-500 hover:bg-brand-400 text-white rounded-lg transition-colors font-medium text-sm">{showPasswordModal.action === 'export' ? 'Export' : 'Select File'}</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {serverToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-dark-900 border border-dark-700 w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between p-4 border-b border-dark-800 bg-dark-800/30">
+                <div className="flex items-center gap-3">
+                  <Trash2 className="text-red-400" size={20} />
+                  <h3 className="text-gray-100 font-semibold">Delete Server</h3>
+                </div>
+                <button onClick={() => setServerToDelete(null)} className="p-2 text-gray-500 hover:text-gray-200 transition-colors">
+                  <X size={20}/>
+                </button>
+              </div>
+              <div className="p-5 flex flex-col gap-4">
+                <p className="text-sm text-gray-300">Are you sure you want to delete <span className="font-semibold text-white">{serverToDelete.name}</span>? This action cannot be undone.</p>
+                <div className="flex justify-end gap-2 mt-2">
+                  <button onClick={() => setServerToDelete(null)} className="px-4 py-2 bg-dark-800 hover:bg-dark-700 text-gray-300 rounded-lg transition-colors font-medium text-sm">Cancel</button>
+                  <button onClick={confirmDelete} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors font-medium text-sm shadow-lg shadow-red-500/20">Delete</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Connecting Modal */}
         {activeConnectingServer && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -302,18 +437,34 @@ export default function App() {
         <main className="flex-1 p-8 max-w-6xl w-full mx-auto">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-semibold text-gray-200">Saved Servers</h2>
-            <button
-              onClick={() => setShowAddForm(!showAddForm)}
-              className="px-4 py-2 bg-brand-500 hover:bg-brand-400 text-white font-medium rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-brand-500/20"
-            >
-              <Plus size={18} /> Add Server
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowPasswordModal({ visible: true, action: 'import' })}
+                className="p-2 text-gray-400 hover:text-brand-400 hover:bg-brand-500/10 rounded-lg transition-colors"
+                title="Import Servers"
+              >
+                <Download size={20} />
+              </button>
+              <button
+                onClick={() => setShowPasswordModal({ visible: true, action: 'export' })}
+                className="p-2 text-gray-400 hover:text-brand-400 hover:bg-brand-500/10 rounded-lg transition-colors"
+                title="Export Servers"
+              >
+                <Upload size={20} />
+              </button>
+              <button
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="px-4 py-2 bg-brand-500 hover:bg-brand-400 text-white font-medium rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-brand-500/20 ml-2"
+              >
+                <Plus size={18} /> Add Server
+              </button>
+            </div>
           </div>
 
           {showAddForm && (
             <div className="glass-panel p-6 mb-8 border border-brand-500/30 bg-brand-500/5">
               <h3 className="text-lg font-medium text-gray-200 mb-4 flex items-center gap-2">
-                <ShieldCheck className="text-brand-400" size={20} /> Add New Server (Secure Vault)
+                <ShieldCheck className="text-brand-400" size={20} /> {newServer.id ? 'Edit Server (Secure Vault)' : 'Add New Server (Secure Vault)'}
               </h3>
               <form onSubmit={handleAddServer} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
                 <div>
@@ -334,7 +485,17 @@ export default function App() {
                 </div>
                 <div>
                   <label className="block text-gray-400 text-sm mb-1">Password</label>
-                  <input type="password" required value={newServer.password} onChange={e => setNewServer({...newServer, password: e.target.value})} className="w-full px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg focus:outline-none focus:border-brand-500" placeholder="••••••••" />
+                  <div className="relative">
+                    <input type={showServerPassword ? "text" : "password"} required={!newServer.id} value={newServer.password} onChange={e => setNewServer({...newServer, password: e.target.value})} className="w-full px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg focus:outline-none focus:border-brand-500 pr-10" placeholder={newServer.id ? "•••••••• (leave empty to keep)" : "••••••••"} />
+                    <button
+                      type="button"
+                      onClick={() => setShowServerPassword(!showServerPassword)}
+                      className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-500 hover:text-gray-400 transition-colors"
+                      tabIndex="-1"
+                    >
+                      {showServerPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </div>
                 {showAdvanced && (
                   <div className="lg:col-span-4 bg-dark-800/50 p-4 rounded-xl border border-brand-500/10 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -362,7 +523,7 @@ export default function App() {
                   </button>
                   <div className="flex gap-2">
                     <button type="submit" className="px-6 py-2 bg-brand-500 hover:bg-brand-400 text-white rounded-lg transition-colors font-medium">Save</button>
-                    <button type="button" onClick={() => { setShowAddForm(false); setShowAdvanced(false); setNewServer({ name: '', host: '', username: '', password: '', port: 22, privateKey: '', zerotier: '' }); }} className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-lg transition-colors">Cancel</button>
+                    <button type="button" onClick={() => { setShowAddForm(false); setShowAdvanced(false); setNewServer({ id: null, name: '', host: '', username: '', password: '', port: 22, privateKey: '', zerotier: '' }); }} className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-lg transition-colors">Cancel</button>
                   </div>
                 </div>
               </form>
@@ -385,12 +546,20 @@ export default function App() {
                   connectingId !== null ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
                 }`}
               >
-                <button
-                  onClick={(e) => handleDelete(server.id, e)}
-                  className="absolute top-4 right-4 p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                >
-                  <Trash2 size={18} />
-                </button>
+                <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                  <button
+                    onClick={(e) => handleEdit(server, e)}
+                    className="p-2 text-gray-500 hover:text-brand-400 hover:bg-brand-500/10 rounded-lg transition-colors"
+                  >
+                    <Edit2 size={18} />
+                  </button>
+                  <button
+                    onClick={(e) => handleDelete(server, e)}
+                    className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
                 <div className="flex items-center gap-4 mb-4">
                   <div className="w-12 h-12 shrink-0 rounded-full bg-dark-700 overflow-hidden flex items-center justify-center border border-dark-600 group-hover:border-brand-500 transition-colors">
                     <OsLogo server={server} />
