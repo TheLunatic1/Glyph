@@ -13,6 +13,13 @@
       </td>
     </tr>
   </table>
+  <br />
+  <p>
+    <a href="https://github.com/TheLunatic1/Glyph/stargazers"><img src="https://img.shields.io/github/stars/TheLunatic1/Glyph?style=flat-square&color=4ade80&labelColor=1f2937" alt="GitHub stars"></a>
+    <a href="https://github.com/TheLunatic1/Glyph/network/members"><img src="https://img.shields.io/github/forks/TheLunatic1/Glyph?style=flat-square&color=4ade80&labelColor=1f2937" alt="GitHub forks"></a>
+    <a href="https://github.com/TheLunatic1/Glyph/releases/latest"><img src="https://img.shields.io/github/v/release/TheLunatic1/Glyph?style=flat-square&color=4ade80&labelColor=1f2937" alt="GitHub release"></a>
+    <a href="https://github.com/TheLunatic1/Glyph/blob/main/LICENSE"><img src="https://img.shields.io/github/license/TheLunatic1/Glyph?style=flat-square&color=4ade80&labelColor=1f2937" alt="GitHub license"></a>
+  </p>
 </div>
 
 <br />
