@@ -15,6 +15,8 @@ export default function SFTP() {
   const [fileError, setFileError] = useState(null);
 
   // New state for Phase 2 features
+  const [selectedFiles, setSelectedFiles] = useState(new Set());
+  const [lastSelectedIdx, setLastSelectedIdx] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [clipboard, setClipboard] = useState(null);
   const [showRenameModal, setShowRenameModal] = useState(null);
@@ -23,12 +25,25 @@ export default function SFTP() {
   const [newName, setNewName] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [dragCounter, setDragCounter] = useState(0);
+  const [transferProgress, setTransferProgress] = useState(null);
 
   // Close context menu on click outside
   useEffect(() => {
     const handleClick = () => setContextMenu(null);
     window.addEventListener('click', handleClick);
     return () => window.removeEventListener('click', handleClick);
+  }, []);
+
+  useEffect(() => {
+    if (window.api.onSftpProgress) {
+      const remove = window.api.onSftpProgress((data) => {
+        setTransferProgress(data);
+        if (data.transferred >= data.total) {
+          setTimeout(() => setTransferProgress(null), 1000);
+        }
+      });
+      return remove;
+    }
   }, []);
 
   const loadDirectory = useCallback(async (path) => {
@@ -44,6 +59,8 @@ export default function SFTP() {
       setFiles(list);
       setCurrentPath(path);
       setHasLoaded(true);
+      setSelectedFiles(new Set());
+      setLastSelectedIdx(null);
     } catch (err) {
       setError('SFTP is still initializing. Please wait a moment and try again.');
       console.warn('SFTP readdir error:', err);
@@ -57,6 +74,34 @@ export default function SFTP() {
     const parts = currentPath.split('/').filter(Boolean);
     parts.pop();
     loadDirectory('/' + parts.join('/') || '/');
+  };
+
+  const handleRowClick = (e, file, idx) => {
+    e.stopPropagation();
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    const isMultiSelect = isMac ? e.metaKey : e.ctrlKey;
+    
+    if (e.shiftKey && lastSelectedIdx !== null) {
+      const start = Math.min(lastSelectedIdx, idx);
+      const end = Math.max(lastSelectedIdx, idx);
+      const newSelection = new Set(selectedFiles);
+      for (let i = start; i <= end; i++) {
+        newSelection.add(files[i].filename);
+      }
+      setSelectedFiles(newSelection);
+    } else if (isMultiSelect) {
+      const newSelection = new Set(selectedFiles);
+      if (newSelection.has(file.filename)) {
+        newSelection.delete(file.filename);
+      } else {
+        newSelection.add(file.filename);
+      }
+      setSelectedFiles(newSelection);
+      setLastSelectedIdx(idx);
+    } else {
+      setSelectedFiles(new Set([file.filename]));
+      setLastSelectedIdx(idx);
+    }
   };
 
   const handleNavigate = (file) => {
@@ -135,6 +180,8 @@ export default function SFTP() {
   const handleDragEnter = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (e.dataTransfer.types.includes('glyph-internal-drag')) return;
+    
     setDragCounter((prev) => {
       if (prev === 0) {
         setIsDragging(true);
@@ -146,6 +193,7 @@ export default function SFTP() {
   const handleDragLeave = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (e.dataTransfer.types.includes('glyph-internal-drag')) return;
     
     // If the drag leaves the browser window entirely, reset completely.
     if (!e.relatedTarget) {
@@ -166,6 +214,7 @@ export default function SFTP() {
   const handleDragOver = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (e.dataTransfer.types.includes('glyph-internal-drag')) return;
   };
 
   const handleDrop = async (e) => {
@@ -173,6 +222,8 @@ export default function SFTP() {
     e.stopPropagation();
     setIsDragging(false);
     setDragCounter(0);
+
+    if (e.dataTransfer.getData('glyph-internal-drag')) return;
 
     const droppedFiles = e.dataTransfer.files;
     if (!droppedFiles || droppedFiles.length === 0) return;
@@ -195,32 +246,57 @@ export default function SFTP() {
   const handleContextMenu = (e, file) => {
     e.preventDefault();
     e.stopPropagation();
+    
+    // If we right-click a file that isn't selected, select ONLY that file
+    if (!selectedFiles.has(file.filename)) {
+      setSelectedFiles(new Set([file.filename]));
+      setLastSelectedIdx(files.findIndex(f => f.filename === file.filename));
+    }
+    
     setContextMenu({
       x: e.clientX,
       y: e.clientY,
-      file,
+      file, // we keep the primary file for reference
+    });
+  };
+
+  const handleEmptyContextMenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      file: null, // null means empty space
     });
   };
 
   const handleCopy = () => {
-    setClipboard({ action: 'copy', file: contextMenu.file, sourcePath: currentPath });
+    setClipboard({ action: 'copy', files: Array.from(selectedFiles), sourcePath: currentPath });
     setContextMenu(null);
   };
 
   const handleCut = () => {
-    setClipboard({ action: 'cut', file: contextMenu.file, sourcePath: currentPath });
+    setClipboard({ action: 'cut', files: Array.from(selectedFiles), sourcePath: currentPath });
     setContextMenu(null);
   };
 
   const handlePaste = async () => {
-    if (!clipboard) return;
+    if (!clipboard || !clipboard.files || clipboard.files.length === 0) return;
     setLoading(true);
     try {
-      const source = clipboard.sourcePath === '/' ? `/${clipboard.file.filename}` : `${clipboard.sourcePath}/${clipboard.file.filename}`;
-      const dest = currentPath === '/' ? `/${clipboard.file.filename}` : `${currentPath}/${clipboard.file.filename}`;
-      
-      const cmd = clipboard.action === 'copy' ? `cp -r "${source}" "${dest}"` : `mv "${source}" "${dest}"`;
-      await window.api.sshExec(cmd);
+      let cmds = [];
+      for (const filename of clipboard.files) {
+        const source = clipboard.sourcePath === '/' ? `/${filename}` : `${clipboard.sourcePath}/${filename}`;
+        const dest = currentPath === '/' ? `/${filename}` : `${currentPath}/${filename}`;
+        if (clipboard.action === 'copy') {
+          cmds.push(`cp -r "${source}" "${dest}"`);
+        } else {
+          cmds.push(`mv "${source}" "${dest}"`);
+        }
+      }
+      // Execute all commands
+      await window.api.sshExec(cmds.join(' && '));
       
       if (clipboard.action === 'cut') {
         setClipboard(null);
@@ -237,9 +313,14 @@ export default function SFTP() {
     if (!showDeleteModal) return;
     setLoading(true);
     try {
-      const target = currentPath === '/' ? `/${showDeleteModal.filename}` : `${currentPath}/${showDeleteModal.filename}`;
-      await window.api.sshExec(`rm -rf "${target}"`);
+      let cmds = [];
+      for (const filename of selectedFiles) {
+        const target = currentPath === '/' ? `/${filename}` : `${currentPath}/${filename}`;
+        cmds.push(`rm -rf "${target}"`);
+      }
+      await window.api.sshExec(cmds.join(' && '));
       setShowDeleteModal(null);
+      setSelectedFiles(new Set());
       loadDirectory(currentPath);
     } catch (err) {
       setFileError('Delete failed: ' + err.message);
@@ -323,7 +404,7 @@ export default function SFTP() {
   }
 
   return (
-    <div className="p-8 h-full flex flex-col">
+    <div className="p-8 h-full flex flex-col relative">
       <header className="mb-6">
         <h2 className="text-3xl font-bold text-gray-100">File Explorer</h2>
         <div className="flex items-center gap-2 mt-4">
@@ -351,10 +432,21 @@ export default function SFTP() {
                 </React.Fragment>
               );
             })}
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(currentPath);
+                // Optional: show a quick success toast here
+              }}
+              className="ml-auto px-2 py-1 flex items-center gap-1.5 rounded bg-brand-500/20 text-brand-400 hover:bg-brand-500 hover:text-white transition-colors"
+              title="Copy current path"
+            >
+              <Copy size={14} />
+              <span className="text-xs font-semibold uppercase tracking-wider">Copy</span>
+            </button>
           </div>
           <div className="flex items-center gap-1.5 shrink-0 pl-2">
-            {clipboard && (
-              <button onClick={handlePaste} disabled={loading} className="p-2 bg-brand-500/20 text-brand-400 hover:bg-brand-500 hover:text-white rounded-lg transition-colors shadow-lg flex items-center gap-2 px-3" title={`Paste ${clipboard.file.filename}`}>
+            {clipboard && clipboard.files && clipboard.files.length > 0 && (
+              <button onClick={handlePaste} disabled={loading} className="p-2 bg-brand-500/20 text-brand-400 hover:bg-brand-500 hover:text-white rounded-lg transition-colors shadow-lg flex items-center gap-2 px-3" title={`Paste ${clipboard.files.length} items`}>
                 <ClipboardPaste size={18} />
                 <span className="text-xs font-semibold uppercase tracking-wider">{clipboard.action}</span>
               </button>
@@ -374,79 +466,173 @@ export default function SFTP() {
           </div>
         </div>
       </header>
-
       <div 
-        className="flex-1 glass-panel overflow-hidden flex flex-col relative"
+        className="flex-1 glass-panel overflow-hidden flex flex-col relative focus:outline-none"
+        tabIndex={0}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
+        onContextMenu={handleEmptyContextMenu}
+        onKeyDown={(e) => {
+          if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+          const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+          const cmdKey = isMac ? e.metaKey : e.ctrlKey;
+          
+          if (cmdKey && e.key.toLowerCase() === 'c') {
+            if (selectedFiles.size > 0) handleCopy();
+          } else if (cmdKey && e.key.toLowerCase() === 'x') {
+            if (selectedFiles.size > 0) handleCut();
+          } else if (e.key === 'Delete') {
+            if (selectedFiles.size > 0) {
+              // We simulate the delete modal for the first selected file, but the delete logic handles all selectedFiles
+              const firstSelected = files.find(f => selectedFiles.has(f.filename));
+              if (firstSelected) setShowDeleteModal(firstSelected);
+            }
+          }
+        }}
+        onPaste={async (e) => {
+          if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+          
+          const pastedFiles = e.clipboardData?.files;
+          if (pastedFiles && pastedFiles.length > 0) {
+            e.preventDefault();
+            e.stopPropagation();
+            const localPaths = Array.from(pastedFiles).map(f => f.path).filter(Boolean);
+            if (localPaths.length > 0) {
+              setLoading(true);
+              try {
+                await window.api.sshSftpUploadDropped(localPaths, currentPath);
+                loadDirectory(currentPath);
+              } catch (err) {
+                console.error('Paste upload failed:', err);
+                setFileError('Upload failed: ' + err.message);
+              } finally {
+                setLoading(false);
+              }
+            }
+          } else {
+            // Internal paste
+            handlePaste();
+          }
+        }}
       >
         {isDragging && (
           <div className="absolute inset-0 bg-brand-500/20 backdrop-blur-sm z-40 border-2 border-brand-500 border-dashed rounded-xl flex items-center justify-center pointer-events-none">
             <div className="bg-dark-800/90 p-6 rounded-2xl flex flex-col items-center gap-4 shadow-2xl pointer-events-none">
               <Upload size={48} className="text-brand-400 animate-bounce" />
-              <h3 className="text-2xl font-bold text-gray-100">Drop files to upload</h3>
-              <p className="text-gray-400">Uploading to {currentPath}</p>
+              <div className="text-center">
+                <h3 className="text-2xl font-bold text-white mb-1">Drop files to upload</h3>
+                <p className="text-gray-400 font-mono text-sm">Uploading to {currentPath}</p>
+              </div>
             </div>
           </div>
         )}
-        {error && (
-          <div className="m-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
-            {error}
-          </div>
-        )}
-        {/* Fix #7: styled error for file open failures */}
-        {fileError && (
-          <div className="m-4 p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg text-orange-400 text-sm flex items-center justify-between">
-            <span>{fileError}</span>
-            <button onClick={() => setFileError(null)} className="ml-4 text-orange-300 hover:text-white shrink-0">×</button>
-          </div>
-        )}
+
+        {/* List Header */}
+        <div className="grid grid-cols-[auto_1fr_auto_auto] gap-3 px-6 py-3 border-b border-dark-700 text-xs font-semibold text-gray-500 tracking-wider uppercase bg-dark-800/50">
+          <div className="w-5"></div>
+          <div>Name</div>
+          <div className="w-8"></div>
+          <div className="w-24 text-right">Size</div>
+        </div>
+
+        {/* File List */}
         {loading ? (
-          <div className="flex-1 flex items-center justify-center text-gray-400 gap-2">
-            <RefreshCw size={20} className="animate-spin" /> Loading...
+          <div className="flex-1 flex items-center justify-center">
+            <RefreshCw className="animate-spin text-dark-600" size={32} />
           </div>
         ) : (
-          <div className="overflow-y-auto p-4 flex flex-col gap-0.5">
-            {/* Column headers */}
-            <div className="flex items-center gap-3 px-3 pb-2 border-b border-dark-700 text-xs text-gray-500 uppercase tracking-wider">
-              <span className="flex-1">Name</span>
-              <span className="w-20 text-right">Size</span>
-            </div>
-            {files.map((file, idx) => (
-              <div
-                key={idx}
-                onClick={() => handleNavigate(file)}
-                onContextMenu={(e) => handleContextMenu(e, file)}
-                className="flex items-center gap-3 p-3 rounded-lg transition-colors cursor-pointer hover:bg-dark-700/70 group"
-              >
-                {file.isDirectory
-                  ? <Folder className="text-brand-400 shrink-0" size={20} />
-                  : <File className="text-gray-500 shrink-0" size={20} />
-                }
-                <span className={`flex-1 truncate ${file.isDirectory ? 'text-gray-100 font-medium' : 'text-gray-300'}`}>
-                  {file.filename}
-                </span>
+          <div 
+            className="flex-1 overflow-y-auto custom-scrollbar p-2"
+            onClick={() => {
+              setSelectedFiles(new Set());
+              setLastSelectedIdx(null);
+            }}
+          >
+            {files.map((file, idx) => {
+              const isSelected = selectedFiles.has(file.filename);
+              return (
+                <div 
+                  key={file.filename}
+                  draggable
+                  onClick={(e) => handleRowClick(e, file, idx)}
+                  onDoubleClick={() => handleNavigate(file)}
+                  onContextMenu={(e) => handleContextMenu(e, file)}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('glyph-internal-drag', 'true');
+                    // If dragging an unselected item, drag only that item
+                    if (!isSelected) {
+                      setSelectedFiles(new Set([file.filename]));
+                      setLastSelectedIdx(idx);
+                    }
+                  }}
+                  onDragEnd={() => {
+                    setIsDragging(false);
+                    setDragCounter(0);
+                  }}
+                  onDragOver={(e) => {
+                    if (file.isDirectory) e.preventDefault();
+                  }}
+                  onDrop={async (e) => {
+                    if (!file.isDirectory) return;
+                    if (!e.dataTransfer.getData('glyph-internal-drag')) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    const sourceFiles = Array.from(selectedFiles);
+                    const destFolder = file.filename;
+                    
+                    // Don't move into itself
+                    if (sourceFiles.includes(destFolder)) return;
 
-                {/* Download Button */}
-                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  {!file.isDirectory && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleDownload(file); }}
-                      className="p-1.5 text-gray-400 hover:text-white bg-dark-700 hover:bg-brand-500 rounded transition-colors shadow-lg"
-                      title="Download File"
-                    >
-                      <Download size={16} />
-                    </button>
-                  )}
+                    setLoading(true);
+                    try {
+                      for (const f of sourceFiles) {
+                        const source = currentPath === '/' ? `/${f}` : `${currentPath}/${f}`;
+                        const dest = currentPath === '/' ? `/${destFolder}/${f}` : `${currentPath}/${destFolder}/${f}`;
+                        await window.api.sshSftpMv(source, dest);
+                      }
+                      setSelectedFiles(new Set());
+                      loadDirectory(currentPath);
+                    } catch (err) {
+                      console.error('Move failed:', err);
+                      alert('Move failed: ' + err.message);
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  className={`flex items-center gap-3 p-3 rounded-lg transition-colors cursor-pointer group ${
+                    isSelected ? 'bg-brand-500/20 border border-brand-500/30' : 'hover:bg-dark-700/70 border border-transparent'
+                  }`}
+                >
+                  {file.isDirectory
+                    ? <Folder className="text-brand-400 shrink-0" size={20} />
+                    : <File className="text-gray-500 shrink-0" size={20} />
+                  }
+                  <span className={`flex-1 truncate ${file.isDirectory ? 'text-gray-100 font-medium' : 'text-gray-300'}`}>
+                    {file.filename}
+                  </span>
+
+                  {/* Download Button */}
+                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {!file.isDirectory && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleDownload(file); }}
+                        className="p-1.5 text-gray-400 hover:text-white bg-dark-700 hover:bg-brand-500 rounded transition-colors shadow-lg"
+                        title="Download File"
+                      >
+                        <Download size={16} />
+                      </button>
+                    )}
+                  </div>
+
+                  <span className="text-gray-500 text-sm font-mono w-24 text-right shrink-0">
+                    {file.isDirectory ? '—' : formatSize(file.size)}
+                  </span>
                 </div>
-
-                <span className="text-gray-500 text-sm font-mono w-24 text-right shrink-0">
-                  {file.isDirectory ? '—' : formatSize(file.size)}
-                </span>
-              </div>
-            ))}
+              );
+            })}
             {files.length === 0 && (
               <div className="text-center text-gray-500 mt-10">Directory is empty</div>
             )}
@@ -460,6 +646,26 @@ export default function SFTP() {
           <div className="text-brand-400 flex flex-col items-center gap-4">
             <RefreshCw className="animate-spin" size={32} />
             <span className="font-medium text-lg">Fetching remote file...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Transfer Progress Overlay */}
+      {transferProgress && (
+        <div className="absolute bottom-6 right-6 bg-dark-800/95 backdrop-blur shadow-2xl border border-dark-700 rounded-xl p-4 w-80 z-50 animation-slide-up flex flex-col gap-3">
+          <div className="flex items-center gap-3 text-gray-100">
+            {transferProgress.type === 'upload' ? <Upload size={20} className="text-brand-400" /> : <Download size={20} className="text-brand-400" />}
+            <span className="font-medium truncate flex-1">{transferProgress.type === 'upload' ? 'Uploading' : 'Downloading'} {transferProgress.filename}</span>
+          </div>
+          <div className="h-2 w-full bg-dark-900 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-brand-500 transition-all duration-200" 
+              style={{ width: `${Math.max(2, (transferProgress.transferred / transferProgress.total) * 100)}%` }} 
+            />
+          </div>
+          <div className="flex items-center justify-between text-xs font-mono text-gray-400">
+            <span>{formatSize(transferProgress.transferred)}</span>
+            <span>{formatSize(transferProgress.total)}</span>
           </div>
         </div>
       )}
@@ -522,27 +728,49 @@ export default function SFTP() {
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="px-3 py-1.5 border-b border-dark-700 mb-1 text-gray-400 font-medium truncate">
-            {contextMenu.file.filename}
-          </div>
-          <button onClick={handleCopy} className="w-full text-left px-4 py-2 hover:bg-dark-700 hover:text-white flex items-center gap-2 transition-colors">
-            <Copy size={16} /> Copy
-          </button>
-          <button onClick={handleCut} className="w-full text-left px-4 py-2 hover:bg-dark-700 hover:text-white flex items-center gap-2 transition-colors">
-            <Scissors size={16} /> Cut
-          </button>
-          <button onClick={() => { setShowRenameModal(contextMenu.file); setNewName(contextMenu.file.filename); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-dark-700 hover:text-white flex items-center gap-2 transition-colors">
-            <Edit3 size={16} /> Rename
-          </button>
-          {!contextMenu.file.isDirectory && (
-            <button onClick={() => { handleDownload(contextMenu.file); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-dark-700 hover:text-white flex items-center gap-2 transition-colors">
-              <Download size={16} /> Download
-            </button>
+          {contextMenu.file ? (
+            <>
+              <div className="px-3 py-1.5 border-b border-dark-700 mb-1 text-gray-400 font-medium truncate">
+                {contextMenu.file.filename}
+              </div>
+              <button onClick={handleCopy} className="w-full text-left px-4 py-2 hover:bg-dark-700 hover:text-white flex items-center gap-2 transition-colors">
+                <Copy size={16} /> Copy
+              </button>
+              <button onClick={handleCut} className="w-full text-left px-4 py-2 hover:bg-dark-700 hover:text-white flex items-center gap-2 transition-colors">
+                <Scissors size={16} /> Cut
+              </button>
+              <button onClick={() => { setShowRenameModal(contextMenu.file); setNewName(contextMenu.file.filename); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-dark-700 hover:text-white flex items-center gap-2 transition-colors">
+                <Edit3 size={16} /> Rename
+              </button>
+              {!contextMenu.file.isDirectory && (
+                <button onClick={() => { handleDownload(contextMenu.file); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-dark-700 hover:text-white flex items-center gap-2 transition-colors">
+                  <Download size={16} /> Download
+                </button>
+              )}
+              <div className="border-t border-dark-700 my-1"></div>
+              <button onClick={() => { setShowDeleteModal(contextMenu.file); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-red-500/20 text-red-400 hover:text-red-300 flex items-center gap-2 transition-colors">
+                <Trash2 size={16} /> Delete
+              </button>
+            </>
+          ) : (
+            <>
+              {clipboard && clipboard.files && clipboard.files.length > 0 && (
+                <button onClick={() => { handlePaste(); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-dark-700 hover:text-brand-400 flex items-center gap-2 transition-colors">
+                  <ClipboardPaste size={16} /> Paste
+                </button>
+              )}
+              <button onClick={() => { setShowCreateModal({ type: 'folder' }); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-dark-700 hover:text-white flex items-center gap-2 transition-colors">
+                <FolderPlus size={16} /> New Folder
+              </button>
+              <button onClick={() => { setShowCreateModal({ type: 'file' }); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-dark-700 hover:text-white flex items-center gap-2 transition-colors">
+                <FilePlus size={16} /> New File
+              </button>
+              <div className="border-t border-dark-700 my-1"></div>
+              <button onClick={() => { loadDirectory(currentPath); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-dark-700 hover:text-white flex items-center gap-2 transition-colors">
+                <RefreshCw size={16} /> Refresh
+              </button>
+            </>
           )}
-          <div className="border-t border-dark-700 my-1"></div>
-          <button onClick={() => { setShowDeleteModal(contextMenu.file); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-red-500/20 text-red-400 hover:text-red-300 flex items-center gap-2 transition-colors">
-            <Trash2 size={16} /> Delete
-          </button>
         </div>
       )}
 

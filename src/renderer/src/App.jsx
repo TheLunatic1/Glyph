@@ -24,6 +24,8 @@ const LiveTimer = ({ error }) => {
 };
 
 export default function App() {
+  const [initialRoute, setInitialRoute] = useState(null);
+  const [isRouting, setIsRouting] = useState(true);
   const [connected, setConnected] = useState(false);
   const [connectedServer, setConnectedServer] = useState(null);
   const [servers, setServers] = useState([]);
@@ -60,10 +62,29 @@ export default function App() {
     if (logsEndRef.current) logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [connectLogs, connectError]);
 
+  const isRoutingRef = React.useRef(true);
+  const initialRouteRef = React.useRef(null);
+
   useEffect(() => {
+    let mounted = true;
+    window.api.getInitialRoute().then(route => {
+      if (!mounted) return;
+      setInitialRoute(route);
+      initialRouteRef.current = route;
+      
+      if (route.type === 'server' && route.serverId && isRoutingRef.current) {
+        handleConnect(route.serverId, route);
+        isRoutingRef.current = false;
+        setIsRouting(false);
+      } else {
+        isRoutingRef.current = false;
+        setIsRouting(false);
+      }
+    });
+
     loadServers();
-    window.api.getZtNodeId().then(id => { if (id) setZtNodeId(id); });
-    window.api.getAppVersion().then(v => { if (v) setAppVersion(v); });
+    window.api.getZtNodeId().then(id => { if (id && mounted) setZtNodeId(id); });
+    window.api.getAppVersion().then(v => { if (v && mounted) setAppVersion(v); });
 
     // ── Auto-updater listeners (electron-updater via IPC) ────────────────────
     const removeAvailable = window.api.onUpdaterAvailable((info) => {
@@ -99,12 +120,17 @@ export default function App() {
 
     // Fix #1: Listen for unexpected server-side disconnects
     const removeDisconnect = window.api.onSshDisconnected((reason) => {
-      setConnected(false);
-      setConnectedServer(null);
-      setDisconnectReason(reason || 'Connection was lost.');
+      if (initialRouteRef.current?.type === 'server') {
+        window.api.closeWindow();
+      } else {
+        setConnected(false);
+        setConnectedServer(null);
+        setDisconnectReason(reason || 'Connection was lost.');
+      }
     });
 
     return () => {
+      mounted = false;
       removeAvailable();
       removeProgress();
       removeDownloaded();
@@ -162,8 +188,14 @@ export default function App() {
     }
   };
 
-  const handleConnect = async (id) => {
-    if (connectingId !== null) return;
+  const handleConnect = async (id, routeArg = null) => {
+    const route = routeArg || initialRoute;
+    if (route?.type === 'manager') {
+      window.api.openServerWindow(id);
+      return;
+    }
+    
+    if (connectingIdRef.current !== null) return;
     setConnectingId(id);
     connectingIdRef.current = id;
     setConnectLogs(['Starting connection sequence...']);
@@ -179,12 +211,13 @@ export default function App() {
       }
 
       setConnectLogs(prev => [...prev, 'Authentication successful, initializing session...']);
-      const server = servers.find(s => s.id === id);
+      const server = servers.find(s => s.id === id) || (await window.api.getServers()).find(s => s.id === id);
       setConnectedServer(server);
       setConnected(true);
       setActiveTab('dashboard');
       setConnectingId(null);
       connectingIdRef.current = null;
+      setIsRouting(false);
     } catch (err) {
       if (connectingIdRef.current !== id) return; // User cancelled
       let msg = 'Unknown error';
@@ -198,6 +231,7 @@ export default function App() {
       setConnectError(msg);
     } finally {
       loadServers();
+      setIsRouting(false);
     }
   };
 
@@ -206,6 +240,9 @@ export default function App() {
     setConnectingId(null);
     setConnectError(null); 
     window.api.sshDisconnect();
+    if (initialRoute?.type === 'server') {
+       window.close(); // Close the window if connection cancelled in instance mode
+    }
   };
 
   const handlePasswordSubmit = async (e) => {
@@ -234,6 +271,15 @@ export default function App() {
       setPasswordError(err.message || 'Operation failed');
     }
   };
+
+  if (isRouting) {
+    return (
+      <div className="flex flex-col h-screen w-full bg-dark-900 items-center justify-center relative overflow-hidden">
+        <div className="w-12 h-12 rounded-full border-2 border-brand-500 border-t-transparent animate-spin mb-4"></div>
+        <p className="text-gray-400">Loading server...</p>
+      </div>
+    );
+  }
 
   if (!connected) {
     const activeConnectingServer = servers.find(s => s.id === connectingId);
@@ -657,9 +703,13 @@ export default function App() {
           onTabChange={setActiveTab}
           onDisconnect={async () => {
             await window.api.sshDisconnect();
-            setConnected(false);
-            setConnectedServer(null);
-            loadServers();
+            if (initialRouteRef.current?.type === 'server') {
+              window.api.closeWindow();
+            } else {
+              setConnected(false);
+              setConnectedServer(null);
+              loadServers();
+            }
           }}
         />
         <main className="flex-1 flex flex-col h-full overflow-hidden">
@@ -677,7 +727,7 @@ export default function App() {
           <Commands server={connectedServer} />
         </div>
         <div style={{ display: activeTab === 'secrets' ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
-          <Secrets />
+          <Secrets server={connectedServer} />
         </div>
         <div style={{ display: activeTab === 'tunnels' ? 'flex' : 'none', flexDirection: 'column', flex: 1, height: '100%', overflow: 'hidden' }}>
           <Tunnels />

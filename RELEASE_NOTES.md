@@ -1,19 +1,31 @@
-## v2.3.0 — The SFTP & Security Update
+## v2.4.0 — The Ultimate Native & Docker Update
 
-This major update transforms the SFTP tab into a fully featured File Explorer and introduces custom encryption for your exported server configurations!
+This massive update brings native-level features to your File Explorer, introduces full Docker & Secrets management, and supports running multiple Glyph instances simultaneously!
 
 ### New Features
 
-- **SFTP File Explorer Enhancements:**
-  - **Drag & Drop Upload:** You can now instantly drag and drop files from your desktop straight into the SFTP window to upload them.
-  - **Right-Click Context Menu:** Right-click any remote file or folder to access Copy, Cut, Rename, Delete, and Download options.
-  - **Instant Remote Copy & Paste:** Copy or move files instantly using native server commands without needing to download and re-upload.
-  - **Create Files & Folders:** New buttons in the header let you easily scaffold out folder structures directly on the server.
-  - **Breadcrumb Navigation:** The top navigation bar now splits paths into clickable chunks for easy back-navigation.
-- **Custom Encryption for Exports:** Server config backups are now securely encrypted with a custom algorithm and exported with the `.glyph` file extension.
-- **Password Visibility:** Added a toggle (eye icon) to let you view your password while logging in.
+- **SFTP Native Overhaul:**
+  - **Multi-Select System:** Select multiple files using `Shift+Click` (range) or `Ctrl/Cmd+Click` (individual).
+  - **Internal Drag & Drop:** Easily move files and folders around within your remote server simply by dragging them.
+  - **Local to Remote Drop:** Recursive folder dropping allows you to drag entire nested folders from your local machine directly into the SFTP explorer.
+  - **Keyboard Shortcuts:** Full support for `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, and `Delete` right inside the file explorer for a true native OS feel.
+  - **Transfer Progress Bars:** Beautiful sliding progress overlays for active uploads and downloads so you always know their status.
+  - **Smart Context Menus:** Right-click on files or directly in empty space to create new items, paste, or refresh.
+  - **Copy Path:** A new quick-access "Copy Path" button right in the breadcrumbs.
+  - **Constrained Editor:** Built-in code editor now perfectly overlays only the file view so your sidebar remains usable.
+
+- **Docker & Secrets Management:**
+  - **Containers Dashboard:** View and manage your active Docker containers natively inside Glyph.
+  - **Secrets Vault:** A dedicated encrypted vault for managing sensitive tokens, API keys, and environment variables on your servers.
+
+- **Multi-Instance Support:** 
+  - **Run Multiple Glyphs:** Need to manage multiple servers at the exact same time? You can now open multiple standalone instances of Glyph in separate windows!
+
+- **Terminal Enhancements:**
+  - **Multi-Terminal Setups:** Extended terminal management capabilities for running multiple concurrent terminal sessions smoothly.
 
 ### Bug Fixes & Improvements
 
-- **Delete Server Modal:** Replaced the generic browser `window.confirm` popup with a beautiful custom modal for confirming server deletion.
-- **Addes Edit server credentials feature:** Added the ability to edit server credentials and updated the server list table.
+- Greatly optimized background file fetching and memory usage during SFTP transfers.
+- Fixed a layout issue where the internal editor would sometimes stretch across the entire application window.
+- Overall stability and speed improvements across the SSH connection pool.

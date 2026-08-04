@@ -4,7 +4,8 @@ import * as net from 'net';
 export default class SSHManager {
   constructor() {
     this.client = null;
-    this.shellStream = null;
+    this.shellStream = null;      // kept for legacy compat
+    this.shellStreams = new Map(); // tabId → stream
     this.sftp = null;
     this.isConnected = false;
     this.mainWindow = null;
@@ -18,6 +19,11 @@ export default class SSHManager {
       clearInterval(this.statInterval);
       this.statInterval = null;
     }
+    // Close all shell streams
+    for (const [, stream] of this.shellStreams) {
+      try { stream.end(); } catch (_) {}
+    }
+    this.shellStreams.clear();
     if (this.shellStream) {
       try { this.shellStream.end(); } catch (_) {}
       this.shellStream = null;
@@ -46,11 +52,16 @@ export default class SSHManager {
 
     // Always start fresh — fixes re-use-after-end and listener accumulation
     this._resetState();
-    this.client = new Client();
+    const client = new Client();
+    this.client = client;
 
     return new Promise((resolve, reject) => {
-      this.client
+      client
         .on('ready', async () => {
+          if (this.client !== client) {
+             client.destroy();
+             return; // A new connection superseded this one
+          }
           this.isConnected = true;
           this.initShell();
           this.initSFTP();
@@ -85,7 +96,7 @@ export default class SSHManager {
           resolve({ success: false, error: err.message });
         })
         .on('end', () => {
-          if (this.isConnected) {
+          if (this.client === client && this.isConnected) {
             // Unexpected server-side close — notify the renderer
             this.isConnected = false;
             if (this.mainWindow && !this.mainWindow.isDestroyed()) {
@@ -95,7 +106,7 @@ export default class SSHManager {
           }
         })
         .on('close', () => {
-          if (this.isConnected) {
+          if (this.client === client && this.isConnected) {
             // Unexpected close (e.g. network dropout) — notify the renderer
             this.isConnected = false;
             if (this.mainWindow && !this.mainWindow.isDestroyed()) {
@@ -108,7 +119,7 @@ export default class SSHManager {
       // Kick off connection (ZeroTier path needs async setup)
       this._buildConnectOpts(config)
         .then((connectOpts) => {
-          this.client.connect(connectOpts);
+          client.connect(connectOpts);
         })
         .catch((err) => {
           resolve({ success: false, error: err.message || String(err) });
@@ -207,7 +218,74 @@ export default class SSHManager {
     return { success: true };
   }
 
-  // ── Shell ──────────────────────────────────────────────────────────────────
+  // ── Shell (multi-tab) ──────────────────────────────────────────────────────
+  openShell(tabId) {
+    if (!this.client || !this.isConnected) return Promise.reject(new Error('Not connected'));
+    
+    if (!this._pendingShells) this._pendingShells = new Map();
+    if (!this._cancelledShells) this._cancelledShells = new Set();
+    
+    // If a shell is already opening for this tab, just return that same promise
+    if (this._pendingShells.has(tabId)) {
+      this._cancelledShells.delete(tabId);
+      return this._pendingShells.get(tabId);
+    }
+
+    // Close existing stream for this tabId if any
+    if (this.shellStreams.has(tabId)) {
+      try { this.shellStreams.get(tabId).end(); } catch (_) {}
+      this.shellStreams.delete(tabId);
+    }
+    this._cancelledShells.delete(tabId);
+
+    const promise = new Promise((resolve, reject) => {
+      this.client.shell({ term: 'xterm-256color' }, (err, stream) => {
+        this._pendingShells.delete(tabId);
+        
+        if (err) { reject(err); return; }
+        
+        // If closeShell was called while we were waiting for the server, kill it immediately
+        if (this._cancelledShells.has(tabId)) {
+          this._cancelledShells.delete(tabId);
+          try { stream.end(); } catch (_) {}
+          resolve(false);
+          return;
+        }
+
+        this.shellStreams.set(tabId, stream);
+        stream
+          .on('close', () => {
+            this.shellStreams.delete(tabId);
+            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+              this.mainWindow.webContents.send('ssh-shell-closed', tabId);
+            }
+          })
+          .on('data', (data) => {
+            if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+              this.mainWindow.webContents.send('ssh-shell-output-tab', tabId, data.toString('utf8'));
+            }
+          });
+        resolve(true);
+      });
+    });
+    
+    this._pendingShells.set(tabId, promise);
+    return promise;
+  }
+
+  closeShell(tabId) {
+    if (this._pendingShells && this._pendingShells.has(tabId)) {
+      if (!this._cancelledShells) this._cancelledShells = new Set();
+      this._cancelledShells.add(tabId);
+    }
+    const stream = this.shellStreams.get(tabId);
+    if (stream) {
+      try { stream.end(); } catch (_) {}
+      this.shellStreams.delete(tabId);
+    }
+  }
+
+  // ── Shell (legacy single-tab, kept for backward compat) ───────────────────
   initShell() {
     if (!this.client || !this.isConnected) return;
     this.client.shell({ term: 'xterm-256color' }, (err, stream) => {
@@ -232,21 +310,27 @@ export default class SSHManager {
     });
   }
 
-  writeShell(data) {
-    if (this.shellStream) this.shellStream.write(data);
+  writeShell(tabId, data) {
+    const stream = this.shellStreams.get(tabId);
+    if (stream) stream.write(data);
+    // legacy fallback
+    else if (this.shellStream) this.shellStream.write(data);
   }
 
-  resizeShell(cols, rows) {
-    if (this.shellStream) this.shellStream.setWindow(rows, cols, 0, 0);
+  resizeShell(tabId, cols, rows) {
+    const stream = this.shellStreams.get(tabId);
+    if (stream) stream.setWindow(rows, cols, 0, 0);
+    else if (this.shellStream) this.shellStream.setWindow(rows, cols, 0, 0);
   }
 
-  // ── Exec ───────────────────────────────────────────────────────────────────
+  // ── Exec (semaphore-limited to avoid hitting MaxSessions) ──────────────────
+  // SSH servers default to MaxSessions=10. We cap concurrent exec channels at 4
+  // to leave room for shell tabs, SFTP, and stat polling.
   async exec(command) {
-    this.execLock = this.execLock || Promise.resolve();
-    
-    // Chain the new command onto the end of the lock queue
-    const nextTask = this.execLock.then(() => {
-      return new Promise((resolve, reject) => {
+    // Wait for a slot in the semaphore
+    await this._acquireExecSlot();
+    try {
+      return await new Promise((resolve, reject) => {
         if (!this.isConnected || !this.client) return reject(new Error('Not connected'));
         this.client.exec(command, (err, stream) => {
           if (err) return reject(err);
@@ -257,15 +341,29 @@ export default class SSHManager {
             .stderr.on('data', (data) => { output += data; });
         });
       });
-    }).catch(err => {
-      // Prevent a failed command from breaking the entire queue
-      throw err;
-    });
+    } finally {
+      this._releaseExecSlot();
+    }
+  }
 
-    // Update the lock to point to this task, but catch errors so the next task can still run
-    this.execLock = nextTask.catch(() => {});
-    
-    return nextTask;
+  _acquireExecSlot() {
+    if (!this._execSlots) this._execSlots = 0;
+    if (!this._execQueue) this._execQueue = [];
+    const MAX_CONCURRENT = 4;
+    if (this._execSlots < MAX_CONCURRENT) {
+      this._execSlots++;
+      return Promise.resolve();
+    }
+    return new Promise(resolve => this._execQueue.push(resolve));
+  }
+
+  _releaseExecSlot() {
+    if (this._execQueue && this._execQueue.length > 0) {
+      const next = this._execQueue.shift();
+      next();
+    } else {
+      this._execSlots = Math.max(0, (this._execSlots || 1) - 1);
+    }
   }
 
   // ── SFTP readdir ───────────────────────────────────────────────────────────
@@ -308,10 +406,14 @@ export default class SSHManager {
   }
 
   // ── SFTP Download File ────────────────────────────────────────────────────
-  async sftpDownloadFile(remotePath, localPath) {
+  async sftpDownloadFile(remotePath, localPath, onProgress) {
     return new Promise((resolve, reject) => {
       if (!this.sftp) return reject(new Error('SFTP not initialized'));
-      this.sftp.fastGet(remotePath, localPath, (err) => {
+      this.sftp.fastGet(remotePath, localPath, {
+        step: (total_transferred, chunk, total) => {
+          if (onProgress) onProgress(total_transferred, total);
+        }
+      }, (err) => {
         if (err) return reject(err);
         resolve(true);
       });
@@ -319,10 +421,14 @@ export default class SSHManager {
   }
 
   // ── SFTP Upload File ──────────────────────────────────────────────────────
-  async sftpUploadFile(localPath, remotePath) {
+  async sftpUploadFile(localPath, remotePath, onProgress) {
     return new Promise((resolve, reject) => {
       if (!this.sftp) return reject(new Error('SFTP not initialized'));
-      this.sftp.fastPut(localPath, remotePath, (err) => {
+      this.sftp.fastPut(localPath, remotePath, {
+        step: (total_transferred, chunk, total) => {
+          if (onProgress) onProgress(total_transferred, total);
+        }
+      }, (err) => {
         if (err) return reject(err);
         resolve(true);
       });

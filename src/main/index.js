@@ -8,13 +8,29 @@ import { initUpdater } from './updater.js'
 import { encryptData, decryptData } from './cryptoUtil.js'
 import fs from 'fs'
 
-let mainWindow;
-const sshManager = new SSHManager();
-const vault = new Vault();
-const secretsVault = new SecretsVault();
+let mainManagerWindow = null;
+const windows = new Map();
+const sshManagers = new Map();
+const windowRoutes = new Map();
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
+const vault = new Vault();
+const secretsVault = new SecretsVault(vault);
+
+function getSSHManager(event) {
+  return sshManagers.get(event.sender.id) || null;
+}
+
+function getWindow(event) {
+  return windows.get(event.sender.id) || null;
+}
+
+function createMainWindow() {
+  if (mainManagerWindow) {
+    mainManagerWindow.focus();
+    return;
+  }
+  
+  mainManagerWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     show: false,
@@ -27,21 +43,68 @@ function createWindow() {
     }
   })
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show();
-    // Initialize auto-updater once window is visible
-    initUpdater(mainWindow);
+  const id = mainManagerWindow.webContents.id;
+  windows.set(id, mainManagerWindow);
+  windowRoutes.set(id, { type: 'manager' });
+  
+  mainManagerWindow.on('ready-to-show', () => {
+    mainManagerWindow.show();
+    initUpdater(mainManagerWindow);
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  mainManagerWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
+  mainManagerWindow.on('closed', () => {
+    mainManagerWindow = null;
+    windows.delete(id);
+    windowRoutes.delete(id);
+  });
+
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    mainManagerWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainManagerWindow.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
+function createServerWindow(serverId) {
+  const win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    show: false,
+    autoHideMenuBar: true,
+    icon: join(__dirname, '../../logo.png'),
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      contextIsolation: true
+    }
+  });
+
+  const id = win.webContents.id;
+  windows.set(id, win);
+  sshManagers.set(id, new SSHManager());
+  windowRoutes.set(id, { type: 'server', serverId });
+
+  win.on('ready-to-show', () => {
+    win.show();
+  });
+
+  win.on('closed', () => {
+    const manager = sshManagers.get(id);
+    if (manager) manager.disconnect();
+    windows.delete(id);
+    sshManagers.delete(id);
+    windowRoutes.delete(id);
+  });
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    win.loadURL(process.env['ELECTRON_RENDERER_URL']);
+  } else {
+    win.loadFile(join(__dirname, '../renderer/index.html'));
   }
 }
 
@@ -52,27 +115,52 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  createWindow()
+  createMainWindow()
 
   app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
   })
 })
 
 app.on('window-all-closed', () => {
-  sshManager.disconnect();
+  for (const manager of sshManagers.values()) {
+    manager.disconnect();
+  }
   app.quit();
 })
 
+ipcMain.handle('get-initial-route', (event) => {
+  return windowRoutes.get(event.sender.id) || { type: 'manager' };
+});
+
+ipcMain.handle('open-server-window', (event, serverId) => {
+  createServerWindow(serverId);
+  return true;
+});
+
+ipcMain.handle('close-window', (event) => {
+  const win = getWindow(event);
+  if (win) {
+    win.close();
+  }
+  return true;
+});
+
 // IPC Handlers for SSH
 ipcMain.handle('ssh-connect', async (event, config) => {
-  return await sshManager.connect(config, mainWindow);
+  const manager = getSSHManager(event);
+  const win = getWindow(event);
+  if (!manager) throw new Error('No SSH Manager for this window');
+  return await manager.connect(config, win);
 });
 
 ipcMain.handle('ssh-connect-saved', async (event, id) => {
+  const manager = getSSHManager(event);
+  const win = getWindow(event);
+  if (!manager) throw new Error('No SSH Manager for this window');
   const config = vault.getServerConfigForConnection(id);
   if (!config) throw new Error('Server not found');
-  const res = await sshManager.connect(config, mainWindow);
+  const res = await manager.connect(config, win);
   if (res.success && res.os) {
     vault.updateServer(id, { os: res.os });
   }
@@ -94,8 +182,8 @@ ipcMain.handle('edit-server', (event, id, config) => {
 
 ipcMain.handle('export-servers', async (event, masterPassword) => {
   if (!masterPassword) throw new Error('Master password is required');
-  
-  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+  const win = getWindow(event) || mainManagerWindow;
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
     title: 'Export Servers',
     defaultPath: 'glyph_servers.glyph',
     filters: [{ name: 'Glyph Export', extensions: ['glyph', 'json'] }]
@@ -118,8 +206,8 @@ ipcMain.handle('export-servers', async (event, masterPassword) => {
 
 ipcMain.handle('import-servers', async (event, masterPassword) => {
   if (!masterPassword) throw new Error('Master password is required');
-
-  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+  const win = getWindow(event) || mainManagerWindow;
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
     title: 'Import Servers',
     properties: ['openFile'],
     filters: [{ name: 'Glyph Export', extensions: ['glyph', 'json'] }]
@@ -147,25 +235,42 @@ ipcMain.handle('delete-server', (event, id) => {
   return true;
 });
 
-ipcMain.handle('ssh-disconnect', async () => {
-  return await sshManager.disconnect();
+ipcMain.handle('ssh-disconnect', async (event) => {
+  const manager = getSSHManager(event);
+  if (manager) return await manager.disconnect();
+  return { success: true };
 });
 
-ipcMain.on('ssh-shell-data', (event, data) => {
-  sshManager.writeShell(data);
+// Multi-tab shell IPC
+ipcMain.handle('ssh-open-shell', async (event, tabId) => {
+  const manager = getSSHManager(event);
+  if (!manager) throw new Error('No SSH Manager for this window');
+  return await manager.openShell(tabId);
 });
 
-ipcMain.on('ssh-shell-resize', (event, cols, rows) => {
-  sshManager.resizeShell(cols, rows);
+ipcMain.handle('ssh-close-shell', (event, tabId) => {
+  const manager = getSSHManager(event);
+  if (manager) manager.closeShell(tabId);
+  return true;
+});
+
+ipcMain.on('ssh-shell-data', (event, tabId, data) => {
+  const manager = getSSHManager(event);
+  if (manager) manager.writeShell(tabId, data);
+});
+
+ipcMain.on('ssh-shell-resize', (event, tabId, cols, rows) => {
+  const manager = getSSHManager(event);
+  if (manager) manager.resizeShell(tabId, cols, rows);
 });
 
 // Secrets Vault IPC Handlers
-ipcMain.handle('get-secrets', () => {
-  return secretsVault.getSecrets();
+ipcMain.handle('get-secrets', (event, serverId) => {
+  return secretsVault.getSecrets(serverId);
 });
 
-ipcMain.handle('add-secret', (event, name, value) => {
-  return secretsVault.addSecret(name, value);
+ipcMain.handle('add-secret', (event, serverId, name, value) => {
+  return secretsVault.addSecret(serverId, name, value);
 });
 
 ipcMain.handle('delete-secret', (event, id) => {
@@ -173,50 +278,142 @@ ipcMain.handle('delete-secret', (event, id) => {
   return true;
 });
 
+// Import / Export Secrets
+ipcMain.handle('export-secrets', async (event, serverId, masterPassword) => {
+  if (!masterPassword) throw new Error('Master password is required');
+  const win = getWindow(event) || mainManagerWindow;
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: 'Export Secrets',
+    defaultPath: 'glyph_secrets.glyph',
+    filters: [{ name: 'Glyph Export', extensions: ['glyph', 'json'] }]
+  });
+
+  if (canceled || !filePath) return false;
+
+  try {
+    const rawData = secretsVault.exportSecretsData(serverId);
+    const dataStr = JSON.stringify(rawData);
+    const encrypted = encryptData(dataStr, masterPassword);
+    
+    fs.writeFileSync(filePath, encrypted);
+    return true;
+  } catch (error) {
+    console.error('Export error:', error);
+    throw new Error('Failed to export secrets: ' + error.message);
+  }
+});
+
+ipcMain.handle('import-secrets', async (event, serverId, masterPassword) => {
+  if (!masterPassword) throw new Error('Master password is required');
+  const win = getWindow(event) || mainManagerWindow;
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: 'Import Secrets',
+    properties: ['openFile'],
+    filters: [{ name: 'Glyph Export', extensions: ['glyph', 'json'] }]
+  });
+
+  if (canceled || filePaths.length === 0) return false;
+
+  try {
+    const filePath = filePaths[0];
+    const encryptedContent = fs.readFileSync(filePath, 'utf8');
+    const decryptedStr = decryptData(encryptedContent, masterPassword);
+    
+    const secretsList = JSON.parse(decryptedStr);
+    const addedCount = secretsVault.importSecretsData(serverId, secretsList);
+    
+    return addedCount;
+  } catch (error) {
+    console.error('Import error:', error);
+    throw new Error('Failed to import secrets. Incorrect password or corrupted file.');
+  }
+});
+
 ipcMain.on('inject-secret', (event, id) => {
+  const manager = getSSHManager(event);
   const decrypted = secretsVault.getDecryptedSecretValue(id);
-  if (decrypted) {
-    sshManager.writeShell(decrypted);
+  if (decrypted && manager) {
+    manager.writeShell(decrypted);
   } else {
     console.error('Failed to inject secret: secret not found or decryption failed.');
   }
 });
 
-// Fix #4: Expose encryption availability to the renderer
 ipcMain.handle('is-encryption-available', () => {
   const { safeStorage } = require('electron');
   return safeStorage.isEncryptionAvailable();
 });
 
 ipcMain.handle('ssh-exec', async (event, command) => {
-  return await sshManager.exec(command);
+  const manager = getSSHManager(event);
+  if (!manager) return null;
+  try {
+    return await manager.exec(command);
+  } catch (err) {
+    if (err.message === 'Not connected') return null;
+    throw err;
+  }
 });
 
 ipcMain.handle('ssh-sftp-readdir', async (event, path) => {
-  return await sshManager.readDir(path);
+  const manager = getSSHManager(event);
+  if (!manager) return null;
+  try {
+    return await manager.readDir(path);
+  } catch (err) {
+    if (err.message === 'Not connected') return null;
+    throw err;
+  }
 });
 
 ipcMain.handle('ssh-sftp-read-file', async (event, path) => {
-  return await sshManager.sftpReadFile(path);
+  const manager = getSSHManager(event);
+  if (!manager) return null;
+  try {
+    return await manager.sftpReadFile(path);
+  } catch (err) {
+    if (err.message === 'Not connected') return null;
+    throw err;
+  }
 });
 
 ipcMain.handle('ssh-sftp-write-file', async (event, path, content) => {
-  return await sshManager.sftpWriteFile(path, content);
+  const manager = getSSHManager(event);
+  if (!manager) return null;
+  try {
+    return await manager.sftpWriteFile(path, content);
+  } catch (err) {
+    if (err.message === 'Not connected') return null;
+    throw err;
+  }
 });
 
 ipcMain.handle('ssh-sftp-download', async (event, remotePath, filename) => {
-  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+  const manager = getSSHManager(event);
+  const win = getWindow(event);
+  if (!manager) throw new Error('Not connected');
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
     title: 'Download File',
     defaultPath: filename,
   });
   if (canceled || !filePath) return false;
   
-  await sshManager.sftpDownloadFile(remotePath, filePath);
+  await manager.sftpDownloadFile(remotePath, filePath, (transferred, total) => {
+    event.sender.send('sftp-transfer-progress', {
+      type: 'download',
+      filename,
+      transferred,
+      total
+    });
+  });
   return true;
 });
 
 ipcMain.handle('ssh-sftp-upload', async (event, remoteDir) => {
-  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+  const manager = getSSHManager(event);
+  const win = getWindow(event);
+  if (!manager) throw new Error('Not connected');
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
     title: 'Upload File',
     properties: ['openFile']
   });
@@ -227,30 +424,71 @@ ipcMain.handle('ssh-sftp-upload', async (event, remoteDir) => {
   const filename = basename(localPath);
   const remotePath = remoteDir.endsWith('/') ? `${remoteDir}${filename}` : `${remoteDir}/${filename}`;
   
-  await sshManager.sftpUploadFile(localPath, remotePath);
+  await manager.sftpUploadFile(localPath, remotePath, (transferred, total) => {
+    event.sender.send('sftp-transfer-progress', {
+      type: 'upload',
+      filename,
+      transferred,
+      total
+    });
+  });
   return true;
 });
 
 ipcMain.handle('ssh-sftp-upload-dropped', async (event, localPaths, remoteDir) => {
-  const { basename } = require('path');
+  const manager = getSSHManager(event);
+  if (!manager) throw new Error('Not connected');
+  const fs = require('fs');
+  const path = require('path');
+
+  async function uploadRecursive(localItemPath, remoteItemDir) {
+    const stats = fs.statSync(localItemPath);
+    const filename = path.basename(localItemPath);
+    const targetRemotePath = remoteItemDir.endsWith('/') ? `${remoteItemDir}${filename}` : `${remoteItemDir}/${filename}`;
+
+    if (stats.isDirectory()) {
+      // Create remote directory
+      await manager.exec(`mkdir -p "${targetRemotePath}"`);
+      // Read local directory contents
+      const items = fs.readdirSync(localItemPath);
+      for (const item of items) {
+        await uploadRecursive(path.join(localItemPath, item), targetRemotePath);
+      }
+    } else {
+      // Upload file
+      await manager.sftpUploadFile(localItemPath, targetRemotePath, (transferred, total) => {
+        event.sender.send('sftp-transfer-progress', {
+          type: 'upload',
+          filename,
+          transferred,
+          total
+        });
+      });
+    }
+  }
+
   for (const localPath of localPaths) {
-    const filename = basename(localPath);
-    const remotePath = remoteDir.endsWith('/') ? `${remoteDir}${filename}` : `${remoteDir}/${filename}`;
-    await sshManager.sftpUploadFile(localPath, remotePath);
+    await uploadRecursive(localPath, remoteDir);
   }
   return true;
 });
 
 ipcMain.handle('ssh-start-tunnel', async (event, localPort, remoteHost, remotePort) => {
-  return await sshManager.startLocalTunnel(localPort, remoteHost, remotePort);
+  const manager = getSSHManager(event);
+  if (!manager) throw new Error('Not connected');
+  return await manager.startLocalTunnel(localPort, remoteHost, remotePort);
 });
 
 ipcMain.handle('ssh-stop-tunnel', async (event, localPort) => {
-  return await sshManager.stopLocalTunnel(localPort);
+  const manager = getSSHManager(event);
+  if (!manager) throw new Error('Not connected');
+  return await manager.stopLocalTunnel(localPort);
 });
 
-ipcMain.handle('ssh-get-tunnels', () => {
-  return sshManager.getActiveTunnels();
+ipcMain.handle('ssh-get-tunnels', (event) => {
+  const manager = getSSHManager(event);
+  if (!manager) return [];
+  return manager.getActiveTunnels();
 });
 
 ipcMain.handle('get-app-version', () => {
