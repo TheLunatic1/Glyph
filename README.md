@@ -30,25 +30,50 @@
 
 ---
 
-## 🚀 Overview
+## Overview
 
-**Glyph** is a state-of-the-art desktop application designed to modernize remote server management. Discarding clunky, dated terminal interfaces, Glyph serves as a unified command center for sysadmins, developers, and DevOps engineers. Whether you are monitoring real-time system metrics, managing Docker containers, transferring files over SFTP, opening SSH port tunnels, or dropping into an unrestricted terminal, Glyph delivers a responsive, dark-mode-first glassmorphism experience.
+**Glyph** is a state-of-the-art desktop application designed to modernize remote server management. Discarding clunky, dated terminal interfaces, Glyph serves as a unified command center for sysadmins, developers, and DevOps engineers. Whether you are monitoring real-time system metrics, managing Docker containers, transferring files over SFTP, opening Universal Protocol Tunnels, or dropping into an unrestricted terminal, Glyph delivers a responsive, dark-mode-first glassmorphism experience.
 
-## ✨ Features
+## Feature Categories
 
-- **🔒 Secure Server Vault:** Save, organize, and manage multiple remote SSH configurations securely on your local machine with support for SSH keys and password authentication.
-- **🌐 ZeroTier Native P2P Integration:** Connect seamlessly to servers inside private ZeroTier networks natively via `libzt`—without needing the ZeroTier desktop client installed on your host operating system.
-- **⚡ In-App Auto-Updating:** Integrated background update checker with real-time download progress tracking, markdown release note viewer, and one-click in-place restart & install.
-- **📊 Live System Dashboard:** Real-time visual metrics for CPU utilization, Memory usage, Disk I/O, Network traffic, uptime, and system load parsed directly from your server.
-- **💻 Full-Featured SSH Terminal:** A lightning-fast, `xterm.js`-powered terminal emulator providing unrestricted shell access, multi-tab support, and custom font resizing.
-- **📁 Visual SFTP File Manager:** Browse, upload, download, rename, delete, and inspect file permissions with an intuitive, interactive dual-pane-style file manager.
-- **🐳 Docker Container Management:** Instantly list, start, stop, restart, inspect real-time logs, and remove Docker containers right from the GUI without typing CLI commands.
-- **📜 Command Snippets Library:** Save, tag, categorize, and execute your most frequently used shell commands across any connected server with a single click.
-- **🔗 SSH Port Tunnels:** Easily configure and manage local and remote SSH port forwarding to securely tunnel databases, web applications, or internal services.
-- **🔑 Secure Secrets Manager:** Store sensitive environment variables, API keys, and credentials encrypted and organized within your workspace.
-- **🐧 Intelligent OS Detection:** Automatically detects your remote server's Linux distribution (Ubuntu, Debian, CentOS, Alpine, Arch, etc.) and displays the corresponding Devicon/Lucide badge.
+*Click on a section below to expand and view the detailed features.*
 
-## 📥 Download & Install
+<details>
+<summary><strong>Core Architecture & Server Management</strong></summary>
+
+- **Secure Server Vault:** Save, organize, and manage multiple remote SSH configurations securely on your local machine with support for SSH keys and password authentication.
+- **Multi-Instance Support:** Manage multiple servers at the exact same time by opening standalone instances of Glyph in separate windows.
+- **Live System Dashboard:** Real-time visual metrics for CPU utilization, Memory usage, Disk I/O, Network traffic, uptime, and system load parsed directly from your server.
+- **Intelligent OS Detection:** Automatically detects your remote server's Linux distribution (Ubuntu, Debian, CentOS, Alpine, Arch, etc.) and displays the corresponding badge.
+- **In-App Auto-Updating:** Integrated background update checker with real-time download progress tracking, markdown release note viewer, and one-click in-place restart & install.
+</details>
+
+<details>
+<summary><strong>Terminal & Commands</strong></summary>
+
+- **Full-Featured SSH Terminal:** A lightning-fast, `xterm.js`-powered terminal emulator providing unrestricted shell access, multi-tab support, and custom font resizing.
+- **Multi-Terminal Setups:** Extended terminal management capabilities for running multiple concurrent terminal sessions smoothly.
+- **Command Snippets Library:** Save, tag, categorize, and execute your most frequently used shell commands across any connected server with a single click.
+</details>
+
+<details>
+<summary><strong>File & Container Operations</strong></summary>
+
+- **Visual SFTP File Manager:** Browse, upload, download, rename, delete, and inspect file permissions with an intuitive, interactive dual-pane-style file manager.
+- **Native File Explorer Feel:** Multi-select (Shift/Ctrl), internal drag and drop, recursive local-to-remote folder dropping, and full keyboard shortcuts (Ctrl+C, Ctrl+X, Ctrl+V).
+- **Constrained Editor:** Built-in code editor overlays only the file view so your sidebar remains usable.
+- **Docker Container Management:** Instantly list, start, stop, restart, inspect real-time logs, and remove Docker containers right from the GUI without typing CLI commands.
+</details>
+
+<details>
+<summary><strong>Networking & Security</strong></summary>
+
+- **Universal Protocol Tunnels:** Securely forward any TCP or UDP traffic from your local machine to any remote destination via your connected server. (Supports HTTP, HTTPS, FTP, DNS, game servers, etc.)
+- **ZeroTier Native P2P Integration:** Connect seamlessly to servers inside private ZeroTier networks natively via `libzt` without needing the ZeroTier desktop client installed.
+- **Secure Secrets Manager:** Store sensitive environment variables, API keys, and credentials encrypted and organized within your workspace.
+</details>
+
+## Download & Install
 
 Getting started with Glyph is fast and simple—no command-line tools or dependency compilation required!
 
@@ -68,9 +93,9 @@ Getting started with Glyph is fast and simple—no command-line tools or depende
 > **Important Note for Windows Users (Microsoft Defender SmartScreen):**
 > Because Glyph is an open-source application built without a paid corporate code-signing certificate, Windows Defender SmartScreen may display a *"Windows protected your PC"* popup when launching the installer or updating.
 > 
-> To proceed safely, simply click **More info** (under the text) → then click **Run anyway**. Glyph is 100% clean, transparent, and open-source!
+> To proceed safely, simply click **More info** (under the text) then click **Run anyway**. Glyph is 100% clean, transparent, and open-source!
 
-## 🛠 Tech Stack
+## Tech Stack
 
 Glyph is engineered using a robust, modern technology stack:
 
@@ -82,7 +107,7 @@ Glyph is engineered using a robust, modern technology stack:
 - **Networking:** `libzt` (ZeroTier Sockets) for native peer-to-peer networking.
 - **Markdown & UI:** `marked` for release note rendering, [Lucide React](https://lucide.dev/), and [Devicon](https://devicon.dev/).
 
-## 🛠 Building from Source (For Developers)
+## Building from Source (For Developers)
 
 If you would like to contribute or run Glyph locally from source code:
 
@@ -98,13 +123,13 @@ npm install
 npm run dev
 ```
 
-## 🎨 UI & Aesthetics
+## UI & Aesthetics
 Glyph was designed from the ground up to feel premium and state-of-the-art. We discarded generic, boring terminal layouts in favor of a **Dark Mode First** aesthetic featuring vibrant HSL accents, subtle micro-animations, glassmorphic cards, and responsive hover interactions. The goal is to make server administration not just a routine chore, but a seamless experience.
 
-## 🤝 Contributing
+## Contributing
 Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/TheLunatic1/Glyph/issues) if you want to contribute or report a bug.
 
-## 📄 License
+## License
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details. 
 Please note the attribution requirements specified in the [NOTICE](NOTICE) file.
 
