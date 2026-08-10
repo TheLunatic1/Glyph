@@ -23,6 +23,14 @@ export default function Secrets({ server }) {
     window.api.isEncryptionAvailable().then(available => {
       setEncryptionAvailable(available);
     });
+
+    const onSecretsUpdated = () => {
+      loadSecrets();
+    };
+    window.addEventListener('secretsUpdated', onSecretsUpdated);
+    return () => {
+      window.removeEventListener('secretsUpdated', onSecretsUpdated);
+    };
   }, [server]);
 
   const handleAdd = async (e) => {

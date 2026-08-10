@@ -129,6 +129,21 @@ export default function App() {
       }
     });
 
+    // Auto-switch to Terminal tab on MCP action
+    let removeAgentCmd = null;
+    if (window.api.onAgentExecuteCommand) {
+      removeAgentCmd = window.api.onAgentExecuteCommand(() => {
+        setActiveTab('terminal');
+      });
+    }
+
+    let removeAgentAction = null;
+    if (window.api.onAgentAction) {
+      removeAgentAction = window.api.onAgentAction((tab) => {
+        if (tab) setActiveTab(tab);
+      });
+    }
+
     return () => {
       mounted = false;
       removeAvailable();
@@ -137,6 +152,8 @@ export default function App() {
       removeError();
       removeSshStatus();
       removeDisconnect();
+      if (removeAgentCmd) removeAgentCmd();
+      if (removeAgentAction) removeAgentAction();
     };
   }, []);
 

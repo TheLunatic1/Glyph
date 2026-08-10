@@ -74,7 +74,7 @@ const api = {
   exportSecrets: (serverId, password) => ipcRenderer.invoke('export-secrets', serverId, password),
   importSecrets: (serverId, password) => ipcRenderer.invoke('import-secrets', serverId, password),
   deleteSecret: (id) => ipcRenderer.invoke('delete-secret', id),
-  injectSecret: (id) => ipcRenderer.send('inject-secret', id),
+  injectSecret: (id, tabId) => ipcRenderer.send('inject-secret', id, tabId),
 
   // Encryption status
   isEncryptionAvailable: () => ipcRenderer.invoke('is-encryption-available'),
@@ -111,6 +111,23 @@ const api = {
     ipcRenderer.on('updater-error', listener);
     return () => ipcRenderer.removeListener('updater-error', listener);
   },
+
+  // MCP Agent
+  onAgentExecuteCommand: (callback) => {
+    const listener = (_, command) => callback(command);
+    ipcRenderer.on('agent-execute-command', listener);
+    return () => ipcRenderer.removeListener('agent-execute-command', listener);
+  },
+  onAgentExecuteCommandOutput: (callback) => {
+    const listener = (_, output) => callback(output);
+    ipcRenderer.on('agent-execute-command-output', listener);
+    return () => ipcRenderer.removeListener('agent-execute-command-output', listener);
+  },
+  onAgentAction: (callback) => {
+    const listener = (_, tab) => callback(tab);
+    ipcRenderer.on('agent-action', listener);
+    return () => ipcRenderer.removeListener('agent-action', listener);
+  }
 }
 
 if (process.contextIsolated) {

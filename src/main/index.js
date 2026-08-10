@@ -7,6 +7,7 @@ import SecretsVault from './secretsVault.js'
 import { initUpdater } from './updater.js'
 import { encryptData, decryptData } from './cryptoUtil.js'
 import fs from 'fs'
+import { initLocalAPI } from './api.js'
 
 let mainManagerWindow = null;
 const windows = new Map();
@@ -120,6 +121,9 @@ app.whenReady().then(() => {
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
   })
+
+  // Start the Local API for MCP integration
+  initLocalAPI(vault, sshManagers, windowRoutes, createServerWindow, secretsVault)
 })
 
 app.on('window-all-closed', () => {
@@ -329,11 +333,11 @@ ipcMain.handle('import-secrets', async (event, serverId, masterPassword) => {
   }
 });
 
-ipcMain.on('inject-secret', (event, id) => {
+ipcMain.on('inject-secret', (event, id, tabId) => {
   const manager = getSSHManager(event);
   const decrypted = secretsVault.getDecryptedSecretValue(id);
   if (decrypted && manager) {
-    manager.writeShell(decrypted);
+    manager.writeShell(tabId, decrypted);
   } else {
     console.error('Failed to inject secret: secret not found or decryption failed.');
   }

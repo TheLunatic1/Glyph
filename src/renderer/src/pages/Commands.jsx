@@ -9,16 +9,22 @@ export default function Commands({ server }) {
   const storageKey = server ? `glyph_commands_${server.id}` : 'glyph_commands';
 
   useEffect(() => {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      setCommands(JSON.parse(saved));
-    } else {
-      setCommands([
-        { id: 1, name: 'Update System', cmd: 'sudo apt update && sudo apt upgrade -y', uses: 0 },
-        { id: 2, name: 'Check Logs', cmd: 'tail -f /var/log/syslog', uses: 0 },
-        { id: 3, name: 'List Ports', cmd: 'netstat -tulpn', uses: 0 }
-      ]);
-    }
+    const loadCommands = () => {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        setCommands(JSON.parse(saved));
+      } else {
+        setCommands([
+          { id: 1, name: 'Update System', cmd: 'sudo apt update && sudo apt upgrade -y', uses: 0 },
+          { id: 2, name: 'Check Logs', cmd: 'tail -f /var/log/syslog', uses: 0 },
+          { id: 3, name: 'List Ports', cmd: 'netstat -tulpn', uses: 0 }
+        ]);
+      }
+    };
+    
+    loadCommands();
+    window.addEventListener("commandsUpdated", loadCommands);
+    return () => window.removeEventListener("commandsUpdated", loadCommands);
   }, [storageKey]);
 
   const saveCommands = (cmds) => {

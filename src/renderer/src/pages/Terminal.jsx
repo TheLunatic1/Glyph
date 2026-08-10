@@ -89,7 +89,10 @@ function TerminalPane({ tabId, server, theme, fontSize, active }) {
     // Open the SSH shell for this tab
     window.api.sshOpenShell(tabId).then(() => {
       openedRef.current = true;
-      setTimeout(safefit, 100);
+      setTimeout(() => {
+        safefit();
+        term.focus();
+      }, 100);
     }).catch(err => {
       term.write(`\r\n\x1b[31mFailed to open shell: ${err.message}\x1b[0m\r\n`);
     });
@@ -173,6 +176,41 @@ export default function TerminalPage({ server }) {
     return () => { remove(); removeClosed(); };
   }, []);
 
+  // Listen for MCP Agent commands
+  useEffect(() => {
+    if (!window.api.onAgentExecuteCommand) return;
+    const removeCmd = window.api.onAgentExecuteCommand((command) => {
+      setTabs(prev => {
+        let agentTab = prev.find(t => t.id === 'tab-agent');
+        let next = prev;
+        if (!agentTab) {
+          agentTab = { id: 'tab-agent', title: '🤖 AI Agent' };
+          next = [...prev, agentTab];
+        }
+        
+        setTimeout(() => {
+          const str = `\r\n\x1b[36m[MCP Agent]\x1b[0m \x1b[33m$ ${command}\x1b[0m\r\n`;
+          window.dispatchEvent(new CustomEvent('__shell_data_tab-agent', { detail: str }));
+          setActiveTabId('tab-agent');
+        }, 100);
+
+        return next;
+      });
+    });
+
+    let removeOut = null;
+    if (window.api.onAgentExecuteCommandOutput) {
+      removeOut = window.api.onAgentExecuteCommandOutput((output) => {
+        setTimeout(() => {
+          const str = output.split('\n').join('\r\n') + '\r\n';
+          window.dispatchEvent(new CustomEvent('__shell_data_tab-agent', { detail: str }));
+        }, 150);
+      });
+    }
+
+    return () => { removeCmd(); if (removeOut) removeOut(); };
+  }, []);
+
   // Load quick commands for this server
   useEffect(() => {
     const key = server ? `glyph_commands_${server.id}` : 'glyph_commands';
@@ -204,7 +242,7 @@ export default function TerminalPage({ server }) {
   };
 
   const injectSecret = (id) => {
-    window.api.injectSecret(id);
+    window.api.injectSecret(id, activeTabId);
     setShowSecrets(false);
   };
 
@@ -502,10 +540,17 @@ function TerminalPaneWrapper({ tabId, server, theme, fontSize, active, onRegiste
       term.attachCustomKeyEventHandler((e) => {
         if (e.type !== 'keydown') return true;
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && term.hasSelection()) {
+          e.preventDefault();
           navigator.clipboard.writeText(term.getSelection());
           return false;
         }
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') return false;
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+          e.preventDefault();
+          navigator.clipboard.readText().then(text => {
+            window.api.sshShellData(tabId, text);
+          });
+          return false;
+        }
         return true;
       });
 
@@ -522,12 +567,19 @@ function TerminalPaneWrapper({ tabId, server, theme, fontSize, active, onRegiste
       window.addEventListener(`__shell_clear_${tabId}`, onClear);
 
       // Open SSH shell for this tab
-      window.api.sshOpenShell(tabId).then(() => {
+      if (tabId === 'tab-agent') {
         openedRef.current = true;
         debouncedFit();
-      }).catch(err => {
-        term.write(`\r\n\x1b[31mFailed to open shell: ${err.message}\x1b[0m\r\n`);
-      });
+        term.focus();
+      } else {
+        window.api.sshOpenShell(tabId).then(() => {
+          openedRef.current = true;
+          debouncedFit();
+          term.focus();
+        }).catch(err => {
+          term.write(`\r\n\x1b[31mFailed to open shell: ${err.message}\x1b[0m\r\n`);
+        });
+      }
 
       cleanupRef.current = () => {
         clearTimeout(fitTimer);
@@ -548,7 +600,7 @@ function TerminalPaneWrapper({ tabId, server, theme, fontSize, active, onRegiste
         cleanupRef.current = null;
       }
       xtermRef.current = null;
-      if (openedRef.current) window.api.sshCloseShell(tabId);
+      if (openedRef.current && tabId !== 'tab-agent') window.api.sshCloseShell(tabId);
     };
   }, [everActive]); // re-triggers once when everActive first becomes true
 

@@ -1,139 +1,130 @@
-<div align="center">
-  <table style="border: none;">
-    <tr style="border: none;">
-      <td align="center" valign="middle" style="border: none; padding: 0 20px 0 0;">
-        <a href="https://github.com/TheLunatic1/Glyph">
-          <img src="./src/renderer/src/assets/logo.png" alt="Glyph Logo" width="120" />
-        </a>
-      </td>
-      <td align="left" valign="middle" style="border: none; padding: 0;">
-        <h1 style="border-bottom: none; margin: 0; font-size: 38px;">Glyph</h1>
-        <p style="margin: 6px 0 0 0; font-size: 16px;"><strong>A Sleek, Modern, Agentic SSH & Server Management Client</strong><br />
-        <span style="color: #888;"><em>An all-in-one desktop workspace built for speed, security, and elegance.</em></span></p>
-      </td>
-    </tr>
-  </table>
-  <br />
-  <p>
-    <a href="https://github.com/TheLunatic1/Glyph/stargazers"><img src="https://img.shields.io/github/stars/TheLunatic1/Glyph?style=flat-square&color=4ade80&labelColor=1f2937" alt="GitHub stars"></a>
-    <a href="https://github.com/TheLunatic1/Glyph/network/members"><img src="https://img.shields.io/github/forks/TheLunatic1/Glyph?style=flat-square&color=4ade80&labelColor=1f2937" alt="GitHub forks"></a>
-    <a href="https://github.com/TheLunatic1/Glyph/releases/latest"><img src="https://img.shields.io/github/v/release/TheLunatic1/Glyph?style=flat-square&color=4ade80&labelColor=1f2937" alt="GitHub release"></a>
-    <a href="https://github.com/TheLunatic1/Glyph/blob/main/LICENSE"><img src="https://img.shields.io/github/license/TheLunatic1/Glyph?style=flat-square&color=4ade80&labelColor=1f2937" alt="GitHub license"></a>
-  </p>
-</div>
+# Glyph
 
-<br />
-
-<div align="center">
-  <img src="./preview.png" alt="Glyph Preview" width="850" />
-</div>
+Glyph is a modern, high-performance SSH client and server management application built with Electron and React. Designed for power users, developers, and system administrators, Glyph combines a beautiful user interface with powerful networking and automation features.
 
 ---
 
-## Overview
+## Table of Contents
 
-**Glyph** is a state-of-the-art desktop application designed to modernize remote server management. Discarding clunky, dated terminal interfaces, Glyph serves as a unified command center for sysadmins, developers, and DevOps engineers. Whether you are monitoring real-time system metrics, managing Docker containers, transferring files over SFTP, opening Universal Protocol Tunnels, or dropping into an unrestricted terminal, Glyph delivers a responsive, dark-mode-first glassmorphism experience.
+1. [Features](#features)
+2. [Installation](#installation)
+3. [Architecture](#architecture)
+4. [Security](#security)
+5. [Model Context Protocol (MCP)](#model-context-protocol-mcp)
+6. [Development](#development)
 
-## Feature Categories
+---
 
-*Click on a section below to expand and view the detailed features.*
+## Features
 
-<details>
-<summary><strong>Core Architecture & Server Management</strong></summary>
+### Comprehensive Server Management
+* **Secure Vault:** Store server credentials and configurations in a secure, encrypted vault.
+* **Master Password Encryption:** Optionally encrypt your entire server database with a master password.
+* **Quick Connect:** Seamlessly connect to your saved environments with a single click.
 
-- **Secure Server Vault:** Save, organize, and manage multiple remote SSH configurations securely on your local machine with support for SSH keys and password authentication.
-- **Multi-Instance Support:** Manage multiple servers at the exact same time by opening standalone instances of Glyph in separate windows.
-- **Live System Dashboard:** Real-time visual metrics for CPU utilization, Memory usage, Disk I/O, Network traffic, uptime, and system load parsed directly from your server.
-- **Intelligent OS Detection:** Automatically detects your remote server's Linux distribution (Ubuntu, Debian, CentOS, Alpine, Arch, etc.) and displays the corresponding badge.
-- **In-App Auto-Updating:** Integrated background update checker with real-time download progress tracking, markdown release note viewer, and one-click in-place restart & install.
-</details>
+### Advanced Terminal & UI
+* **Multi-Tab Interface:** Manage multiple SSH sessions concurrently with a clean tabbed layout.
+* **Customizable Themes:** Switch between various syntax and terminal color themes (Dracula, Monokai, One Dark, Solarized).
+* **Live System Dashboard:** View real-time metrics including CPU usage, RAM, and Disk space for connected servers.
 
-<details>
-<summary><strong>Terminal & Commands</strong></summary>
+### Next-Level Connectivity
+* **Universal Protocol Tunneling:** Forward any TCP or UDP traffic from your local machine to remote destinations.
+* **Built-in ZeroTier Integration:** Connect directly to ZeroTier virtual networks from within the application, bypassing the need for complex VPN configurations.
+* **Visual SFTP Client:** Transfer, read, and edit files on remote servers using the integrated file browser.
 
-- **Full-Featured SSH Terminal:** A lightning-fast, `xterm.js`-powered terminal emulator providing unrestricted shell access, multi-tab support, and custom font resizing.
-- **Multi-Terminal Setups:** Extended terminal management capabilities for running multiple concurrent terminal sessions smoothly.
-- **Command Snippets Library:** Save, tag, categorize, and execute your most frequently used shell commands across any connected server with a single click.
-</details>
+### Automation & AI
+* **Command Snippets:** Save and execute frequently used shell commands.
+* **Secret Injection:** Store environment variables and secrets, securely injecting them into your terminal when needed.
+* **Agentic AI Support (MCP):** Connect AI agents to your servers via the Model Context Protocol to automate infrastructure tasks visually.
 
-<details>
-<summary><strong>File & Container Operations</strong></summary>
+---
 
-- **Visual SFTP File Manager:** Browse, upload, download, rename, delete, and inspect file permissions with an intuitive, interactive dual-pane-style file manager.
-- **Native File Explorer Feel:** Multi-select (Shift/Ctrl), internal drag and drop, recursive local-to-remote folder dropping, and full keyboard shortcuts (Ctrl+C, Ctrl+X, Ctrl+V).
-- **Constrained Editor:** Built-in code editor overlays only the file view so your sidebar remains usable.
-- **Docker Container Management:** Instantly list, start, stop, restart, inspect real-time logs, and remove Docker containers right from the GUI without typing CLI commands.
-</details>
+## Installation
 
-<details>
-<summary><strong>Networking & Security</strong></summary>
+### Prerequisites
+* Node.js v18 or newer
+* npm or yarn
 
-- **Universal Protocol Tunnels:** Securely forward any TCP or UDP traffic from your local machine to any remote destination via your connected server. (Supports HTTP, HTTPS, FTP, DNS, game servers, etc.)
-- **ZeroTier Native P2P Integration:** Connect seamlessly to servers inside private ZeroTier networks natively via `libzt` without needing the ZeroTier desktop client installed.
-- **Secure Secrets Manager:** Store sensitive environment variables, API keys, and credentials encrypted and organized within your workspace.
-</details>
+### Setup
 
-## Download & Install
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/TheLunatic1/Glyph.git
+   cd Glyph
+   ```
 
-Getting started with Glyph is fast and simple—no command-line tools or dependency compilation required!
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-1. **Download the Latest Release:**
-   Visit the official [GitHub Releases](https://github.com/TheLunatic1/Glyph/releases/latest) page and download the package for your operating system:
-   - **Windows:** Download `Glyph-Setup-x.x.x.exe` *(Recommended for automatic background updates)* or the standalone portable executable `Glyph-Portable-x.x.x.exe`.
-   - **Linux:** Download `Glyph-x.x.x.AppImage`.
-   - **macOS:** Download `Glyph-x.x.x.dmg`.
+3. Run the application in development mode:
+   ```bash
+   npm run dev
+   ```
 
-2. **Run Glyph:**
-   Launch the application and immediately start adding your remote SSH servers or ZeroTier networks!
+### Building for Production
 
-3. **In-App Auto-Updating:**
-   Glyph checks for updates automatically in the background. Whenever a new release is published, an interactive banner appears at the top of your app allowing you to read changelogs, download, and upgrade in place with one click.
-
-> [!NOTE]
-> **Important Note for Windows Users (Microsoft Defender SmartScreen):**
-> Because Glyph is an open-source application built without a paid corporate code-signing certificate, Windows Defender SmartScreen may display a *"Windows protected your PC"* popup when launching the installer or updating.
-> 
-> To proceed safely, simply click **More info** (under the text) then click **Run anyway**. Glyph is 100% clean, transparent, and open-source!
-
-## Tech Stack
-
-Glyph is engineered using a robust, modern technology stack:
-
-- **Framework:** [Electron](https://www.electronjs.org/) for high-performance cross-platform desktop capabilities.
-- **Frontend UI:** [React 18](https://reactjs.org/) + [Vite](https://vitejs.dev/) for lightning-fast HMR and optimized production bundles.
-- **Styling:** [Tailwind CSS](https://tailwindcss.com/) featuring a curated dark-mode glassmorphism design system with custom HSL tokens.
-- **SSH Protocol:** `ssh2` & `ssh2-sftp-client` for reliable, low-level shell communication and file transfers.
-- **Terminal Emulator:** `xterm.js` and `xterm-addon-fit` for pixel-perfect terminal rendering.
-- **Networking:** `libzt` (ZeroTier Sockets) for native peer-to-peer networking.
-- **Markdown & UI:** `marked` for release note rendering, [Lucide React](https://lucide.dev/), and [Devicon](https://devicon.dev/).
-
-## Building from Source (For Developers)
-
-If you would like to contribute or run Glyph locally from source code:
+To package the application for your operating system:
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/TheLunatic1/Glyph.git
-cd Glyph
-
-# 2. Install dependencies
-npm install
-
-# 3. Start the development server
-npm run dev
+npm run build
+npm run pack
 ```
 
-## UI & Aesthetics
-Glyph was designed from the ground up to feel premium and state-of-the-art. We discarded generic, boring terminal layouts in favor of a **Dark Mode First** aesthetic featuring vibrant HSL accents, subtle micro-animations, glassmorphic cards, and responsive hover interactions. The goal is to make server administration not just a routine chore, but a seamless experience.
+---
 
-## Contributing
-Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/TheLunatic1/Glyph/issues) if you want to contribute or report a bug.
+## Architecture
 
-## License
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details. 
-Please note the attribution requirements specified in the [NOTICE](NOTICE) file.
+Glyph utilizes a modern stack to ensure high performance and maintainability:
+
+* **Frontend:** React 18, Tailwind CSS, Lucide React (Icons).
+* **Backend (Main Process):** Electron, Node.js, `ssh2` for core networking.
+* **Terminal Emulator:** xterm.js for high-fidelity shell emulation.
+* **IPC (Inter-Process Communication):** Secure context bridging between the Electron main process and the React renderer.
 
 ---
-<div align="center">
-  <p>Made by <a href="https://github.com/TheLunatic1">TheLunatic1 (Salman Toha)</a></p>
-</div>
+
+## Security
+
+Security is a first-class citizen in Glyph:
+* **Local-Only:** All data, credentials, and settings remain on your local machine.
+* **Zero Telemetry:** Glyph does not track your usage or send data to third parties.
+* **AES-256 Encryption:** The server vault and exported configurations are encrypted using industry-standard AES-256.
+
+---
+
+## Model Context Protocol (MCP)
+
+Glyph natively supports the Model Context Protocol (MCP), allowing AI agents to interact with your infrastructure securely.
+
+### Starting the MCP Server
+
+The MCP server runs via standard STDIO and can be attached to any compatible AI assistant.
+
+```bash
+node src/mcp/index.js
+```
+
+### Available Tools
+* `glyph_list_servers`: Returns a list of all saved servers.
+* `glyph_connect_server`: Opens a connection to a specific server in the Glyph application UI.
+* `glyph_execute_command`: Visually types and executes a shell command on a connected server, returning the raw output to the agent.
+* `glyph_read_file` / `glyph_write_file`: Read and write files to the server via SFTP.
+* `glyph_start_tunnel` / `glyph_stop_tunnel`: Start and stop local port forwarding tunnels.
+* `glyph_list_secrets` / `glyph_add_secret`: Manage secure secrets in the vault.
+* `glyph_list_containers`: View Docker containers running on the server.
+* `glyph_list_commands` / `glyph_add_command` / `glyph_remove_command`: Manage quick commands (snippets).
+
+---
+
+## Development
+
+Glyph uses `electron-vite` for rapid development. 
+
+* The `src/main` directory contains the Electron backend logic (SSH Manager, Vault, API, Update mechanisms).
+* The `src/renderer` directory contains the React frontend application.
+* The `src/preload` directory contains the secure IPC bridge.
+* The `src/mcp` directory contains the standalone Model Context Protocol server.
+
+Contributions, pull requests, and bug reports are highly welcome.

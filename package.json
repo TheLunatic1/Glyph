@@ -1,6 +1,6 @@
 {
   "name": "glyph",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "An Electron/React SSH client",
   "main": "./out/main/index.js",
   "author": "TheLunatic1 (Salman Toha)",
@@ -18,8 +18,10 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",
     "@electron-toolkit/utils": "^3.0.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@monaco-editor/react": "^4.7.0",
     "electron-updater": "^6.8.9",
+    "express": "^5.2.1",
     "libzt": "^0.2.0",
     "lucide-react": "^0.364.0",
     "marked": "^18.0.5",
