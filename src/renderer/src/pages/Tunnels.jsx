@@ -11,6 +11,7 @@ export default function Tunnels() {
   const [error, setError] = useState(null);
   const [stopError, setStopError] = useState(null); // Fix #8: styled error instead of alert()
   const [tunnelSchemes, setTunnelSchemes] = useState({}); // Fix #14: per-tunnel HTTP/HTTPS
+  const [protocol, setProtocol] = useState('tcp');
 
   const fetchTunnels = async () => {
     try {
@@ -32,7 +33,7 @@ export default function Tunnels() {
     setLoading(true);
     setError(null);
     try {
-      await window.api.sshStartTunnel(parseInt(localPort), remoteHost, parseInt(remotePort));
+      await window.api.sshStartTunnel(parseInt(localPort), remoteHost, parseInt(remotePort), protocol);
       setLocalPort('');
       setRemotePort('');
       fetchTunnels();
@@ -136,6 +137,19 @@ export default function Tunnels() {
             />
           </div>
 
+          <div className="w-32">
+            <label className="block text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">Protocol</label>
+            <select
+              value={protocol}
+              onChange={e => setProtocol(e.target.value)}
+              className="w-full bg-dark-900 border border-dark-700 rounded-lg px-4 py-2.5 text-gray-100 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all font-mono appearance-none"
+              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%239CA3AF'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`, backgroundPosition: 'right 0.75rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.25em 1.25em' }}
+            >
+              <option value="tcp">TCP</option>
+              <option value="udp">UDP</option>
+            </select>
+          </div>
+
           <button 
             type="submit"
             disabled={loading || !localPort || !remotePort || !remoteHost}
@@ -165,6 +179,7 @@ export default function Tunnels() {
               <tr className="bg-dark-900/50 border-b border-dark-700">
                 <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Local Endpoint</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Remote Destination</th>
+                <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Protocol</th>
                 <th className="px-6 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-4 text-right"></th>
               </tr>
@@ -175,20 +190,28 @@ export default function Tunnels() {
                   <td className="px-6 py-4">
                     {/* Fix #14: let user toggle HTTP/HTTPS scheme per tunnel */}
                     <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setTunnelSchemes(prev => ({ ...prev, [t.localPort]: prev[t.localPort] === 'https' ? 'http' : 'https' }))}
-                        className="text-xs px-2 py-0.5 rounded bg-dark-700 text-gray-400 hover:text-gray-200 font-mono transition-colors"
-                        title="Toggle HTTP/HTTPS"
-                      >
-                        {tunnelSchemes[t.localPort] === 'https' ? 'https' : 'http'}
-                      </button>
-                      <button 
-                        onClick={() => window.open(`${tunnelSchemes[t.localPort] === 'https' ? 'https' : 'http'}://localhost:${t.localPort}`, '_blank')}
-                        className="font-mono text-gray-200 hover:text-brand-300 hover:underline transition-all text-left flex items-center gap-2 group"
-                        title="Open in Browser"
-                      >
-                        <span className="text-brand-400 font-semibold group-hover:text-brand-300 transition-colors">localhost:</span>{t.localPort}
-                      </button>
+                      {t.protocol === 'udp' ? (
+                        <div className="font-mono text-gray-200 flex items-center gap-2">
+                          <span className="text-brand-400 font-semibold">localhost:</span>{t.localPort}
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setTunnelSchemes(prev => ({ ...prev, [t.localPort]: prev[t.localPort] === 'https' ? 'http' : 'https' }))}
+                            className="text-xs px-2 py-0.5 rounded bg-dark-700 text-gray-400 hover:text-gray-200 font-mono transition-colors"
+                            title="Toggle HTTP/HTTPS"
+                          >
+                            {tunnelSchemes[t.localPort] === 'https' ? 'https' : 'http'}
+                          </button>
+                          <button 
+                            onClick={() => window.open(`${tunnelSchemes[t.localPort] === 'https' ? 'https' : 'http'}://localhost:${t.localPort}`, '_blank')}
+                            className="font-mono text-gray-200 hover:text-brand-300 hover:underline transition-all text-left flex items-center gap-2 group"
+                            title="Open in Browser"
+                          >
+                            <span className="text-brand-400 font-semibold group-hover:text-brand-300 transition-colors">localhost:</span>{t.localPort}
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -196,6 +219,11 @@ export default function Tunnels() {
                       <ArrowRight size={14} className="text-gray-600" />
                       {t.remoteHost}:{t.remotePort}
                     </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold uppercase tracking-wider ${t.protocol === 'udp' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' : 'bg-brand-500/10 text-brand-400 border border-brand-500/20'}`}>
+                      {t.protocol || 'tcp'}
+                    </span>
                   </td>
                   <td className="px-6 py-4">
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">

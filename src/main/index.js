@@ -473,10 +473,10 @@ ipcMain.handle('ssh-sftp-upload-dropped', async (event, localPaths, remoteDir) =
   return true;
 });
 
-ipcMain.handle('ssh-start-tunnel', async (event, localPort, remoteHost, remotePort) => {
+ipcMain.handle('ssh-start-tunnel', async (event, localPort, remoteHost, remotePort, protocol) => {
   const manager = getSSHManager(event);
   if (!manager) throw new Error('Not connected');
-  return await manager.startLocalTunnel(localPort, remoteHost, remotePort);
+  return await manager.startLocalTunnel(localPort, remoteHost, remotePort, protocol);
 });
 
 ipcMain.handle('ssh-stop-tunnel', async (event, localPort) => {

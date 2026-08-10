@@ -1,5 +1,6 @@
 import { Client } from 'ssh2';
 import * as net from 'net';
+import * as dgram from 'dgram';
 
 export default class SSHManager {
   constructor() {
@@ -597,7 +598,8 @@ export default class SSHManager {
   }
 
   // ── Port Forwarding (Tunnels) ──────────────────────────────────────────────
-  async startLocalTunnel(localPort, remoteHost, remotePort) {
+
+  async startLocalTunnel(localPort, remoteHost, remotePort, protocol = 'tcp') {
     return new Promise((resolve, reject) => {
       if (!this.isConnected || !this.client) {
         return reject(new Error('SSH client is not connected'));
@@ -606,39 +608,191 @@ export default class SSHManager {
         return reject(new Error(`Local port ${localPort} is already in use by an active tunnel.`));
       }
 
-      const connections = new Set();
+      if (protocol === 'udp') {
+        const server = dgram.createSocket('udp4');
+        const sshStreams = new Map(); // clientKey -> stream
+        const streamRinfo = new Map(); // clientKey -> lastRinfo
 
-      const server = net.createServer((socket) => {
-        connections.add(socket);
-        socket.on('close', () => connections.delete(socket));
-        this.client.forwardOut(
-          '127.0.0.1', localPort,
-          remoteHost, remotePort,
-          (err, stream) => {
-            if (err) {
-              console.error('forwardOut error:', err);
-              socket.end();
-              return;
-            }
-            socket.pipe(stream);
-            stream.pipe(socket);
+        server.on('message', (msg, rinfo) => {
+          const clientKey = `${localPort}:${remoteHost}:${remotePort}`;
+          let stream = sshStreams.get(clientKey);
+          
+          if (!stream && sshStreams.has(clientKey + '_pending')) {
+            return;
           }
-        );
-      });
+          
+          streamRinfo.set(clientKey, rinfo);
 
-      server.listen(localPort, '127.0.0.1', () => {
-        this.activeTunnels.set(localPort, {
-          server,
-          connections,
-          remoteHost,
-          remotePort
+          const sendPacket = (s) => {
+            const lenBuf = Buffer.alloc(4);
+            lenBuf.writeUInt32BE(msg.length, 0);
+            s.write(Buffer.concat([lenBuf, msg]));
+          };
+
+          if (stream) {
+            sendPacket(stream);
+          } else {
+            // Python 3 UDP Relay script
+            const pyScript = `import os,socket,sys,select,struct
+h,p=sys.argv[1],int(sys.argv[2])
+s=socket.socket(2,2)
+s.bind(('',0))
+os.write(1,b'READY')
+def recvall(n):
+ b=bytearray()
+ while len(b)<n:
+  c=os.read(0,n-len(b))
+  if not c:return None
+  b.extend(c)
+ return bytes(b)
+while 1:
+ r,_,_=select.select([0,s],[],[])
+ for f in r:
+  if f==0:
+   b=recvall(4)
+   if not b:sys.exit(0)
+   l=struct.unpack('>I',b)[0]
+   d=recvall(l)
+   if not d:sys.exit(0)
+   s.sendto(d,(h,p))
+  else:
+   d,_=s.recvfrom(65535)
+   os.write(1,struct.pack('>I',len(d))+d)`;
+
+            const b64 = Buffer.from(pyScript).toString('base64');
+            const cmd = `command -v python3 >/dev/null 2>&1 && PYTHON=python3 || PYTHON=python; $PYTHON -c "import base64,sys;exec(base64.b64decode('${b64}').decode('utf-8'))" ${remoteHost} ${remotePort}`;
+              sshStreams.set(clientKey + '_pending', true);
+              this.client.exec(cmd, (err, s) => {
+                sshStreams.delete(clientKey + '_pending');
+                if (err) {
+                  console.error('UDP tunnel exec error:', err);
+                  return;
+                }
+                sshStreams.set(clientKey, s);
+                
+                let recvBuffer = Buffer.alloc(0);
+                let ready = false;
+                let queuedPackets = [];
+
+              const processPackets = () => {
+                while (recvBuffer.length >= 4) {
+                  const len = recvBuffer.readUInt32BE(0);
+                  if (recvBuffer.length >= 4 + len) {
+                    const packet = recvBuffer.subarray(4, 4 + len);
+                    recvBuffer = recvBuffer.subarray(4 + len);
+                    const currentRinfo = streamRinfo.get(clientKey);
+                    if (currentRinfo) {
+                      console.log(`Received UDP packet of ${packet.length} bytes from remote. Sending back to local port ${currentRinfo.port}`);
+                      server.send(packet, currentRinfo.port, currentRinfo.address);
+                    } else {
+                    }
+                  } else {
+                    break;
+                  }
+                }
+              };
+
+              s.on('data', (data) => {
+                recvBuffer = Buffer.concat([recvBuffer, data]);
+                if (!ready) {
+                  const readyIdx = recvBuffer.indexOf('READY');
+                  if (readyIdx !== -1) {
+                    ready = true;
+                    recvBuffer = recvBuffer.subarray(readyIdx + 5);
+                    // Flush queued packets
+                    for (const qp of queuedPackets) {
+                       const lenBuf = Buffer.alloc(4);
+                       lenBuf.writeUInt32BE(qp.length, 0);
+                       s.write(Buffer.concat([lenBuf, qp]));
+                    }
+                    queuedPackets = [];
+                    processPackets();
+                  }
+                } else {
+                  processPackets();
+                }
+              });
+
+              s.stderr.on('data', (data) => {
+                console.error('UDP python script stderr:', data.toString());
+              });
+
+              s.on('close', () => {
+                sshStreams.delete(clientKey);
+              });
+              
+              s.on('error', (e) => {
+                console.error('UDP stream error:', e);
+                sshStreams.delete(clientKey);
+              });
+
+              if (ready) {
+                sendPacket(s);
+              } else {
+                queuedPackets.push(msg);
+              }
+            });
+          }
         });
-        resolve({ success: true, localPort, remoteHost, remotePort });
-      });
 
-      server.on('error', (err) => {
-        reject(err);
-      });
+        server.bind(localPort, '127.0.0.1', () => {
+          this.activeTunnels.set(localPort, {
+            server,
+            sshStreams,
+            remoteHost,
+            remotePort,
+            protocol: 'udp'
+          });
+          resolve({ success: true, localPort, remoteHost, remotePort, protocol: 'udp' });
+        });
+
+        server.on('error', (err) => {
+          reject(err);
+        });
+
+      } else {
+        const connections = new Set();
+        const server = net.createServer((socket) => {
+          connections.add(socket);
+          socket.on('close', () => connections.delete(socket));
+          socket.on('error', (err) => {
+            // Ignore socket errors (e.g. browser cancelling request) before forwardOut completes
+          });
+          this.client.forwardOut(
+            '127.0.0.1', localPort,
+            remoteHost, remotePort,
+            (err, stream) => {
+              if (err) {
+                console.error('forwardOut error:', err);
+                socket.end();
+                return;
+              }
+              socket.pipe(stream);
+              stream.pipe(socket);
+              
+              stream.on('error', (streamErr) => {
+                console.error('SSH TCP stream error:', streamErr);
+                socket.destroy();
+              });
+            }
+          );
+        });
+
+        server.listen(localPort, '127.0.0.1', () => {
+          this.activeTunnels.set(localPort, {
+            server,
+            connections,
+            remoteHost,
+            remotePort,
+            protocol: 'tcp'
+          });
+          resolve({ success: true, localPort, remoteHost, remotePort, protocol: 'tcp' });
+        });
+
+        server.on('error', (err) => {
+          reject(err);
+        });
+      }
     });
   }
 
@@ -647,27 +801,39 @@ export default class SSHManager {
       const tunnel = this.activeTunnels.get(localPort);
       if (!tunnel) return resolve(true);
 
-      // Forcefully destroy any lingering connections (e.g. browser HTTP keep-alives)
-      for (const socket of tunnel.connections) {
-        socket.destroy();
-      }
-
-      tunnel.server.close((err) => {
-        if (err) {
-          console.error(`Error closing tunnel on port ${localPort}:`, err);
-          return reject(err);
+      if (tunnel.protocol === 'udp') {
+        if (tunnel.sshStreams) {
+          for (const stream of tunnel.sshStreams.values()) {
+            stream.close();
+          }
         }
-        this.activeTunnels.delete(localPort);
-        resolve(true);
-      });
+        tunnel.server.close(() => {
+          this.activeTunnels.delete(localPort);
+          resolve(true);
+        });
+      } else {
+        // Forcefully destroy any lingering TCP connections
+        for (const socket of tunnel.connections) {
+          socket.destroy();
+        }
+
+        tunnel.server.close((err) => {
+          if (err) {
+            console.error(`Error closing tunnel on port ${localPort}:`, err);
+            return reject(err);
+          }
+          this.activeTunnels.delete(localPort);
+          resolve(true);
+        });
+      }
     });
   }
-
   getActiveTunnels() {
     return Array.from(this.activeTunnels.entries()).map(([localPort, data]) => ({
       localPort,
       remoteHost: data.remoteHost,
-      remotePort: data.remotePort
+      remotePort: data.remotePort,
+      protocol: data.protocol || 'tcp'
     }));
   }
 
