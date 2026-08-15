@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
+import os from 'os'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import SSHManager from './sshManager.js'
 import Vault from './vault.js'
@@ -525,5 +526,190 @@ ipcMain.handle('get-zt-node-id', async () => {
   } catch (e) {
     console.error('Failed to get ZT Node ID:', e);
     return null;
+  }
+});
+
+// ── MCP Agent Integration ─────────────────────────────────────────────────────
+
+// Client config-file definitions
+const MCP_CLIENTS = {
+  antigravity: {
+    name: 'Antigravity IDE',
+    configPath: () => join(os.homedir(), '.gemini', 'config', 'mcp_config.json'),
+    format: 'mcpServers',
+  },
+  claude: {
+    name: 'Claude Desktop',
+    configPath: () => {
+      if (process.platform === 'win32')
+        return join(process.env.APPDATA || os.homedir(), 'Claude', 'claude_desktop_config.json');
+      if (process.platform === 'darwin')
+        return join(os.homedir(), 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
+      return join(os.homedir(), '.config', 'Claude', 'claude_desktop_config.json');
+    },
+    format: 'mcpServers',
+  },
+  cursor: {
+    name: 'Cursor',
+    configPath: () => join(os.homedir(), '.cursor', 'mcp.json'),
+    format: 'mcpServers',
+  },
+  vscode: {
+    name: 'VS Code',
+    configPath: () => {
+      if (process.platform === 'win32')
+        return join(process.env.APPDATA || os.homedir(), 'Code', 'User', 'settings.json');
+      if (process.platform === 'darwin')
+        return join(os.homedir(), 'Library', 'Application Support', 'Code', 'User', 'settings.json');
+      return join(os.homedir(), '.config', 'Code', 'User', 'settings.json');
+    },
+    format: 'vscode', // settings.json → mcp.servers
+  },
+};
+
+// Resolve the MCP script path for the current environment
+function getMcpScriptPath() {
+  if (is.dev) {
+    // Dev: run directly from source — node_modules are available
+    return join(app.getAppPath(), 'src', 'mcp', 'index.js');
+  }
+  // Production: use the bundled standalone file placed via extraResources
+  // It lives at <installDir>/resources/mcp.js (outside the asar)
+  return join(process.resourcesPath, 'mcp.js');
+}
+
+// Return info + per-client status
+ipcMain.handle('mcp-get-info', () => {
+  const mcpScriptPath = getMcpScriptPath();
+  const clients = {};
+
+  for (const [id, client] of Object.entries(MCP_CLIENTS)) {
+    const configPath = client.configPath();
+    let status = 'not-installed';
+
+    try {
+      if (fs.existsSync(configPath)) {
+        let raw = {};
+        try { raw = JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch (_) {}
+        const isConfigured = client.format === 'vscode'
+          ? !!(raw?.mcp?.servers?.glyph_mcp)
+          : !!(raw?.mcpServers?.glyph_mcp);
+        status = isConfigured ? 'configured' : 'not-configured';
+      } else if (fs.existsSync(join(configPath, '..'))) {
+        // Parent directory exists but config file not yet created
+        status = 'not-configured';
+      }
+    } catch (_) {
+      status = 'not-configured';
+    }
+
+    clients[id] = { name: client.name, configPath, status };
+  }
+
+  return { mcpScriptPath, clients };
+});
+
+// Write (or update) the glyph_mcp entry in the chosen client's config
+ipcMain.handle('mcp-auto-install', (_, clientId) => {
+  const client = MCP_CLIENTS[clientId];
+  if (!client) return { success: false, error: 'Unknown client ID' };
+
+  const mcpScriptPath = getMcpScriptPath().replace(/\\/g, '/');
+  const configPath = client.configPath();
+  const configDir = join(configPath, '..');
+
+  try {
+    if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+
+    let config = {};
+    if (fs.existsSync(configPath)) {
+      try { config = JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch (_) {}
+    }
+
+    const glyphEntry = {
+      command: 'node',
+      args: [mcpScriptPath],
+      env: { NODE_ENV: is.dev ? 'development' : 'production' },
+    };
+
+    if (client.format === 'vscode') {
+      // Merge into settings.json under mcp.servers
+      const vsEntry = { type: 'stdio', ...glyphEntry };
+      if (!config.mcp) config.mcp = {};
+      if (!config.mcp.servers) config.mcp.servers = {};
+      config.mcp.servers.glyph_mcp = vsEntry;
+    } else {
+      if (!config.mcpServers) config.mcpServers = {};
+      config.mcpServers.glyph_mcp = glyphEntry;
+    }
+
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    return { success: true, path: configPath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Open a file picker and return the chosen JSON config path (for manual setup)
+ipcMain.handle('mcp-open-file-dialog', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: 'Select MCP Config File',
+    filters: [
+      { name: 'JSON Files', extensions: ['json'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+    properties: ['openFile', 'showHiddenFiles'],
+  });
+  if (canceled || !filePaths.length) return null;
+  return filePaths[0];
+});
+
+// Write the glyph_mcp entry to a user-specified config file with chosen format
+ipcMain.handle('mcp-write-custom', (_, { configPath, format, customKey }) => {
+  if (!configPath) return { success: false, error: 'No config path provided' };
+
+  const mcpScriptPath = getMcpScriptPath().replace(/\\/g, '/');
+  const configDir = join(configPath, '..');
+
+  try {
+    if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+
+    let config = {};
+    if (fs.existsSync(configPath)) {
+      try { config = JSON.parse(fs.readFileSync(configPath, 'utf-8')); } catch (_) {}
+    }
+
+    const glyphEntry = {
+      command: 'node',
+      args: [mcpScriptPath],
+      env: { NODE_ENV: is.dev ? 'development' : 'production' },
+    };
+
+    if (format === 'vscode') {
+      const vsEntry = { type: 'stdio', ...glyphEntry };
+      if (!config.mcp) config.mcp = {};
+      if (!config.mcp.servers) config.mcp.servers = {};
+      config.mcp.servers.glyph_mcp = vsEntry;
+    } else if (format === 'custom' && customKey) {
+      // Support dot-notation like "aiTool.mcpServers"
+      const parts = customKey.split('.');
+      let obj = config;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!obj[parts[i]]) obj[parts[i]] = {};
+        obj = obj[parts[i]];
+      }
+      const leafKey = parts[parts.length - 1];
+      if (!obj[leafKey]) obj[leafKey] = {};
+      obj[leafKey].glyph_mcp = glyphEntry;
+    } else {
+      // Default: standard mcpServers
+      if (!config.mcpServers) config.mcpServers = {};
+      config.mcpServers.glyph_mcp = glyphEntry;
+    }
+
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    return { success: true, path: configPath };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 });

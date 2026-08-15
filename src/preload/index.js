@@ -127,7 +127,13 @@ const api = {
     const listener = (_, tab) => callback(tab);
     ipcRenderer.on('agent-action', listener);
     return () => ipcRenderer.removeListener('agent-action', listener);
-  }
+  },
+
+  // MCP Agent setup
+  mcpGetInfo: () => ipcRenderer.invoke('mcp-get-info'),
+  mcpAutoInstall: (clientId) => ipcRenderer.invoke('mcp-auto-install', clientId),
+  mcpOpenFileDialog: () => ipcRenderer.invoke('mcp-open-file-dialog'),
+  mcpWriteCustom: (opts) => ipcRenderer.invoke('mcp-write-custom', opts),
 }
 
 if (process.contextIsolated) {

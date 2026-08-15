@@ -32,3 +32,6 @@ Thumbs.db
 
 # Archives
 OLD VERSION/
+
+# Generated MCP bundle (produced by scripts/bundle-mcp.cjs)
+resources/mcp.js

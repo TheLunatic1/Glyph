@@ -9,6 +9,7 @@ import Commands from './pages/Commands';
 import Containers from './pages/Containers';
 import Secrets from './pages/Secrets';
 import Tunnels from './pages/Tunnels';
+import McpSetupPanel from './components/McpSetupPanel';
 import OsLogo from './components/OsLogo';
 import UpdateModal from './components/UpdateModal';
 
@@ -658,7 +659,10 @@ export default function App() {
             ))}
           </div>
         </main>
-        
+
+        {/* MCP AI Agent Setup — collapsible panel above footer */}
+        <McpSetupPanel />
+
         <footer className="py-4 text-center text-xs text-gray-500 font-medium">
           Made by <a href="https://github.com/TheLunatic1" target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 transition-colors">TheLunatic1 (Salman Toha)</a>
           {appVersion && <span className="ml-2 text-gray-600 font-mono">v{appVersion}</span>}

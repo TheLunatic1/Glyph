@@ -6,6 +6,9 @@ directories:
 files:
   - out
   - package.json
+extraResources:
+  - from: resources/mcp.js
+    to: mcp.js
 publish:
   provider: github
   owner: TheLunatic1
