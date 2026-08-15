@@ -1,3 +1,9 @@
+## v2.7.1 — MCP Bundle Fix
+
+- **Fixed Duplicate Shebang:** Fixed a syntax error in the bundled `mcp.js` caused by a duplicate `#!/usr/bin/env node` header that prevented the MCP server from starting correctly (especially on Node.js v24+) due to strict shebang parsing.
+
+---
+
 ## v2.7.0 — In-App AI Agent Setup
 
 This release makes connecting AI assistants to Glyph dead simple. No more manually editing config files or hunting for the right JSON path — the entire MCP setup experience is now built directly into the home screen.

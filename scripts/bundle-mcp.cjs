@@ -33,10 +33,10 @@ esbuild.buildSync({
              'events', 'buffer', 'util', 'crypto', 'http', 'https', 'zlib',
              'tls', 'readline', 'node:*'],
   minify: false,
-  // Inject the CJS equivalent at the very top of the bundle
+  // Inject a CJS-compatible import.meta.url shim (no shebang — esbuild strips
+  // the source shebang; a second one in the banner caused a syntax error in Node).
   banner: {
     js: [
-      '#!/usr/bin/env node',
       '/* Glyph MCP Server — bundled, standalone build */',
       'const __importMetaUrl = require("url").pathToFileURL(__filename).href;',
     ].join('\n'),
