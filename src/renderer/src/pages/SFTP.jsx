@@ -69,6 +69,32 @@ export default function SFTP() {
     }
   }, []);
 
+  useEffect(() => {
+    if (window.api.onAgentSftpAction) {
+      const remove = window.api.onAgentSftpAction((data) => {
+        const { action, path, content } = data;
+        const parts = path.split('/');
+        const filename = parts.pop();
+        const parentPath = parts.join('/') || '/';
+
+        // Helper to update the editor state
+        const showFile = () => {
+          setEditorContent(content || '');
+          setEditingFile({ filename, path, isDirectory: false });
+        };
+
+        if (currentPath !== parentPath) {
+          loadDirectory(parentPath).then(() => {
+            showFile();
+          }).catch(console.error);
+        } else {
+          showFile();
+        }
+      });
+      return remove;
+    }
+  }, [currentPath, loadDirectory]);
+
   const goUp = () => {
     if (currentPath === '/') return;
     const parts = currentPath.split('/').filter(Boolean);

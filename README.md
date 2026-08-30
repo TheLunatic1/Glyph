@@ -20,7 +20,8 @@ Glyph is a modern, high-performance SSH client and server management application
 ### Comprehensive Server Management
 * **Secure Vault:** Store server credentials and configurations in a secure, encrypted vault.
 * **Master Password Encryption:** Optionally encrypt your entire server database with a master password.
-* **Quick Connect:** Seamlessly connect to your saved environments with a single click.
+* **Quick Connect & Multi-Window:** Seamlessly connect to your saved environments with a single click in dedicated windows.
+* **System Tray Quick Access:** Access all saved servers directly from the system tray menu and run Glyph quietly in the background.
 
 ### Advanced Terminal & UI
 * **Multi-Tab Interface:** Manage multiple SSH sessions concurrently with a clean tabbed layout.
@@ -35,7 +36,7 @@ Glyph is a modern, high-performance SSH client and server management application
 ### Automation & AI
 * **Command Snippets:** Save and execute frequently used shell commands.
 * **Secret Injection:** Store environment variables and secrets, securely injecting them into your terminal when needed.
-* **In-App AI Agent Setup:** Configure any MCP-compatible AI assistant to control your servers — directly from the home screen, no manual config editing required.
+* **In-App AI Agent Setup:** Configure any MCP-compatible AI assistant to control your servers via the built-in Settings modal — no manual config editing required.
 * **Agentic AI Support (MCP):** Once connected, AI agents can list servers, run commands, manage files via SFTP, control tunnels, manage secrets, and more.
 
 ---
@@ -100,7 +101,7 @@ Glyph natively supports the [Model Context Protocol (MCP)](https://modelcontextp
 
 ### In-App Setup (Recommended)
 
-Open Glyph and expand the **"AI Agent Setup"** panel at the bottom of the home screen. It will automatically detect which AI clients are installed on your machine and show their current configuration status. Click **Auto-Install** next to any client to have Glyph write the correct config in one step.
+Open Glyph and click the **Settings** (gear) icon in the top right of the dashboard. Select **AI Agents (MCP)** from the sidebar to automatically detect which AI clients are installed on your machine and view their current configuration status. Click **Auto-Install** next to any client to have Glyph write the correct config in one step.
 
 **Supported clients (auto-install):**
 | Client | Config location |

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Server, Plus, Play, Trash2, Edit2, ShieldCheck, Terminal, HardDrive, Cpu, Search, X, ArrowRight, ExternalLink, Upload, Download, Key, Eye, EyeOff } from 'lucide-react';
+import { Server, Plus, Play, Trash2, Edit2, ShieldCheck, Terminal, HardDrive, Cpu, Search, X, ArrowRight, ExternalLink, Upload, Download, Key, Eye, EyeOff, Settings } from 'lucide-react';
 import logoSrc from './assets/logo.png';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -9,9 +9,11 @@ import Commands from './pages/Commands';
 import Containers from './pages/Containers';
 import Secrets from './pages/Secrets';
 import Tunnels from './pages/Tunnels';
-import McpSetupPanel from './components/McpSetupPanel';
+import SettingsModal from './components/SettingsModal';
 import OsLogo from './components/OsLogo';
 import UpdateModal from './components/UpdateModal';
+import TitleBar from './components/TitleBar';
+import SplashScreen from './components/SplashScreen';
 
 const LiveTimer = ({ error }) => {
   const [ms, setMs] = useState(0);
@@ -27,12 +29,15 @@ const LiveTimer = ({ error }) => {
 export default function App() {
   const [initialRoute, setInitialRoute] = useState(null);
   const [isRouting, setIsRouting] = useState(true);
+  const [splashState, setSplashState] = useState('visible');
   const [connected, setConnected] = useState(false);
   const [connectedServer, setConnectedServer] = useState(null);
   const [servers, setServers] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [newServer, setNewServer] = useState({ id: null, name: '', host: '', username: '', password: '', port: 22, privateKey: '', zerotier: '' });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [connectingId, setConnectingId] = useState(null);
   const connectingIdRef = React.useRef(null);
   const [connectLogs, setConnectLogs] = useState([]);
@@ -81,6 +86,15 @@ export default function App() {
         isRoutingRef.current = false;
         setIsRouting(false);
       }
+
+      // Smooth fade transition for splash screen
+      setTimeout(() => {
+        if (!mounted) return;
+        setSplashState('fading');
+        setTimeout(() => {
+          if (mounted) setSplashState('hidden');
+        }, 500);
+      }, 600);
     });
 
     loadServers();
@@ -258,8 +272,8 @@ export default function App() {
     setConnectingId(null);
     setConnectError(null); 
     window.api.sshDisconnect();
-    if (initialRoute?.type === 'server') {
-       window.close(); // Close the window if connection cancelled in instance mode
+    if (initialRoute?.type === 'server' || initialRouteRef.current?.type === 'server') {
+      window.api.closeWindow(); // Close the window if connection cancelled in instance mode
     }
   };
 
@@ -291,19 +305,16 @@ export default function App() {
   };
 
   if (isRouting) {
-    return (
-      <div className="flex flex-col h-screen w-full bg-dark-900 items-center justify-center relative overflow-hidden">
-        <div className="w-12 h-12 rounded-full border-2 border-brand-500 border-t-transparent animate-spin mb-4"></div>
-        <p className="text-gray-400">Loading server...</p>
-      </div>
-    );
+    return <SplashScreen state="visible" />;
   }
 
   if (!connected) {
     const activeConnectingServer = servers.find(s => s.id === connectingId);
     
     return (
-      <div className="flex flex-col h-screen w-full bg-dark-900 overflow-y-auto relative">
+      <div className="flex flex-col h-screen w-full bg-dark-900 overflow-hidden relative">
+        <TitleBar appVersion={appVersion} />
+        <div className="flex-1 overflow-y-auto custom-scrollbar relative">
         
         {/* Fix #1: Unexpected disconnect banner */}
         {disconnectReason && (
@@ -482,8 +493,24 @@ export default function App() {
 
               {/* Footer */}
               {connectError && (
-                <div className="p-4 bg-dark-800/50 flex justify-end">
-                  <button onClick={() => setConnectingId(null)} className="px-5 py-2 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-lg transition-colors font-medium">Close</button>
+                <div className="p-4 bg-dark-800/50 flex justify-end gap-2">
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      connectingIdRef.current = null;
+                      handleConnect(activeConnectingServer.id);
+                    }} 
+                    className="px-4 py-2 bg-brand-500 hover:bg-brand-400 text-white rounded-lg transition-colors font-medium text-sm shadow-md shadow-brand-500/20"
+                  >
+                    Retry
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={handleCancelConnect} 
+                    className="px-5 py-2 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-lg transition-colors font-medium text-sm"
+                  >
+                    Close
+                  </button>
                 </div>
               )}
             </div>
@@ -491,9 +518,12 @@ export default function App() {
         )}
 
         <header className="p-8 pb-0">
-          <div className="flex items-center gap-3">
-            <img src={logoSrc} alt="Glyph" className="w-11 h-11 rounded-xl object-contain" />
-            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-100 to-gray-400 tracking-widest">Glyph</h1>
+          <div className="flex items-end gap-3">
+            <div className="flex items-center gap-3">
+              <img src={logoSrc} alt="Glyph" className="w-11 h-11 rounded-xl object-contain animate-breathe" />
+              <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-100 to-gray-400 tracking-widest">Glyph</h1>
+            </div>
+            {appVersion && <span className="text-[10px] text-brand-400 font-mono font-medium pb-2 opacity-60 tracking-wider">v{appVersion}</span>}
           </div>
           <p className="text-gray-400 mt-2">Secure SSH & Server Management</p>
         </header>
@@ -516,12 +546,19 @@ export default function App() {
               >
                 <Upload size={20} />
               </button>
-              <button
-                onClick={() => setShowAddForm(!showAddForm)}
-                className="px-4 py-2 bg-brand-500 hover:bg-brand-400 text-white font-medium rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-brand-500/20 ml-2"
-              >
-                <Plus size={18} /> Add Server
-              </button>
+                <button
+                  onClick={() => setShowSettingsModal(true)}
+                  className={`p-2 rounded-lg transition-colors text-gray-400 hover:text-brand-400 hover:bg-brand-500/10 mr-2`}
+                  title="Settings"
+                >
+                  <Settings size={20} />
+                </button>
+                <button
+                  onClick={() => setShowAddForm(!showAddForm)}
+                  className="px-4 py-2 bg-brand-500 hover:bg-brand-400 text-white font-medium rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-brand-500/20"
+                >
+                  <Plus size={18} /> Add Server
+                </button>
             </div>
           </div>
 
@@ -659,20 +696,20 @@ export default function App() {
             ))}
           </div>
         </main>
+        </div>
+        
+        {showSettingsModal && (
+          <SettingsModal onClose={() => setShowSettingsModal(false)} />
+        )}
 
-        {/* MCP AI Agent Setup — collapsible panel above footer */}
-        <McpSetupPanel />
-
-        <footer className="py-4 text-center text-xs text-gray-500 font-medium">
-          Made by <a href="https://github.com/TheLunatic1" target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:text-brand-300 transition-colors">TheLunatic1 (Salman Toha)</a>
-          {appVersion && <span className="ml-2 text-gray-600 font-mono">v{appVersion}</span>}
-        </footer>
+        <SplashScreen state={splashState} />
       </div>
     );
   }
 
   return (
     <div className="flex flex-col h-screen w-full bg-dark-900 overflow-hidden relative">
+      <TitleBar title={connectedServer?.name || 'Glyph'} showAttribution={false} />
       {/* Update Banner — available */}
       {updateStage === 'available' && updateInfo && (
         <div className="z-50 bg-brand-500 text-white px-4 py-2 flex items-center justify-center gap-3 shadow-lg relative flex-wrap shrink-0">
@@ -758,6 +795,8 @@ export default function App() {
         </div>
       </main>
       </div>
+
+      <SplashScreen state={splashState} />
     </div>
   );
 }

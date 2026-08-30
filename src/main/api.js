@@ -54,6 +54,15 @@ export function initLocalAPI(vault, sshManagers, windowRoutes, createServerWindo
     }
   };
 
+  const broadcastSftpFileAction = (serverId, action, filePath, content) => {
+    const connected = getConnectedManager(serverId);
+    if (!connected) return;
+    const win = BrowserWindow.fromId(connected.winId);
+    if (win) {
+      win.webContents.send('agent-sftp-action', { action, path: filePath, content });
+    }
+  };
+
   app.get('/api/servers', (req, res) => {
     const servers = vault.getServers().map(s => ({
       id: s.id,
@@ -121,6 +130,7 @@ export function initLocalAPI(vault, sshManagers, windowRoutes, createServerWindo
     try {
       const content = await connected.manager.sftpReadFile(path);
       broadcastAgentAction(serverId, 'sftp');
+      broadcastSftpFileAction(serverId, 'read', path, content);
       res.json({ content });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -135,6 +145,7 @@ export function initLocalAPI(vault, sshManagers, windowRoutes, createServerWindo
     try {
       await connected.manager.sftpWriteFile(path, content);
       broadcastAgentAction(serverId, 'sftp');
+      broadcastSftpFileAction(serverId, 'write', path, content);
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: err.message });

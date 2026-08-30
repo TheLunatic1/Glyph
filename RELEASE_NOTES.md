@@ -1,3 +1,16 @@
+## v2.7.2 — Settings Modal, UI Polish & Lifecycle Fixes
+
+### What's New & Improvements
+
+- **System Tray Integration & Quick Connect:** Glyph now integrates into the system tray with a dynamic menu that lists all your saved servers for one-click quick access into dedicated windows, alongside options to show or hide the main app.
+- **Modular Settings Modal:** Moved the AI Agent (MCP) configuration into a dedicated Settings modal accessible via the gear icon on the top header, keeping the home dashboard clean and focused.
+- **Custom TitleBar & Window Dragging:** Built a custom title bar with window drag support, dynamic server title display, and left-aligned author attribution.
+- **Server Window Connection Lifecycle & Retry:** Fixed an issue where canceling or encountering an error during connection in dedicated server windows left an inactive dashboard. Canceling or closing now properly closes the dedicated window via IPC, and a **Retry** button was added on connection failures.
+- **Polished Splash Screen:** Restored the animated Glyph splash screen during app launch and reloads with a smooth fade transition.
+- **UI Enhancements:** Refined header layout with version badges, cleaner footer styling, and improved scrollbar theming.
+
+---
+
 ## v2.7.1 — MCP Bundle Fix
 
 - **Fixed Duplicate Shebang:** Fixed a syntax error in the bundled `mcp.js` caused by a duplicate `#!/usr/bin/env node` header that prevented the MCP server from starting correctly (especially on Node.js v24+) due to strict shebang parsing.

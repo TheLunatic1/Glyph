@@ -348,8 +348,7 @@ const ContainerDetailsView = ({ container, onAction, actionLoading }) => {
         const promises = [
           window.api.sshExec(`docker logs --tail 200 ${container.id} 2>&1`),
           running
-            // Use /proc/meminfo via docker top + exec instead of docker stats (much faster — no sampling delay)
-            ? window.api.sshExec(`docker exec ${container.id} cat /proc/meminfo 2>/dev/null || echo ''`)
+            ? window.api.sshExec(`docker stats --no-stream --format '{{.MemUsage}}' ${container.id}`)
             : Promise.resolve(null),
         ];
 
@@ -360,12 +359,7 @@ const ContainerDetailsView = ({ container, onAction, actionLoading }) => {
         if (logsOut) setLogs(logsOut);
 
         if (memOut) {
-          // Parse MemTotal and MemAvailable from /proc/meminfo
-          const total = parseInt((memOut.match(/MemTotal:\s+(\d+)/) || [])[1] || '0') * 1024;
-          const avail = parseInt((memOut.match(/MemAvailable:\s+(\d+)/) || [])[1] || '0') * 1024;
-          const used = total - avail;
-          const fmt = (b) => b >= 1e9 ? (b / 1e9).toFixed(2) + ' GiB' : (b / 1e6).toFixed(1) + ' MiB';
-          setStats({ memUsage: `${fmt(used)} / ${fmt(total)}` });
+          setStats({ memUsage: memOut.trim() });
         } else if (!running) {
           setStats({ memUsage: 'Offline' });
         }

@@ -24,8 +24,8 @@ export default function Sidebar({ activeTab, onTabChange, onDisconnect }) {
   return (
     <div className="w-64 h-full bg-dark-800 border-r border-dark-700 flex flex-col pt-6 pb-4">
       <div className="px-6 mb-8 flex items-center gap-3">
-        <img src={logoSrc} alt="Glyph" className="w-9 h-9 rounded-lg object-contain" />
-        <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-100 to-gray-400 tracking-wider">
+        <img src={logoSrc} alt="Glyph" className="w-9 h-9 rounded-lg object-contain animate-breathe" />
+        <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-400 via-white to-gray-400 tracking-wider animate-wave-text">
           Glyph
         </h1>
       </div>

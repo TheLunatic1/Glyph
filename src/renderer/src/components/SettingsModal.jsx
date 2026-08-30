@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Bot, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight,
-  Zap, RefreshCw, Copy, Check, FolderOpen, Settings, Info
+  Zap, RefreshCw, Copy, Check, FolderOpen, Settings, Info, X
 } from 'lucide-react';
 
 // ── Client definitions ────────────────────────────────────────────────────────
@@ -216,11 +216,11 @@ function ManualSetupPanel({ mcpScriptPath }) {
   );
 }
 
-// ── Main collapsible panel ────────────────────────────────────────────────────
-export default function McpSetupPanel() {
-  const [open, setOpen] = useState(false);
+// ── Main Modal ────────────────────────────────────────────────────
+export default function SettingsModal({ onClose }) {
+  const [activeTab, setActiveTab] = useState('mcp');
   const [mcpInfo, setMcpInfo] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [installing, setInstalling] = useState(null);
   const [installResults, setInstallResults] = useState({});
 
@@ -236,10 +236,9 @@ export default function McpSetupPanel() {
     }
   }, []);
 
-  const handleToggle = () => {
-    if (!open && !mcpInfo) loadInfo();
-    setOpen(v => !v);
-  };
+  useEffect(() => {
+    loadInfo();
+  }, [loadInfo]);
 
   const handleAutoInstall = async (clientId) => {
     setInstalling(clientId);
@@ -255,86 +254,87 @@ export default function McpSetupPanel() {
     }
   };
 
-  const configuredCount = mcpInfo
-    ? Object.values(mcpInfo.clients).filter(c => c.status === 'configured').length
-    : 0;
-  const totalCount = Object.keys(CLIENTS).length;
-
   return (
-    <div className="max-w-6xl mx-auto w-full px-8 pb-6">
-      <div className={`rounded-2xl border transition-all duration-200 overflow-hidden ${open ? 'border-brand-500/30 bg-brand-500/5' : 'border-dark-700 bg-dark-800/60'}`}>
-
-        {/* Toggle header */}
-        <button onClick={handleToggle} className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.02] transition-colors">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-dark-900 border border-dark-700 w-full max-w-4xl max-h-[85vh] h-full rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-dark-800 bg-dark-800/30 shrink-0">
           <div className="flex items-center gap-3">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-50"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-            </span>
-            <Bot size={16} className="text-brand-400" />
-            <span className="text-sm font-semibold text-gray-200">AI Agent Setup</span>
-            <span className="text-xs text-gray-500 hidden sm:inline">— Connect your AI assistant via MCP</span>
+            <Settings size={18} className="text-gray-400" />
+            <h2 className="text-lg font-semibold text-gray-200">Settings</h2>
           </div>
-          <div className="flex items-center gap-3">
-            {mcpInfo && (
-              <div className="hidden sm:flex items-center gap-1.5">
-                {Object.entries(CLIENTS).map(([id, meta]) => {
-                  const status = mcpInfo.clients[id]?.status;
-                  return (
-                    <span key={id} title={`${meta.name}: ${status}`} className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${
-                      status === 'configured'     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                      status === 'not-configured' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' :
-                                                   'bg-dark-700 text-gray-600 border-dark-700'
-                    }`}>{meta.icon}</span>
-                  );
-                })}
-                <span className="text-xs text-gray-500 ml-1">{configuredCount}/{totalCount}</span>
+          <button onClick={onClose} className="p-1.5 rounded-md hover:bg-dark-700 text-gray-400 hover:text-gray-200 transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+        
+        {/* Body */}
+        <div className="flex flex-1 overflow-hidden">
+          
+          {/* Sidebar */}
+          <div className="w-56 bg-dark-800/20 border-r border-dark-800 p-3 flex flex-col gap-1 shrink-0 overflow-y-auto custom-scrollbar">
+            <button 
+              onClick={() => setActiveTab('mcp')}
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'mcp' ? 'bg-brand-500/20 text-brand-400' : 'text-gray-400 hover:text-gray-200 hover:bg-dark-700/50'}`}
+            >
+              <Bot size={15} /> AI Agents (MCP)
+            </button>
+          </div>
+          
+          {/* Content */}
+          <div className="flex-1 p-8 overflow-y-auto custom-scrollbar bg-dark-900/50">
+            {activeTab === 'mcp' && (
+              <div className="max-w-2xl">
+                <div className="mb-6">
+                  <h3 className="text-xl font-semibold text-gray-200 flex items-center gap-3">
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-50"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                    </span>
+                    AI Agent Setup
+                  </h3>
+                  <p className="text-sm text-gray-400 mt-1.5">Connect your AI assistant via MCP to manage your servers seamlessly.</p>
+                </div>
+                
+                {loading ? (
+                  <div className="flex items-center justify-center py-12 text-gray-500 gap-2">
+                    <RefreshCw size={18} className="animate-spin" />
+                    <span className="text-sm">Scanning for AI clients…</span>
+                  </div>
+                ) : mcpInfo ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {Object.entries(CLIENTS).map(([clientId, meta]) => (
+                        <ClientCard
+                          key={clientId}
+                          clientId={clientId}
+                          meta={meta}
+                          info={mcpInfo.clients[clientId] || { status: 'not-installed' }}
+                          result={installResults[clientId]}
+                          installing={installing}
+                          onInstall={handleAutoInstall}
+                          mcpScriptPath={mcpInfo.mcpScriptPath}
+                        />
+                      ))}
+                    </div>
+
+                    <ManualSetupPanel mcpScriptPath={mcpInfo.mcpScriptPath} />
+
+                    <div className="flex justify-end pt-2">
+                      <button onClick={loadInfo} disabled={loading} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                        <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh status
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 py-8 text-center bg-dark-800/30 rounded-xl border border-dark-700 border-dashed">Failed to load MCP info.</p>
+                )}
               </div>
             )}
-            {open ? <ChevronDown size={15} className="text-gray-500" /> : <ChevronRight size={15} className="text-gray-500" />}
           </div>
-        </button>
-
-        {/* Expanded content */}
-        {open && (
-          <div className="border-t border-white/5 px-5 pb-5 pt-4">
-            {loading ? (
-              <div className="flex items-center justify-center py-8 text-gray-500 gap-2">
-                <RefreshCw size={16} className="animate-spin" />
-                <span className="text-sm">Scanning for AI clients…</span>
-              </div>
-            ) : mcpInfo ? (
-              <div className="space-y-4">
-                {/* 2×2 client grid — each card is its own component with its own hooks */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {Object.entries(CLIENTS).map(([clientId, meta]) => (
-                    <ClientCard
-                      key={clientId}
-                      clientId={clientId}
-                      meta={meta}
-                      info={mcpInfo.clients[clientId] || { status: 'not-installed' }}
-                      result={installResults[clientId]}
-                      installing={installing}
-                      onInstall={handleAutoInstall}
-                      mcpScriptPath={mcpInfo.mcpScriptPath}
-                    />
-                  ))}
-                </div>
-
-                {/* Manual setup */}
-                <ManualSetupPanel mcpScriptPath={mcpInfo.mcpScriptPath} />
-
-                <div className="flex justify-end">
-                  <button onClick={loadInfo} disabled={loading} className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-400 transition-colors">
-                    <RefreshCw size={10} className={loading ? 'animate-spin' : ''} /> Refresh status
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <p className="text-xs text-gray-500 py-4 text-center">Failed to load MCP info.</p>
-            )}
-          </div>
-        )}
+          
+        </div>
       </div>
     </div>
   );

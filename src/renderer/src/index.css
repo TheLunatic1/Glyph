@@ -50,6 +50,23 @@
   .glass-panel {
     @apply bg-dark-800/80 backdrop-blur-md border border-dark-700 shadow-xl rounded-xl;
   }
+  .animate-wave-text {
+    background-size: 200% auto;
+    animation: waveText 3s linear infinite alternate;
+  }
+  .animate-breathe {
+    animation: breathe 3s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes waveText {
+  0% { background-position: 0% center; }
+  100% { background-position: 100% center; }
+}
+
+@keyframes breathe {
+  0% { filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.2)); }
+  100% { filter: drop-shadow(0 0 15px rgba(255, 255, 255, 0.9)) drop-shadow(0 0 25px rgba(255, 255, 255, 0.4)); }
 }
 
 .xterm-viewport {

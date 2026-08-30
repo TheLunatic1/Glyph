@@ -635,7 +635,7 @@ export default class SSHManager {
             // Python 3 UDP Relay script
             const pyScript = `import os,socket,sys,select,struct
 h,p=sys.argv[1],int(sys.argv[2])
-s=socket.socket(2,2)
+s=socket.socket(socket.AF_INET6 if ':' in h else socket.AF_INET, socket.SOCK_DGRAM)
 s.bind(('',0))
 os.write(1,b'READY')
 def recvall(n):
@@ -654,10 +654,13 @@ while 1:
    l=struct.unpack('>I',b)[0]
    d=recvall(l)
    if not d:sys.exit(0)
-   s.sendto(d,(h,p))
+   try:s.sendto(d,(h,p))
+   except Exception:pass
   else:
-   d,_=s.recvfrom(65535)
-   os.write(1,struct.pack('>I',len(d))+d)`;
+   try:d,_=s.recvfrom(65535)
+   except Exception:continue
+   try:os.write(1,struct.pack('>I',len(d))+d)
+   except Exception:pass`;
 
             const b64 = Buffer.from(pyScript).toString('base64');
             const cmd = `command -v python3 >/dev/null 2>&1 && PYTHON=python3 || PYTHON=python; $PYTHON -c "import base64,sys;exec(base64.b64decode('${b64}').decode('utf-8'))" ${remoteHost} ${remotePort}`;

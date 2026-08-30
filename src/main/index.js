@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, Tray, Menu } from 'electron'
 import { join } from 'path'
 import os from 'os'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -11,6 +11,8 @@ import fs from 'fs'
 import { initLocalAPI } from './api.js'
 
 let mainManagerWindow = null;
+let tray = null;
+let isQuitting = false;
 const windows = new Map();
 const sshManagers = new Map();
 const windowRoutes = new Map();
@@ -37,6 +39,12 @@ function createMainWindow() {
     height: 800,
     show: false,
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#0f111a',
+      symbolColor: '#9ca3af',
+      height: 32
+    },
     icon: join(__dirname, '../../logo.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -59,6 +67,13 @@ function createMainWindow() {
     return { action: 'deny' }
   })
 
+  mainManagerWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainManagerWindow.hide();
+    }
+  });
+
   mainManagerWindow.on('closed', () => {
     mainManagerWindow = null;
     windows.delete(id);
@@ -78,6 +93,12 @@ function createServerWindow(serverId) {
     height: 800,
     show: false,
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#0f111a',
+      symbolColor: '#9ca3af',
+      height: 32
+    },
     icon: join(__dirname, '../../logo.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -110,6 +131,75 @@ function createServerWindow(serverId) {
   }
 }
 
+function updateTrayMenu() {
+  if (!tray) return;
+
+  const servers = vault.getServers();
+  
+  const serverItems = servers.map(server => ({
+    label: server.name || server.host,
+    click: () => {
+      createServerWindow(server.id);
+    }
+  }));
+
+  const template = [
+    { 
+      label: 'Show Glyph', 
+      click: () => {
+        if (mainManagerWindow) {
+          mainManagerWindow.show();
+          mainManagerWindow.focus();
+        } else {
+          createMainWindow();
+        }
+      }
+    },
+    { type: 'separator' }
+  ];
+
+  if (serverItems.length > 0) {
+    template.push({
+      label: 'Servers',
+      submenu: serverItems
+    });
+    template.push({ type: 'separator' });
+  }
+
+  template.push({ 
+    label: 'Exit', 
+    click: () => {
+      isQuitting = true;
+      app.quit();
+    }
+  });
+
+  const contextMenu = Menu.buildFromTemplate(template);
+  tray.setContextMenu(contextMenu);
+}
+
+function initTray() {
+  const iconPath = join(__dirname, '../../logo.png');
+  tray = new Tray(iconPath);
+  
+  tray.setToolTip('Glyph');
+
+  tray.on('click', () => {
+    if (mainManagerWindow) {
+      mainManagerWindow.show();
+      mainManagerWindow.focus();
+    } else {
+      createMainWindow();
+    }
+  });
+
+  updateTrayMenu();
+}
+
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.glyph')
 
@@ -118,6 +208,7 @@ app.whenReady().then(() => {
   })
 
   createMainWindow()
+  initTray()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
@@ -177,15 +268,18 @@ ipcMain.handle('get-servers', () => {
 });
 
 ipcMain.handle('add-server', (event, config) => {
-  return vault.addServer(config);
+  const id = vault.addServer(config);
+  updateTrayMenu();
+  return id;
 });
 
 ipcMain.handle('edit-server', (event, id, config) => {
   vault.editServer(id, config);
+  updateTrayMenu();
   return true;
 });
 
-ipcMain.handle('export-servers', async (event, masterPassword) => {
+ipcMain.handle('export-servers', async (event, masterPassword, serverIds) => {
   if (!masterPassword) throw new Error('Master password is required');
   const win = getWindow(event) || mainManagerWindow;
   const { canceled, filePath } = await dialog.showSaveDialog(win, {
@@ -197,7 +291,10 @@ ipcMain.handle('export-servers', async (event, masterPassword) => {
   if (canceled || !filePath) return false;
 
   try {
-    const rawData = vault.exportServersData();
+    let rawData = vault.exportServersData();
+    if (Array.isArray(serverIds) && serverIds.length > 0) {
+      rawData = rawData.filter(s => serverIds.includes(s.id));
+    }
     const dataStr = JSON.stringify(rawData);
     const encrypted = encryptData(dataStr, masterPassword);
     
@@ -209,7 +306,7 @@ ipcMain.handle('export-servers', async (event, masterPassword) => {
   }
 });
 
-ipcMain.handle('import-servers', async (event, masterPassword) => {
+ipcMain.handle('read-import-file', async (event, masterPassword) => {
   if (!masterPassword) throw new Error('Master password is required');
   const win = getWindow(event) || mainManagerWindow;
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {
@@ -226,17 +323,27 @@ ipcMain.handle('import-servers', async (event, masterPassword) => {
     const decryptedStr = decryptData(encryptedContent, masterPassword);
     
     const serversList = JSON.parse(decryptedStr);
-    const addedCount = vault.importServersData(serversList);
-    
-    return addedCount;
+    return serversList;
   } catch (error) {
     console.error('Import error:', error);
-    throw new Error('Failed to import servers. Incorrect password or corrupted file.');
+    throw new Error('Failed to read import file. Incorrect password or corrupted file.');
+  }
+});
+
+ipcMain.handle('import-selected-servers', async (event, serversList) => {
+  try {
+    const addedCount = vault.importServersData(serversList);
+    updateTrayMenu();
+    return addedCount;
+  } catch (error) {
+    console.error('Import selected error:', error);
+    throw new Error('Failed to import selected servers.');
   }
 });
 
 ipcMain.handle('delete-server', (event, id) => {
   vault.deleteServer(id);
+  updateTrayMenu();
   return true;
 });
 

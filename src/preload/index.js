@@ -11,8 +11,9 @@ const api = {
   getServers: () => ipcRenderer.invoke('get-servers'),
   addServer: (config) => ipcRenderer.invoke('add-server', config),
   editServer: (id, config) => ipcRenderer.invoke('edit-server', id, config),
-  exportServers: (password) => ipcRenderer.invoke('export-servers', password),
-  importServers: (password) => ipcRenderer.invoke('import-servers', password),
+  exportServers: (password, serverIds) => ipcRenderer.invoke('export-servers', password, serverIds),
+  readImportFile: (password) => ipcRenderer.invoke('read-import-file', password),
+  importSelectedServers: (servers) => ipcRenderer.invoke('import-selected-servers', servers),
   deleteServer: (id) => ipcRenderer.invoke('delete-server', id),
   sshDisconnect: () => ipcRenderer.invoke('ssh-disconnect'),
   sshOpenShell: (tabId) => ipcRenderer.invoke('ssh-open-shell', tabId),
@@ -66,6 +67,12 @@ const api = {
     const listener = (event, data) => callback(data);
     ipcRenderer.on('sftp-transfer-progress', listener);
     return () => ipcRenderer.removeListener('sftp-transfer-progress', listener);
+  },
+
+  onAgentSftpAction: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('agent-sftp-action', listener);
+    return () => ipcRenderer.removeListener('agent-sftp-action', listener);
   },
   
   // Secrets Vault

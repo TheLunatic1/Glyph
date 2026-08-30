@@ -162,17 +162,40 @@ function MemModal({ raw, onClose }) {
   const lines = (raw || '').split('\n').filter(Boolean);
   let memTotal = 0, memUsed = 0, memFree = 0, memBuff = 0;
   let swapTotal = 0, swapUsed = 0, swapFree = 0;
-  const memLine = lines.find(l => /^Mem/i.test(l));
-  const swapLine = lines.find(l => /^Swap/i.test(l));
-  if (memLine) { const p = memLine.trim().split(/\s+/); memTotal = +p[1]; memUsed = +p[2]; memFree = +p[3]; memBuff = +p[5] || 0; }
-  if (swapLine) { const p = swapLine.trim().split(/\s+/); swapTotal = +p[1]; swapUsed = +p[2]; swapFree = +p[3]; }
+  
+  if (lines.length > 0) {
+    const headerLine = lines.find(l => l.toLowerCase().includes('total'));
+    const memLine = lines.find(l => /^Mem/i.test(l));
+    const swapLine = lines.find(l => /^Swap/i.test(l));
+
+    if (headerLine && memLine) {
+      const headers = headerLine.trim().split(/\s+/).map(h => h.toLowerCase());
+      const vals = memLine.trim().split(/\s+/).slice(1);
+      const map = {};
+      headers.forEach((h, i) => map[h] = +vals[i]);
+      
+      memTotal = map.total || 0;
+      memUsed = map.used || 0;
+      memFree = map.free || 0;
+      memBuff = (map['buff/cache'] || 0) + (map.buffers || 0) + (map.cached || 0);
+    } else if (memLine) {
+      const p = memLine.trim().split(/\s+/);
+      memTotal = +p[1]; memUsed = +p[2]; memFree = +p[3]; memBuff = +p[5] || 0;
+    }
+
+    if (swapLine) {
+      const p = swapLine.trim().split(/\s+/);
+      swapTotal = +p[1]; swapUsed = +p[2]; swapFree = +p[3];
+    }
+  }
+
   const humanMB = v => v >= 1024 ? (v / 1024).toFixed(1) + ' GB' : v + ' MB';
   return (
     <ModalShell title="Memory Details" icon={<MemoryStick size={20} className="text-purple-400" />} onClose={onClose}>
       {memTotal > 0 ? (
         <>
-          <div className="grid grid-cols-3 gap-3 mb-6">
-            {[{ l: 'Total', v: memTotal }, { l: 'Used', v: memUsed }, { l: 'Free', v: memFree }].map(i => (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+            {[{ l: 'Total', v: memTotal }, { l: 'Used', v: memUsed }, { l: 'Buff/Cache', v: memBuff }, { l: 'Free', v: memFree }].map(i => (
               <div key={i.l} className="bg-dark-900 rounded-xl p-3 text-center border border-dark-700">
                 <p className="text-xl font-bold text-gray-100">{humanMB(i.v)}</p>
                 <p className="text-gray-500 text-xs mt-1">{i.l}</p>
