@@ -9,6 +9,8 @@ files:
 extraResources:
   - from: resources/mcp.js
     to: mcp.js
+  - from: resources/logo.png
+    to: logo.png
 publish:
   provider: github
   owner: TheLunatic1

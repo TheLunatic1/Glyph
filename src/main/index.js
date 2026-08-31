@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, Tray, Menu } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, Tray, Menu, nativeImage } from 'electron'
 import { join } from 'path'
 import os from 'os'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -131,6 +131,26 @@ function createServerWindow(serverId) {
   }
 }
 
+function getAppIcon(size = 32) {
+  const candidates = [
+    join(__dirname, '../../logo.png'),
+    join(__dirname, '../../src/renderer/src/assets/logo.png'),
+    join(process.resourcesPath, 'logo.png'),
+    join(app.getAppPath(), 'logo.png')
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      try {
+        const img = nativeImage.createFromPath(p);
+        if (!img.isEmpty()) {
+          return img.resize({ width: size, height: size });
+        }
+      } catch (_) {}
+    }
+  }
+  return nativeImage.createEmpty();
+}
+
 function updateTrayMenu() {
   if (!tray) return;
 
@@ -143,13 +163,20 @@ function updateTrayMenu() {
     }
   }));
 
+  const isVisible = mainManagerWindow && mainManagerWindow.isVisible();
+
   const template = [
     { 
-      label: 'Show Glyph', 
+      label: isVisible ? 'Hide Glyph' : 'Show Glyph', 
       click: () => {
         if (mainManagerWindow) {
-          mainManagerWindow.show();
-          mainManagerWindow.focus();
+          if (mainManagerWindow.isVisible()) {
+            mainManagerWindow.hide();
+          } else {
+            mainManagerWindow.show();
+            mainManagerWindow.focus();
+          }
+          updateTrayMenu();
         } else {
           createMainWindow();
         }
@@ -179,21 +206,34 @@ function updateTrayMenu() {
 }
 
 function initTray() {
-  const iconPath = join(__dirname, '../../logo.png');
-  tray = new Tray(iconPath);
-  
-  tray.setToolTip('Glyph');
+  try {
+    const icon = getAppIcon(16);
+    tray = new Tray(icon);
+    
+    tray.setToolTip('Glyph');
 
-  tray.on('click', () => {
-    if (mainManagerWindow) {
-      mainManagerWindow.show();
-      mainManagerWindow.focus();
-    } else {
-      createMainWindow();
-    }
-  });
+    tray.on('click', () => {
+      if (mainManagerWindow) {
+        if (mainManagerWindow.isVisible()) {
+          if (mainManagerWindow.isFocused()) {
+            mainManagerWindow.hide();
+          } else {
+            mainManagerWindow.focus();
+          }
+        } else {
+          mainManagerWindow.show();
+          mainManagerWindow.focus();
+        }
+      } else {
+        createMainWindow();
+      }
+      updateTrayMenu();
+    });
 
-  updateTrayMenu();
+    updateTrayMenu();
+  } catch (err) {
+    console.error('Failed to initialize tray:', err);
+  }
 }
 
 app.on('before-quit', () => {
@@ -219,10 +259,12 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  for (const manager of sshManagers.values()) {
-    manager.disconnect();
+  if (isQuitting) {
+    for (const manager of sshManagers.values()) {
+      manager.disconnect();
+    }
+    app.quit();
   }
-  app.quit();
 })
 
 ipcMain.handle('get-initial-route', (event) => {

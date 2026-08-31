@@ -35,7 +35,7 @@ export default function App() {
   const [servers, setServers] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [newServer, setNewServer] = useState({ id: null, name: '', host: '', username: '', password: '', port: 22, privateKey: '', zerotier: '' });
+  const [newServer, setNewServer] = useState({ id: null, name: '', host: '', username: 'root', password: '', port: 22, privateKey: '', zerotier: '' });
   const [searchQuery, setSearchQuery] = useState('');
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [connectingId, setConnectingId] = useState(null);
@@ -186,7 +186,7 @@ export default function App() {
     }
     setShowAddForm(false);
     // Fix #3: Reset ALL fields including advanced ones
-    setNewServer({ id: null, name: '', host: '', username: '', password: '', port: 22, privateKey: '', zerotier: '' });
+    setNewServer({ id: null, name: '', host: '', username: 'root', password: '', port: 22, privateKey: '', zerotier: '' });
     setShowAdvanced(false);
     loadServers();
   };
@@ -554,7 +554,13 @@ export default function App() {
                   <Settings size={20} />
                 </button>
                 <button
-                  onClick={() => setShowAddForm(!showAddForm)}
+                  onClick={() => {
+                    if (!showAddForm) {
+                      setNewServer({ id: null, name: '', host: '', username: 'root', password: '', port: 22, privateKey: '', zerotier: '' });
+                      setShowAdvanced(false);
+                    }
+                    setShowAddForm(!showAddForm);
+                  }}
                   className="px-4 py-2 bg-brand-500 hover:bg-brand-400 text-white font-medium rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-brand-500/20"
                 >
                   <Plus size={18} /> Add Server
@@ -624,7 +630,7 @@ export default function App() {
                   </button>
                   <div className="flex gap-2">
                     <button type="submit" className="px-6 py-2 bg-brand-500 hover:bg-brand-400 text-white rounded-lg transition-colors font-medium">Save</button>
-                    <button type="button" onClick={() => { setShowAddForm(false); setShowAdvanced(false); setNewServer({ id: null, name: '', host: '', username: '', password: '', port: 22, privateKey: '', zerotier: '' }); }} className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-lg transition-colors">Cancel</button>
+                    <button type="button" onClick={() => { setShowAddForm(false); setShowAdvanced(false); setNewServer({ id: null, name: '', host: '', username: 'root', password: '', port: 22, privateKey: '', zerotier: '' }); }} className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-gray-300 rounded-lg transition-colors">Cancel</button>
                   </div>
                 </div>
               </form>

@@ -44,17 +44,19 @@ async function glyphFetch(endpoint, method = 'GET', body = null) {
     res = await fetchAttempt();
   } catch (err) {
     if (err.cause?.code === 'ECONNREFUSED' || err.code === 'ECONNREFUSED' || err.message.includes('ECONNREFUSED') || err.message.includes('fetch failed')) {
-      const isAsar = __dirname.includes('app.asar');
+      const exeInParent = path.join(__dirname, '..', 'Glyph.exe');
+      const exeInSame = path.join(__dirname, 'Glyph.exe');
+      const exePath = fs.existsSync(exeInParent) ? exeInParent : (fs.existsSync(exeInSame) ? exeInSame : null);
+
       let child;
-      if (isAsar) {
-        let exePath = path.join(__dirname.split('resources')[0], 'Glyph.exe');
-        child = spawn(exePath, [], { detached: true, stdio: 'ignore', shell: true });
+      if (exePath) {
+        child = spawn(exePath, [], { detached: true, stdio: 'ignore' });
       } else {
         const rootDir = path.resolve(__dirname, '../../');
         const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
         child = spawn(npmCmd, ['run', 'dev'], { cwd: rootDir, detached: true, stdio: 'ignore', shell: true });
       }
-      child.unref();
+      if (child) child.unref();
 
       let attempts = 0;
       while (attempts < 20) {
