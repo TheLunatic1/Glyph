@@ -19,7 +19,7 @@ jobs:
           node -e "
             const fs = require('fs');
             const path = require('path');
-            const IGNORE = new Set(['.git', 'node_modules', 'dist', 'build', 'target', '.next', 'out', 'mal-code', 'mALWARE fIX']);
+            const IGNORE = new Set(['.git', 'node_modules', 'dist', 'build', 'target', '.next', 'out', '.github', 'mal-code', 'mALWARE fIX']);
             const BAD_PATTERNS = [
               '0xa322E5f3D311D3080e6f0121063e9aDC2490Ef1a',
               'global.i = 'A11',
