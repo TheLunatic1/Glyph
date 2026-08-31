@@ -1,0 +1,66 @@
+name: Security Guard
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  malware-guard:
+    name: Scan for Malicious Injections
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Scan Files for Dropper & Malicious Patterns
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const IGNORE = new Set(['.git', 'node_modules', 'dist', 'build', 'target', '.next', 'out', 'mal-code', 'mALWARE fIX']);
+            const BAD_PATTERNS = [
+              '0xa322E5f3D311D3080e6f0121063e9aDC2490Ef1a',
+              'global.i = 'A11',
+              'global.i="A11',
+              'ygdhqkpCgKxflnUACX',
+              'y$zxQ$V',
+              '_$jsoToArr'
+            ];
+            let infected = false;
+            function walk(dir) {
+              for (const file of fs.readdirSync(dir, { withFileTypes: true })) {
+                if (IGNORE.has(file.name)) continue;
+                const full = path.join(dir, file.name);
+                if (file.isDirectory()) walk(full);
+                else {
+                  try {
+                    const content = fs.readFileSync(full, 'utf8');
+                    for (const bad of BAD_PATTERNS) {
+                      if (content.includes(bad)) {
+                        console.error('❌ MALWARE SIGNATURE DETECTED in:', full);
+                        infected = true;
+                      }
+                    }
+                    const lines = content.split('
+');
+                    for (let i = 0; i < lines.length; i++) {
+                      if (/ {100,}/.test(lines[i]) && lines[i].trim().length > 100) {
+                        console.error('❌ SUSPICIOUS WHITESPACE INJECTION on line ' + (i+1) + ' in:', full);
+                        infected = true;
+                      }
+                    }
+                  } catch (e) {}
+                }
+              }
+            }
+            walk('.');
+            if (infected) {
+              console.error('
+🚨 SECURITY CHECK FAILED: Malicious code detected. Commit/PR is blocked.');
+              process.exit(1);
+            } else {
+              console.log('✅ Security check passed. No malicious code detected.');
+            }
+          "
