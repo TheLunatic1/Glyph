@@ -8,59 +8,27 @@ on:
 
 jobs:
   malware-guard:
-    name: Scan for Malicious Injections
+    name: Security Scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Scan Files for Dropper & Malicious Patterns
+      - name: Scan Files for Malware Signatures
         run: |
-          node -e "
-            const fs = require('fs');
-            const path = require('path');
-            const IGNORE = new Set(['.git', 'node_modules', 'dist', 'build', 'target', '.next', 'out', '.github', 'mal-code', 'mALWARE fIX']);
-            const BAD_PATTERNS = [
-              '0xa322E5f3D311D3080e6f0121063e9aDC2490Ef1a',
-              'global.i = 'A11',
-              'global.i="A11',
-              'ygdhqkpCgKxflnUACX',
-              'y$zxQ$V',
-              '_$jsoToArr'
-            ];
-            let infected = false;
-            function walk(dir) {
-              for (const file of fs.readdirSync(dir, { withFileTypes: true })) {
-                if (IGNORE.has(file.name)) continue;
-                const full = path.join(dir, file.name);
-                if (file.isDirectory()) walk(full);
-                else {
-                  try {
-                    const content = fs.readFileSync(full, 'utf8');
-                    for (const bad of BAD_PATTERNS) {
-                      if (content.includes(bad)) {
-                        console.error('❌ MALWARE SIGNATURE DETECTED in:', full);
-                        infected = true;
-                      }
-                    }
-                    const lines = content.split('
-');
-                    for (let i = 0; i < lines.length; i++) {
-                      if (/ {100,}/.test(lines[i]) && lines[i].trim().length > 100) {
-                        console.error('❌ SUSPICIOUS WHITESPACE INJECTION on line ' + (i+1) + ' in:', full);
-                        infected = true;
-                      }
-                    }
-                  } catch (e) {}
-                }
-              }
-            }
-            walk('.');
-            if (infected) {
-              console.error('
-🚨 SECURITY CHECK FAILED: Malicious code detected. Commit/PR is blocked.');
-              process.exit(1);
-            } else {
-              console.log('✅ Security check passed. No malicious code detected.');
-            }
-          "
+          set -e
+          echo "Scanning repository for dropper signatures..."
+          
+          # Check for known wallet or dropper variables
+          if grep -rnEI --exclude-dir={.git,node_modules,dist,build,target,.next,out,.github} "(0xa322E5f3D311D3080e6f0121063e9aDC2490Ef1a|global\.i\s*=\s*['\"]A11|ygdhqkpCgKxflnUACX|y\$zxQ\$V|_\$jsoToArr)" . ; then
+            echo "::error::Malicious signature found in repository!"
+            exit 1
+          fi
+
+          # Check for hidden code behind massive horizontal whitespace (100+ spaces)
+          if grep -rnEI --exclude-dir={.git,node_modules,dist,build,target,.next,out,.github} " {100,}" . | grep -E "(require|eval|spawn|import)"; then
+            echo "::error::Suspicious hidden code with whitespace padding detected!"
+            exit 1
+          fi
+
+          echo "✅ Security check passed. Codebase is clean."
