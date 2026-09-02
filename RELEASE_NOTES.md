@@ -9,4 +9,5 @@
 - **Server Window Connection Lifecycle & Retry:** Fixed an issue where canceling or encountering an error during connection in dedicated server windows left an inactive dashboard. Canceling or closing now properly closes the dedicated window via IPC, and a **Retry** button was added on connection failures.
 - **Default `root` Username:** The Add Server form now consistently pre-fills `username: "root"` and `port: 22` across all open, cancel, and save actions.
 - **Polished Splash Screen:** Restored the animated Glyph splash screen during app launch and reloads with a smooth breathing glow and fade transition.
+- **Selective Server Export & Import:** Users can now pick and choose exactly which servers to export into encrypted backup files with Select All / Deselect All controls and server previews, alongside selective server selection when importing backups.
 - **UI & Layout Enhancements:** Refined header layout with version badges, cleaner footer styling, and improved scrollbar theming.
