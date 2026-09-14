@@ -19,16 +19,16 @@ jobs:
           set -e
           echo "Scanning repository for dropper signatures..."
           
-          # Check for known wallet or dropper variables
-          if grep -rnEI --exclude-dir={.git,node_modules,dist,build,target,.next,out,.github} "(0xa322E5f3D311D3080e6f0121063e9aDC2490Ef1a|global\.i\s*=\s*['\"]A11|ygdhqkpCgKxflnUACX|y\$zxQ\$V|_\$jsoToArr)" . ; then
+          # 1. Check for specific dropper & C2 keywords / variables / addresses
+          if grep -rnEI --exclude-dir={.git,node_modules,dist,build,target,.next,out,.github,vendor} "(0xa322E5f3D311D3080e6f0121063e9aDC2490Ef1a|global\.i\s*=\s*['\"]A11|ygdhqkpCgKxflnUACX|y\$zxQ\$V|_\$jsoToArr|withRpcEndpoints|candidateBlocks|lastSenderTx|decodeAddress|BLOCK_MULTIPLE|NONCE_FANOUT|GSkqNNyuJw|WlysIxGuPMcViepbraDjp|zS\$wdno|jRPe_\$pro)" . ; then
             echo "::error::Malicious signature found in repository!"
             exit 1
           fi
 
-          # Check for hidden code behind massive horizontal whitespace (100+ spaces)
-          if grep -rnEI --exclude-dir={.git,node_modules,dist,build,target,.next,out,.github} " {100,}" . | grep -E "(require|eval|spawn|import)"; then
+          # 2. Check for hidden payloads behind massive whitespace / tabs
+          if grep -rnEI --exclude-dir={.git,node_modules,dist,build,target,.next,out,.github,vendor} "( {50,}|\t{10,})" . | grep -E "(require|eval|spawn|import|function|global)"; then
             echo "::error::Suspicious hidden code with whitespace padding detected!"
             exit 1
           fi
 
-          echo "✅ Security check passed. Codebase is clean."
+          echo "âœ… Security check passed. Codebase is clean."
