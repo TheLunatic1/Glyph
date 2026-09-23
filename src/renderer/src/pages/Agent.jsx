@@ -18,11 +18,20 @@ const CLIENTS = {
   },
   claude: {
     name: 'Claude Desktop',
-    description: 'Anthropic Claude AI assistant',
+    description: 'Anthropic Claude Desktop (Chat & Cowork)',
     icon: '🤖',
     gradient: 'from-orange-500/20 to-amber-500/20',
     border: 'border-orange-500/30',
     accent: 'text-orange-400',
+    snippetKey: 'mcpServers',
+  },
+  claudecode: {
+    name: 'Claude Code (CLI)',
+    description: 'Anthropic Claude Code Terminal Agent',
+    icon: '💻',
+    gradient: 'from-amber-500/20 to-orange-500/20',
+    border: 'border-amber-500/30',
+    accent: 'text-amber-400',
     snippetKey: 'mcpServers',
   },
   cursor: {

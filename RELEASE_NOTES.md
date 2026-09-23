@@ -1,13 +1,13 @@
-## v2.7.3 — MCP Auto-Launch, System Tray, Settings Modal & UI Polish
+## v2.7.4 — Claude Desktop MSIX Fix, Claude Code CLI Support & Selective Server Export
 
-### What's New & Improvements
+### What's New & Bug Fixes
 
-- **System Tray Integration & Quick Connect:** Glyph now integrates directly into the system tray with a dynamic menu that lists all your saved servers for instantaneous 1-click connection launches into dedicated windows, alongside options to show or hide the main app.
-- **MCP Auto-Launch & Path Resolution:** Fixed executable path resolution in the bundled MCP server (`resources/mcp.js`), ensuring AI agents (Antigravity, Claude, Cursor, VS Code) can automatically launch and communicate with `Glyph.exe` even when Glyph isn't already open.
-- **Modular Settings Modal:** Moved the AI Agent (MCP) configuration into a dedicated Settings modal accessible via the gear icon on the top header, keeping the home dashboard clean and focused.
+- **Claude Desktop (Windows Store / MSIX) Fix:** Fixed an issue where Claude Desktop installed via Microsoft Store / WindowsApp MSIX package was undetected and reported as "Not Installed". Glyph now scans `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\` alongside standard `%APPDATA%\Claude` paths and syncs MCP configs automatically.
+- **Claude Code (CLI) Integration:** Added first-class support for Anthropic's Claude Code terminal agent (`claude`) in the Settings modal with 1-click auto-install directly to `~/.claude.json`.
+- **Selective Server Export & Import:** Users can now pick and choose exactly which servers to export into encrypted backup files with Select All / Deselect All controls, live selected counters, and server previews, alongside selective server selection when decrypting and importing backups.
+- **System Tray & Window Lifecycle Fixes:** Resized the system tray icon to 16x16 with multiple fallback paths to prevent invisible tray icons on Windows, and ensured closing the window hides it cleanly to the tray without terminating background SSH sessions.
+- **Default `root` Username:** Pre-fills `username: "root"` and `port: 22` consistently across all Add Server form states and resets.
+- **Modular Settings Modal:** Clean, dedicated modal for configuring AI Agents (MCP) from the top header.
 - **Custom TitleBar & Window Dragging:** Built a custom title bar with window drag support, dynamic server title display, and left-aligned author attribution.
-- **Server Window Connection Lifecycle & Retry:** Fixed an issue where canceling or encountering an error during connection in dedicated server windows left an inactive dashboard. Canceling or closing now properly closes the dedicated window via IPC, and a **Retry** button was added on connection failures.
-- **Default `root` Username:** The Add Server form now consistently pre-fills `username: "root"` and `port: 22` across all open, cancel, and save actions.
-- **Polished Splash Screen:** Restored the animated Glyph splash screen during app launch and reloads with a smooth breathing glow and fade transition.
-- **Selective Server Export & Import:** Users can now pick and choose exactly which servers to export into encrypted backup files with Select All / Deselect All controls and server previews, alongside selective server selection when importing backups.
-- **UI & Layout Enhancements:** Refined header layout with version badges, cleaner footer styling, and improved scrollbar theming.
+- **Server Window Connection Lifecycle & Retry:** Proper IPC window close on connection cancel/error with a **Retry** option.
+- **Polished Splash Screen:** Smooth breathing glow and fade-out transition on app launch and reloads.

@@ -6,10 +6,11 @@ import {
 
 // ── Client definitions ────────────────────────────────────────────────────────
 const CLIENTS = {
-  antigravity: { name: 'Antigravity IDE', icon: '⚡', accent: 'text-blue-400',   border: 'border-blue-500/30',   bg: 'bg-blue-500/10'   },
-  claude:      { name: 'Claude Desktop',  icon: '🤖', accent: 'text-orange-400', border: 'border-orange-500/30', bg: 'bg-orange-500/10' },
-  cursor:      { name: 'Cursor',          icon: '◎',  accent: 'text-violet-400', border: 'border-violet-500/30', bg: 'bg-violet-500/10' },
-  vscode:      { name: 'VS Code',         icon: '⬡',  accent: 'text-sky-400',    border: 'border-sky-500/30',    bg: 'bg-sky-500/10'    },
+  antigravity: { name: 'Antigravity IDE',   icon: '⚡', accent: 'text-blue-400',   border: 'border-blue-500/30',   bg: 'bg-blue-500/10'   },
+  claude:      { name: 'Claude Desktop',    icon: '🤖', accent: 'text-orange-400', border: 'border-orange-500/30', bg: 'bg-orange-500/10' },
+  claudecode:  { name: 'Claude Code (CLI)', icon: '💻', accent: 'text-amber-400',  border: 'border-amber-500/30',  bg: 'bg-amber-500/10'  },
+  cursor:      { name: 'Cursor',            icon: '◎',  accent: 'text-violet-400', border: 'border-violet-500/30', bg: 'bg-violet-500/10' },
+  vscode:      { name: 'VS Code',           icon: '⬡',  accent: 'text-sky-400',    border: 'border-sky-500/30',    bg: 'bg-sky-500/10'    },
 };
 
 // ── Tiny helpers ──────────────────────────────────────────────────────────────

@@ -680,6 +680,30 @@ ipcMain.handle('get-zt-node-id', async () => {
 
 // ── MCP Agent Integration ─────────────────────────────────────────────────────
 
+function getClaudeDesktopConfigPath() {
+  if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA || join(os.homedir(), 'AppData', 'Local');
+    const packagesDir = join(localAppData, 'Packages');
+    if (fs.existsSync(packagesDir)) {
+      try {
+        const dirs = fs.readdirSync(packagesDir);
+        const claudePkg = dirs.find(d => d.toLowerCase().startsWith('claude_'));
+        if (claudePkg) {
+          const msixConfig = join(packagesDir, claudePkg, 'LocalCache', 'Roaming', 'Claude', 'claude_desktop_config.json');
+          const msixDir = join(packagesDir, claudePkg, 'LocalCache', 'Roaming', 'Claude');
+          if (fs.existsSync(msixConfig) || fs.existsSync(msixDir)) {
+            return msixConfig;
+          }
+        }
+      } catch (_) {}
+    }
+    return join(process.env.APPDATA || os.homedir(), 'Claude', 'claude_desktop_config.json');
+  }
+  if (process.platform === 'darwin')
+    return join(os.homedir(), 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
+  return join(os.homedir(), '.config', 'Claude', 'claude_desktop_config.json');
+}
+
 // Client config-file definitions
 const MCP_CLIENTS = {
   antigravity: {
@@ -689,13 +713,12 @@ const MCP_CLIENTS = {
   },
   claude: {
     name: 'Claude Desktop',
-    configPath: () => {
-      if (process.platform === 'win32')
-        return join(process.env.APPDATA || os.homedir(), 'Claude', 'claude_desktop_config.json');
-      if (process.platform === 'darwin')
-        return join(os.homedir(), 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
-      return join(os.homedir(), '.config', 'Claude', 'claude_desktop_config.json');
-    },
+    configPath: getClaudeDesktopConfigPath,
+    format: 'mcpServers',
+  },
+  claudecode: {
+    name: 'Claude Code (CLI)',
+    configPath: () => join(os.homedir(), '.claude.json'),
     format: 'mcpServers',
   },
   cursor: {
@@ -793,6 +816,25 @@ ipcMain.handle('mcp-auto-install', (_, clientId) => {
     }
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+    // For Claude Desktop on Windows, also write to standard AppData if different
+    if (clientId === 'claude' && process.platform === 'win32') {
+      const standardRoamingPath = join(process.env.APPDATA || os.homedir(), 'Claude', 'claude_desktop_config.json');
+      if (standardRoamingPath !== configPath) {
+        try {
+          const standardDir = join(standardRoamingPath, '..');
+          if (!fs.existsSync(standardDir)) fs.mkdirSync(standardDir, { recursive: true });
+          let standardCfg = {};
+          if (fs.existsSync(standardRoamingPath)) {
+            try { standardCfg = JSON.parse(fs.readFileSync(standardRoamingPath, 'utf-8')); } catch (_) {}
+          }
+          if (!standardCfg.mcpServers) standardCfg.mcpServers = {};
+          standardCfg.mcpServers.glyph_mcp = glyphEntry;
+          fs.writeFileSync(standardRoamingPath, JSON.stringify(standardCfg, null, 2));
+        } catch (_) {}
+      }
+    }
+
     return { success: true, path: configPath };
   } catch (err) {
     return { success: false, error: err.message };
