@@ -240,23 +240,43 @@ app.on('before-quit', () => {
   isQuitting = true;
 });
 
-app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.glyph')
+const gotTheLock = app.requestSingleInstanceLock();
 
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainManagerWindow) {
+      if (!mainManagerWindow.isVisible()) {
+        mainManagerWindow.show();
+      }
+      if (mainManagerWindow.isMinimized()) {
+        mainManagerWindow.restore();
+      }
+      mainManagerWindow.focus();
+    } else {
+      createMainWindow();
+    }
+  });
+
+  app.whenReady().then(() => {
+    electronApp.setAppUserModelId('com.glyph')
+
+    app.on('browser-window-created', (_, window) => {
+      optimizer.watchWindowShortcuts(window)
+    })
+
+    createMainWindow()
+    initTray()
+
+    app.on('activate', function () {
+      if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
+    })
+
+    // Start the Local API for MCP integration
+    initLocalAPI(vault, sshManagers, windowRoutes, createServerWindow, secretsVault)
   })
-
-  createMainWindow()
-  initTray()
-
-  app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow()
-  })
-
-  // Start the Local API for MCP integration
-  initLocalAPI(vault, sshManagers, windowRoutes, createServerWindow, secretsVault)
-})
+}
 
 app.on('window-all-closed', () => {
   if (isQuitting) {

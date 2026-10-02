@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Square, RotateCcw, AlertCircle, X, Terminal as TerminalIcon, Network, HardDrive, ChevronDown, ChevronUp } from 'lucide-react';
+import { Play, Square, RotateCcw, AlertCircle, X, Terminal as TerminalIcon, Network, HardDrive, ChevronDown, ChevronUp, Search } from 'lucide-react';
 
 // ── Animated loading dots ───────────────────────────────────────────────────
 function LoadingDots() {
@@ -26,6 +26,7 @@ function LoadingDots() {
 
 export default function Containers() {
   const [containers, setContainers] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState({});
   const [error, setError] = useState(null);
@@ -232,6 +233,41 @@ export default function Containers() {
             </div>
           )}
 
+          {/* Search Bar */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="relative flex-1">
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search containers by name, image, ID, or status..."
+                className="w-full bg-dark-900 border border-dark-700 rounded-xl pl-10 pr-9 py-2.5 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-brand-500/60 transition-colors"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 p-0.5 rounded transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            {searchQuery && (
+              <span className="text-xs text-gray-400 shrink-0 font-medium px-2 py-1 bg-dark-800 border border-dark-700 rounded-lg">
+                {containers.filter(c => {
+                  const query = searchQuery.toLowerCase().trim();
+                  return (c.name || '').toLowerCase().includes(query) ||
+                    (c.image || '').toLowerCase().includes(query) ||
+                    (c.id || '').toLowerCase().includes(query) ||
+                    (c.status || '').toLowerCase().includes(query) ||
+                    (c.state || '').toLowerCase().includes(query);
+                }).length} of {containers.length}
+              </span>
+            )}
+          </div>
+
           <div className="flex-1 glass-panel overflow-hidden flex flex-col">
             {loading ? (
               <div className="flex-1 flex items-center justify-center text-gray-400 gap-3">
@@ -252,7 +288,17 @@ export default function Containers() {
                     </tr>
                   </thead>
                   <tbody>
-                    {containers.map((c) => {
+                    {containers
+                      .filter(c => {
+                        if (!searchQuery.trim()) return true;
+                        const query = searchQuery.toLowerCase().trim();
+                        return (c.name || '').toLowerCase().includes(query) ||
+                          (c.image || '').toLowerCase().includes(query) ||
+                          (c.id || '').toLowerCase().includes(query) ||
+                          (c.status || '').toLowerCase().includes(query) ||
+                          (c.state || '').toLowerCase().includes(query);
+                      })
+                      .map((c) => {
                       const busy = !!actionLoading[c.id];
                       return (
                         <tr key={c.id} onClick={() => openContainerTab(c)} className="border-b border-dark-700/50 hover:bg-dark-700/30 transition-colors cursor-pointer group">
@@ -295,6 +341,18 @@ export default function Containers() {
                 {containers.length === 0 && !error && (
                   <div className="text-center p-12 text-gray-500">No Docker containers found.</div>
                 )}
+                {containers.length > 0 &&
+                  containers.filter(c => {
+                    if (!searchQuery.trim()) return true;
+                    const query = searchQuery.toLowerCase().trim();
+                    return (c.name || '').toLowerCase().includes(query) ||
+                      (c.image || '').toLowerCase().includes(query) ||
+                      (c.id || '').toLowerCase().includes(query) ||
+                      (c.status || '').toLowerCase().includes(query) ||
+                      (c.state || '').toLowerCase().includes(query);
+                  }).length === 0 && (
+                    <div className="text-center p-12 text-gray-500">No containers match "{searchQuery}".</div>
+                  )}
               </div>
             )}
           </div>

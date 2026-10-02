@@ -313,7 +313,21 @@ export function initLocalAPI(vault, sshManagers, windowRoutes, createServerWindo
     }
   });
 
-  app.listen(15354, '127.0.0.1', () => {
-    console.log('Glyph Local API (MCP Backend) running on http://127.0.0.1:15354');
-  });
+  try {
+    const server = app.listen(15354, '127.0.0.1', () => {
+      console.log('Glyph Local API (MCP Backend) running on http://127.0.0.1:15354');
+    });
+
+    server.on('error', (err) => {
+      if (err.code === 'EADDRINUSE') {
+        console.warn('[LocalAPI] Port 15354 is already in use by another instance.');
+      } else {
+        console.error('[LocalAPI] Server error:', err);
+      }
+    });
+
+    return server;
+  } catch (err) {
+    console.error('[LocalAPI] Failed to start server:', err);
+  }
 }
