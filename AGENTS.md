@@ -56,7 +56,17 @@ Glyph/
 3. **Safe Storage & Encrypted Backups:** Passwords in the vault use Electron `safeStorage` locally, and `.glyph` export files are encrypted with user-provided master passwords via AES-256-GCM.
 4. **Window Isolation:** Each connected server runs in a dedicated `BrowserWindow` keyed by `windowRoutes` and `sshManagers` maps.
 
+## Mobile Ecosystem (`glyph-app/`)
+The mobile application (`D:\REPOSITORIES\glyph-app`) is a high-performance React Native / Expo application built for Android & iOS with 100% architectural and visual parity with Desktop Glyph:
+1. **Server Schema Parity:** Direct alignment with Desktop vault schema: `{ id, name, host, username, port (default 22), password, privateKey, zerotier, os, status, metrics }`.
+2. **ZeroTier Network Overlay:** First-class ZeroTier Network ID support with ZT Network status pill badge and mesh routing indications.
+3. **OS Auto-Detection & Badges:** Remote OS is probed automatically upon SSH connection via `/etc/os-release` / `uname -s` and saved to the server in the vault, displaying distro-specific badges (Ubuntu, Debian, Alpine, CentOS, Arch, Fedora, macOS, Windows).
+4. **Desktop Modal & Terminal Flow:** Add/Edit Server form directly ports Desktop fields with "Show Advanced Options" toggle. The Connecting Modal replicates Desktop's real-time terminal sequence with live ms counter and step logs.
+5. **Connected Server Hub & Live Telemetry:** Feature parity across live Dashboard stats (CPU, RAM, Disk, GPU, and Network bandwidth) with full interactive hardware breakdown modals (Per-thread CPU load, Memory & Swap allocation, Storage & Mount partitions, Multi-vendor GPU driver setup & metrics, Network interface throughput), interactive Terminal with mobile accessory keys (ESC, TAB, CTRL, ALT, ^C, ^Z, ^D, |, /), SFTP file manager with remote code editor, Docker container cards with search & live logs, Commands catalog, Tunnels, and Secrets vault.
+6. **Author Attribution & Open Source Documentation:** Author branding (`TheLunatic1 (Salman Toha)`) across app header and settings, alongside an embedded in-app markdown document viewer for Apache License 2.0, Contributing Guidelines (`CONTRIBUTING.md`), Code of Conduct (`CODE_OF_CONDUCT.md`), and Release Notes (`RELEASE_NOTES.md`).
+
 ## Build, Test & Run Workflow
+### Desktop (Electron + React)
 ```bash
 # Install dependencies
 npm install
@@ -69,4 +79,14 @@ npm run build
 
 # Package installers (NSIS / portable for Windows)
 npm run dist
+```
+
+### Mobile (React Native / Expo)
+```bash
+# Bundle embedded JS for Android
+npx expo export:embed --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res
+
+# Install & run on attached Android device / emulator
+cd android && .\gradlew.bat installDebug
+adb shell am start -n dev.glyph.mobile/.MainActivity
 ```
