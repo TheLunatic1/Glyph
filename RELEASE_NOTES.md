@@ -1,10 +1,12 @@
-## v2.7.5 — Container Search, Single-Instance Lock & MCP Stability
+## v2.7.6 — Mobile App Promotion & Dynamic APK QR Code System
 
 ### What's New & Improvements
 
-- **Docker Container Real-time Search:** Added an instant search and filter bar to the Docker Containers view, allowing you to instantly search across container Names, Images, IDs, States, and Statuses with live match count badges and a 1-click clear control.
-- **Single-Instance Enforcement & Tray Polish:** Implemented strict single-instance locking (`app.requestSingleInstanceLock()`). Opening Glyph while it is minimized in the tray now automatically restores and focuses the active window, eliminating duplicate system tray icons and preventing multiple background instances.
-- **Persistent AI Agent (MCP) Stability:** Hardened the Local MCP API server (port `15354`) with dedicated port collision protection and token persistence, ensuring AI agents (Claude Desktop, Claude Code, Antigravity, Cursor, VS Code) maintain uninterrupted connectivity without requiring manual app restarts.
-- **Claude Desktop MSIX & Claude Code Support:** Full auto-discovery and 1-click auto-install for both Windows Store (MSIX) Claude Desktop installations and the Claude Code CLI terminal agent.
-- **Selective Server Export & Import:** Selective checkboxes with Select/Deselect All controls for exporting and importing `.glyph` encrypted server vaults.
-- **Polished Glassmorphic UI:** Smooth breathing splash screen, custom draggable title bar with left-aligned author attribution, and consistent default `root` server setup credentials.
+- **Glyph Mobile Promotion & QR Code Distribution:** Integrated an in-app distribution modal (`MobileAppModal.jsx`) allowing users to scan a dynamic QR code directly with their phone camera to instantly download the latest Android release APK (`Glyph-Mobile-Android-v1.0.1.apk` / `app-release.apk`).
+- **Live GitHub Releases API & Dynamic QR Engine:** Built a client-side dynamic QR engine powered by the GitHub Releases API (`TheLunatic1/glyph-app`) that auto-fetches the latest release version, APK download link, file size, and release date in real time without requiring desktop app updates.
+- **QR Mode Switcher & Direct Download:** Toggle QR code scanning between direct APK sideload binary download and the full GitHub release page, complete with 1-click PC download and link copy actions.
+- **Cross-Platform Promotional Navigation:** Added convenient access points across the desktop app:
+  - Top header toolbar button (`[📱 Mobile App | APK]`) in the Saved Servers view.
+  - Server navigation action button (`Glyph Mobile (APK)`) in the connected server sidebar.
+  - Dedicated `Glyph Mobile (Android)` tab in the Settings modal with feature previews and direct links.
+- **Ecosystem Parity & Documentation:** Documented complete `.glyph` AES-256-GCM vault backup compatibility between Desktop and Mobile apps.

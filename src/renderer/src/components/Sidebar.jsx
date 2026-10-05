@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Terminal, FolderOpen, Code, Box, LogOut, Lock, Network } from 'lucide-react';
+import { Activity, Terminal, FolderOpen, Code, Box, LogOut, Lock, Network, Smartphone, QrCode } from 'lucide-react';
 import logoSrc from '../assets/logo.png';
 
-export default function Sidebar({ activeTab, onTabChange, onDisconnect }) {
+export default function Sidebar({ activeTab, onTabChange, onDisconnect, onOpenMobile }) {
   const [version, setVersion] = useState('');
 
   useEffect(() => {
@@ -48,6 +48,17 @@ export default function Sidebar({ activeTab, onTabChange, onDisconnect }) {
       </nav>
 
       <div className="px-4 mt-auto pb-4">
+        {onOpenMobile && (
+          <button
+            onClick={onOpenMobile}
+            className="w-full flex items-center gap-2.5 px-3.5 py-2.5 bg-gradient-to-r from-brand-500/10 to-purple-500/10 hover:from-brand-500/20 hover:to-purple-500/20 border border-brand-500/25 rounded-xl text-xs font-semibold text-brand-300 hover:text-white transition-all tracking-wide mb-3 shadow-sm shadow-brand-500/5"
+            title="Get Glyph Mobile for Android (QR Code & Direct APK)"
+          >
+            <Smartphone size={16} className="text-brand-400" />
+            <span>Glyph Mobile (APK)</span>
+            <QrCode size={13} className="text-gray-500 ml-auto" />
+          </button>
+        )}
         <button
           onClick={onDisconnect}
           className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors tracking-wide mb-4"

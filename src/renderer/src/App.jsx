@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Server, Plus, Play, Trash2, Edit2, ShieldCheck, Terminal, HardDrive, Cpu, Search, X, ArrowRight, ExternalLink, Upload, Download, Key, Eye, EyeOff, Settings } from 'lucide-react';
+import { Server, Plus, Play, Trash2, Edit2, ShieldCheck, Terminal, HardDrive, Cpu, Search, X, ArrowRight, ExternalLink, Upload, Download, Key, Eye, EyeOff, Settings, Smartphone, QrCode } from 'lucide-react';
 import logoSrc from './assets/logo.png';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -12,6 +12,7 @@ import Tunnels from './pages/Tunnels';
 import SettingsModal from './components/SettingsModal';
 import OsLogo from './components/OsLogo';
 import UpdateModal from './components/UpdateModal';
+import MobileAppModal from './components/MobileAppModal';
 import TitleBar from './components/TitleBar';
 import SplashScreen from './components/SplashScreen';
 import ExportModal from './components/ExportModal';
@@ -51,6 +52,7 @@ export default function App() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showServerPassword, setShowServerPassword] = useState(false);
   const [serverToDelete, setServerToDelete] = useState(null);
+  const [showMobileModal, setShowMobileModal] = useState(false);
 
   // ── Auto-update state ──────────────────────────────────────────────────────
   const [updateInfo, setUpdateInfo]       = useState(null);  // { version, releaseNotes, releaseDate }
@@ -470,6 +472,15 @@ export default function App() {
             <h2 className="text-2xl font-semibold text-gray-200">Saved Servers</h2>
             <div className="flex items-center gap-3">
               <button
+                onClick={() => setShowMobileModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-brand-500/15 to-purple-500/15 hover:from-brand-500/25 hover:to-purple-500/25 border border-brand-500/30 text-brand-300 hover:text-white rounded-lg text-xs font-semibold transition-all shadow-sm shadow-brand-500/10 mr-1"
+                title="Get Glyph Mobile for Android (QR Code & Direct APK)"
+              >
+                <Smartphone size={15} className="text-brand-400" />
+                <span>Mobile App</span>
+                <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-300 font-mono font-bold">APK</span>
+              </button>
+              <button
                 onClick={() => setShowImportModal(true)}
                 className="p-2 text-gray-400 hover:text-brand-400 hover:bg-brand-500/10 rounded-lg transition-colors"
                 title="Import Servers"
@@ -642,8 +653,19 @@ export default function App() {
         </div>
         
         {showSettingsModal && (
-          <SettingsModal onClose={() => setShowSettingsModal(false)} />
+          <SettingsModal
+            onClose={() => setShowSettingsModal(false)}
+            onOpenMobile={() => {
+              setShowSettingsModal(false);
+              setShowMobileModal(true);
+            }}
+          />
         )}
+
+        <MobileAppModal
+          visible={showMobileModal}
+          onClose={() => setShowMobileModal(false)}
+        />
 
         <SplashScreen state={splashState} />
       </div>
@@ -702,6 +724,7 @@ export default function App() {
         <Sidebar
           activeTab={activeTab}
           onTabChange={setActiveTab}
+          onOpenMobile={() => setShowMobileModal(true)}
           onDisconnect={async () => {
             await window.api.sshDisconnect();
             if (initialRouteRef.current?.type === 'server') {
@@ -738,6 +761,11 @@ export default function App() {
         </div>
       </main>
       </div>
+
+      <MobileAppModal
+        visible={showMobileModal}
+        onClose={() => setShowMobileModal(false)}
+      />
 
       <SplashScreen state={splashState} />
     </div>

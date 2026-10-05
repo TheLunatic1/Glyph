@@ -7,7 +7,7 @@
 ```
 Glyph/
 ├── electron-builder.yml       # Electron builder packaging config & extraResources
-├── package.json               # Scripts, dependencies, and app version (v2.7.5)
+├── package.json               # Scripts, dependencies, and app version (v2.7.6)
 ├── resources/
 │   ├── logo.png               # App & system tray icon
 │   └── mcp.js                 # Standalone bundled MCP server bundle for production
@@ -34,7 +34,8 @@ Glyph/
 │   │       │   ├── SplashScreen.jsx    # Smooth launch splash screen
 │   │       │   ├── ExportModal.jsx     # Selective server export modal
 │   │       │   ├── ImportModal.jsx     # Selective server import modal
-│   │       │   ├── SettingsModal.jsx   # AI Agent (MCP) multi-client config modal
+│   │       │   ├── SettingsModal.jsx   # AI Agent (MCP) & Mobile App config modal
+│   │       │   ├── MobileAppModal.jsx  # Dynamic QR code & instant APK download modal
 │   │       │   ├── Sidebar.jsx         # Server view navigation
 │   │       │   ├── OsLogo.jsx          # OS detection badges
 │   │       │   └── UpdateModal.jsx     # In-app update manager

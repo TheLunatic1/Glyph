@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   Bot, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight,
-  Zap, RefreshCw, Copy, Check, FolderOpen, Settings, Info, X
+  Zap, RefreshCw, Copy, Check, FolderOpen, Settings, Info, X,
+  Smartphone, QrCode, Download, ExternalLink, ShieldCheck, Terminal, Layers, Cpu, Sparkles
 } from 'lucide-react';
 
 // ── Client definitions ────────────────────────────────────────────────────────
@@ -218,7 +219,7 @@ function ManualSetupPanel({ mcpScriptPath }) {
 }
 
 // ── Main Modal ────────────────────────────────────────────────────
-export default function SettingsModal({ onClose }) {
+export default function SettingsModal({ onClose, onOpenMobile }) {
   const [activeTab, setActiveTab] = useState('mcp');
   const [mcpInfo, setMcpInfo] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -274,12 +275,24 @@ export default function SettingsModal({ onClose }) {
         <div className="flex flex-1 overflow-hidden">
           
           {/* Sidebar */}
-          <div className="w-56 bg-dark-800/20 border-r border-dark-800 p-3 flex flex-col gap-1 shrink-0 overflow-y-auto custom-scrollbar">
+          <div className="w-56 bg-dark-800/20 border-r border-dark-800 p-3 flex flex-col gap-1.5 shrink-0 overflow-y-auto custom-scrollbar">
             <button 
               onClick={() => setActiveTab('mcp')}
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'mcp' ? 'bg-brand-500/20 text-brand-400' : 'text-gray-400 hover:text-gray-200 hover:bg-dark-700/50'}`}
             >
               <Bot size={15} /> AI Agents (MCP)
+            </button>
+            
+            <button 
+              onClick={() => setActiveTab('mobile')}
+              className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'mobile' ? 'bg-purple-500/20 text-purple-300' : 'text-gray-400 hover:text-gray-200 hover:bg-dark-700/50'}`}
+            >
+              <span className="flex items-center gap-2.5">
+                <Smartphone size={15} /> Glyph Mobile
+              </span>
+              <span className="text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300">
+                APK
+              </span>
             </button>
           </div>
           
@@ -331,6 +344,104 @@ export default function SettingsModal({ onClose }) {
                 ) : (
                   <p className="text-sm text-gray-500 py-8 text-center bg-dark-800/30 rounded-xl border border-dark-700 border-dashed">Failed to load MCP info.</p>
                 )}
+              </div>
+            )}
+
+            {activeTab === 'mobile' && (
+              <div className="max-w-2xl space-y-6">
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-200 flex items-center gap-2.5">
+                    <Smartphone size={22} className="text-purple-400" />
+                    Glyph Mobile for Android
+                  </h3>
+                  <p className="text-sm text-gray-400 mt-1.5">
+                    Manage your remote servers, terminals, and Docker containers anywhere from your pocket.
+                  </p>
+                </div>
+
+                {/* Banner Card */}
+                <div className="rounded-2xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 via-dark-800/60 to-brand-500/10 p-5">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          Android Release
+                        </span>
+                        <span className="text-xs text-gray-400 font-mono">v1.0.1 (APK Sideload)</span>
+                      </div>
+                      <h4 className="text-base font-semibold text-white mt-1.5">Scan to Download Instantly</h4>
+                      <p className="text-xs text-gray-300 mt-1 max-w-md">
+                        Scan the dynamic QR code with your Android camera to immediately download and install the latest release APK.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={onOpenMobile}
+                      className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-brand-500 hover:from-purple-500 hover:to-brand-400 text-white text-xs font-semibold rounded-xl flex items-center gap-2 shadow-lg shadow-purple-500/20 transition-all shrink-0"
+                    >
+                      <QrCode size={16} /> Open QR Scanner
+                    </button>
+                  </div>
+                </div>
+
+                {/* Features Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3.5 rounded-xl border border-dark-700 bg-dark-800/50 flex gap-3 items-start">
+                    <div className="p-2 rounded-lg bg-brand-500/10 text-brand-400 border border-brand-500/20 shrink-0">
+                      <Cpu size={16} />
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-semibold text-gray-200">Live Hardware Telemetry</h5>
+                      <p className="text-[11px] text-gray-400 mt-0.5">Real-time CPU, Memory, Disk, GPU, and Network bandwidth breakdown.</p>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-dark-700 bg-dark-800/50 flex gap-3 items-start">
+                    <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 shrink-0">
+                      <Terminal size={16} />
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-semibold text-gray-200">Interactive SSH Terminal</h5>
+                      <p className="text-[11px] text-gray-400 mt-0.5">Mobile-optimized keyboard accessory bar (ESC, TAB, CTRL, ALT, ^C, /).</p>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-dark-700 bg-dark-800/50 flex gap-3 items-start">
+                    <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+                      <Layers size={16} />
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-semibold text-gray-200">Docker & SFTP Editor</h5>
+                      <p className="text-[11px] text-gray-400 mt-0.5">Manage containers, view logs, and edit remote configuration files on the go.</p>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl border border-dark-700 bg-dark-800/50 flex gap-3 items-start">
+                    <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
+                      <ShieldCheck size={16} />
+                    </div>
+                    <div>
+                      <h5 className="text-xs font-semibold text-gray-200">Vault Interoperability</h5>
+                      <p className="text-[11px] text-gray-400 mt-0.5">Seamlessly import your Desktop AES-256 encrypted server vault export.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Direct Action Links */}
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <button
+                    onClick={() => window.open('https://github.com/TheLunatic1/glyph-app/releases/latest', '_blank')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-dark-800 hover:bg-dark-700 border border-dark-700 text-xs font-medium text-gray-300 hover:text-white transition-all"
+                  >
+                    <ExternalLink size={13} /> View GitHub Releases
+                  </button>
+                  <button
+                    onClick={() => window.open('https://github.com/TheLunatic1/glyph-app', '_blank')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-dark-800 hover:bg-dark-700 border border-dark-700 text-xs font-medium text-gray-300 hover:text-white transition-all"
+                  >
+                    <ExternalLink size={13} /> Mobile Repository
+                  </button>
+                </div>
               </div>
             )}
           </div>
