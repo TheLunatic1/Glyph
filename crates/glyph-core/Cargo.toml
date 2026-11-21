@@ -1,0 +1,32 @@
+[package]
+name = "glyph-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+tokio.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+base64.workspace = true
+directories.workspace = true
+regex.workspace = true
+log.workspace = true
+rand.workspace = true
+sha2.workspace = true
+
+aes-gcm.workspace = true
+scrypt.workspace = true
+argon2.workspace = true
+zeroize.workspace = true
+keyring.workspace = true
+ssh-key.workspace = true
+
+russh.workspace = true
+russh-sftp.workspace = true

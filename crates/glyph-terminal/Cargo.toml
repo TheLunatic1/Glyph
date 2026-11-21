@@ -1,0 +1,12 @@
+[package]
+name = "glyph-terminal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+alacritty_terminal.workspace = true
+iced.workspace = true
+serde.workspace = true
+unicode-width = "0.2"
