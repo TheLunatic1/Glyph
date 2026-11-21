@@ -375,11 +375,16 @@ async fn ensure_desktop_running(host_port: &str) -> Result<()> {
         let candidate = dir.join(name);
         if candidate.exists() {
             eprintln!("glyph-mcp: auto-launching {}", candidate.display());
-            Command::new(&candidate)
-                .stdin(Stdio::null())
+            let mut cmd = Command::new(&candidate);
+            cmd.stdin(Stdio::null())
                 .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
+                .stderr(Stdio::null());
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x0000_0200);
+            }
+            cmd.spawn()
                 .with_context(|| format!("Failed to launch {}", candidate.display()))?;
             launched = true;
             break;

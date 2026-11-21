@@ -3489,15 +3489,93 @@ impl GlyphApp {
                     ApiUiTab::Containers => ServerTab::Containers,
                     ApiUiTab::Vnc => ServerTab::Vnc,
                 };
+                let mut focus_wid = None;
                 for (&wid, srv) in &mut self.server_windows {
                     if srv.server.id == server_id {
                         srv.active_tab = ui_tab;
-                        if ui_tab == ServerTab::Tunnels {
-                            spawn_list_tunnels(wid, srv.session.clone());
+                        focus_wid = Some(wid);
+                        match ui_tab {
+                            ServerTab::Tunnels => spawn_list_tunnels(wid, srv.session.clone()),
+                            ServerTab::Containers => {
+                                srv.containers.loading = true;
+                                spawn_list_containers(wid, srv.session.clone());
+                            }
+                            ServerTab::Sftp if !srv.sftp.opened => {
+                                srv.sftp.loading = true;
+                                spawn_sftp_readdir(
+                                    wid,
+                                    srv.session.clone(),
+                                    srv.sftp.current_path.clone(),
+                                );
+                            }
+                            _ => {}
                         }
                     }
                 }
+                if let Some(wid) = focus_wid {
+                    window::gain_focus(wid)
+                } else {
+                    Task::none()
+                }
+            }
+            ApiUiEvent::AgentCommandStarted { server_id, command } => {
+                let mut focus_wid = None;
+                for (&wid, srv) in &mut self.server_windows {
+                    if srv.server.id == server_id {
+                        srv.active_tab = ServerTab::Terminal;
+                        srv.terminal.append_agent_command(&command);
+                        focus_wid = Some(wid);
+                    }
+                }
+                if let Some(wid) = focus_wid {
+                    window::gain_focus(wid)
+                } else {
+                    Task::none()
+                }
+            }
+            ApiUiEvent::AgentCommandOutput { server_id, output } => {
+                for srv in self.server_windows.values_mut() {
+                    if srv.server.id == server_id {
+                        srv.active_tab = ServerTab::Terminal;
+                        srv.terminal.append_agent_output(&output);
+                    }
+                }
                 Task::none()
+            }
+            ApiUiEvent::AgentSftpFile {
+                server_id,
+                action,
+                path,
+                content,
+            } => {
+                let parent_dir = match path.rsplit_once('/') {
+                    Some(("", _)) | None => "/".to_string(),
+                    Some((dir, _)) => dir.to_string(),
+                };
+                let mut focus_wid = None;
+                for (&wid, srv) in &mut self.server_windows {
+                    if srv.server.id == server_id {
+                        srv.active_tab = ServerTab::Sftp;
+                        srv.sftp.opened = true;
+                        srv.sftp.loading = true;
+                        srv.sftp.error = None;
+                        spawn_sftp_readdir(wid, srv.session.clone(), parent_dir.clone());
+                        srv.sftp.editor = Some(SftpEditorState {
+                            path: path.clone(),
+                            content: text_editor::Content::with_text(&content),
+                            dirty: false,
+                            saving: false,
+                        });
+                        let verb = if action == "write" { "Wrote" } else { "Read" };
+                        srv.sftp.status = Some(format!("[MCP Agent] {verb} {path}"));
+                        focus_wid = Some(wid);
+                    }
+                }
+                if let Some(wid) = focus_wid {
+                    window::gain_focus(wid)
+                } else {
+                    Task::none()
+                }
             }
             ApiUiEvent::SecretsChanged { server_id } => {
                 let updated = self.with_vault(|v| v.list_secrets(&server_id));

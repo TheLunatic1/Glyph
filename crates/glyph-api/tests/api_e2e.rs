@@ -549,12 +549,28 @@ async fn local_api_all_13_routes_and_auth_e2e() {
     assert_eq!(cmd_rm["success"], true);
 
     let mut saw_terminal_tab = false;
+    let mut saw_cmd_started = false;
+    let mut saw_cmd_output = false;
+    let mut saw_sftp_read = false;
+    let mut saw_sftp_write = false;
     while let Ok(ev) = ui_rx.try_recv() {
-        if matches!(ev, ApiUiEvent::SwitchTab { tab: ApiUiTab::Terminal, .. }) {
-            saw_terminal_tab = true;
+        match ev {
+            ApiUiEvent::SwitchTab {
+                tab: ApiUiTab::Terminal,
+                ..
+            } => saw_terminal_tab = true,
+            ApiUiEvent::AgentCommandStarted { .. } => saw_cmd_started = true,
+            ApiUiEvent::AgentCommandOutput { .. } => saw_cmd_output = true,
+            ApiUiEvent::AgentSftpFile { action, .. } if action == "read" => saw_sftp_read = true,
+            ApiUiEvent::AgentSftpFile { action, .. } if action == "write" => saw_sftp_write = true,
+            _ => {}
         }
     }
     assert!(saw_terminal_tab);
+    assert!(saw_cmd_started);
+    assert!(saw_cmd_output);
+    assert!(saw_sftp_read);
+    assert!(saw_sftp_write);
 
     api_handle.shutdown().await;
     let _ = fs::remove_dir_all(&temp_dir);

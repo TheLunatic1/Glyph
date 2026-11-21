@@ -69,6 +69,20 @@ pub enum ApiUiEvent {
     TunnelsChanged {
         server_id: String,
     },
+    AgentCommandStarted {
+        server_id: String,
+        command: String,
+    },
+    AgentCommandOutput {
+        server_id: String,
+        output: String,
+    },
+    AgentSftpFile {
+        server_id: String,
+        action: String,
+        path: String,
+        content: String,
+    },
 }
 
 impl std::fmt::Debug for ApiUiEvent {
@@ -101,6 +115,27 @@ impl std::fmt::Debug for ApiUiEvent {
             Self::TunnelsChanged { server_id } => f
                 .debug_struct("TunnelsChanged")
                 .field("server_id", server_id)
+                .finish(),
+            Self::AgentCommandStarted { server_id, command } => f
+                .debug_struct("AgentCommandStarted")
+                .field("server_id", server_id)
+                .field("command", command)
+                .finish(),
+            Self::AgentCommandOutput { server_id, output } => f
+                .debug_struct("AgentCommandOutput")
+                .field("server_id", server_id)
+                .field("output_len", &output.len())
+                .finish(),
+            Self::AgentSftpFile {
+                server_id,
+                action,
+                path,
+                ..
+            } => f
+                .debug_struct("AgentSftpFile")
+                .field("server_id", server_id)
+                .field("action", action)
+                .field("path", path)
                 .finish(),
         }
     }
@@ -706,13 +741,30 @@ impl ApiController for LocalVaultApiController {
             }
             let session = self.ensure_connected(&server_id).await?;
             self.emit_ui(ApiUiEvent::SwitchTab {
-                server_id,
+                server_id: server_id.clone(),
                 tab: ApiUiTab::Terminal,
             });
-            session
-                .exec(&command)
-                .await
-                .map_err(|e| ApiError::internal(e.to_string()))
+            self.emit_ui(ApiUiEvent::AgentCommandStarted {
+                server_id: server_id.clone(),
+                command: command.clone(),
+            });
+            match session.exec(&command).await {
+                Ok(output) => {
+                    self.emit_ui(ApiUiEvent::AgentCommandOutput {
+                        server_id,
+                        output: output.clone(),
+                    });
+                    Ok(output)
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    self.emit_ui(ApiUiEvent::AgentCommandOutput {
+                        server_id,
+                        output: format!("\x1b[31m[Error] {msg}\x1b[0m"),
+                    });
+                    Err(ApiError::internal(msg))
+                }
+            }
         })
     }
 
@@ -722,14 +774,21 @@ impl ApiController for LocalVaultApiController {
                 return Err(ApiError::bad_request("path is required"));
             }
             let session = self.ensure_connected(&server_id).await?;
-            self.emit_ui(ApiUiEvent::SwitchTab {
-                server_id,
-                tab: ApiUiTab::Sftp,
-            });
-            session
+            let content = session
                 .sftp_read_text(&path)
                 .await
-                .map_err(|e| ApiError::internal(e.to_string()))
+                .map_err(|e| ApiError::internal(e.to_string()))?;
+            self.emit_ui(ApiUiEvent::SwitchTab {
+                server_id: server_id.clone(),
+                tab: ApiUiTab::Sftp,
+            });
+            self.emit_ui(ApiUiEvent::AgentSftpFile {
+                server_id,
+                action: "read".to_string(),
+                path,
+                content: content.clone(),
+            });
+            Ok(content)
         })
     }
 
@@ -744,14 +803,21 @@ impl ApiController for LocalVaultApiController {
                 return Err(ApiError::bad_request("path is required"));
             }
             let session = self.ensure_connected(&server_id).await?;
-            self.emit_ui(ApiUiEvent::SwitchTab {
-                server_id,
-                tab: ApiUiTab::Sftp,
-            });
             session
                 .sftp_write_text(&path, &content)
                 .await
-                .map_err(|e| ApiError::internal(e.to_string()))
+                .map_err(|e| ApiError::internal(e.to_string()))?;
+            self.emit_ui(ApiUiEvent::SwitchTab {
+                server_id: server_id.clone(),
+                tab: ApiUiTab::Sftp,
+            });
+            self.emit_ui(ApiUiEvent::AgentSftpFile {
+                server_id,
+                action: "write".to_string(),
+                path,
+                content,
+            });
+            Ok(())
         })
     }
 

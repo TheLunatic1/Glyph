@@ -186,6 +186,41 @@ impl TerminalPageState {
             tab.shell = Some(shell);
         }
     }
+
+    pub fn ensure_agent_tab(&mut self) -> &mut TerminalTab {
+        if !self.tabs.iter().any(|t| t.id == "tab-agent") {
+            let mut emu = TerminalEmulator::new(100, 30);
+            emu.feed_bytes(b"\x1b[36m[MCP Agent Terminal]\x1b[0m\r\n");
+            self.tabs.push(TerminalTab {
+                id: "tab-agent".to_string(),
+                title: "AI Agent".to_string(),
+                emulator: emu,
+                shell: None,
+            });
+        }
+        self.active_tab_id = "tab-agent".to_string();
+        self.focused_tab_id = "tab-agent".to_string();
+        self.tabs
+            .iter_mut()
+            .find(|t| t.id == "tab-agent")
+            .expect("agent tab just inserted")
+    }
+
+    pub fn append_agent_command(&mut self, command: &str) {
+        let tab = self.ensure_agent_tab();
+        let formatted = format!("\r\n\x1b[36m[MCP Agent]\x1b[0m \x1b[33m$ {command}\x1b[0m\r\n");
+        tab.emulator.feed_bytes(formatted.as_bytes());
+    }
+
+    pub fn append_agent_output(&mut self, output: &str) {
+        let tab = self.ensure_agent_tab();
+        let normalized = output.replace("\r\n", "\n").replace('\n', "\r\n");
+        let mut bytes = normalized.into_bytes();
+        if !bytes.ends_with(b"\n") {
+            bytes.extend_from_slice(b"\r\n");
+        }
+        tab.emulator.feed_bytes(&bytes);
+    }
 }
 
 pub fn view<'a>(
