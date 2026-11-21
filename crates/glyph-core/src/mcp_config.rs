@@ -107,6 +107,7 @@ pub fn client_config_path(id: McpClientId) -> Option<PathBuf> {
     let base = BaseDirs::new()?;
     let home = base.home_dir();
     let config_roaming = base.config_dir();
+    let _ = &config_roaming;
 
     let path = match id {
         McpClientId::Antigravity => home.join(".gemini").join("config").join("mcp_config.json"),
