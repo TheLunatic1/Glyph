@@ -60,6 +60,7 @@ pub fn view<'a>(
                     width: 1.0,
                     radius: 10.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         column![
@@ -106,7 +107,7 @@ pub fn view<'a>(
             container(
                 row![
                     icons::alert_triangle(15.0, YELLOW_400),
-                    text("OS keychain unavailable — secrets are secured with machine-wrapped encryption.")
+                    text("OS keychain unavailable â€” secrets are secured with machine-wrapped encryption.")
                         .size(12)
                         .color(YELLOW_400),
                 ]
@@ -122,6 +123,7 @@ pub fn view<'a>(
                     width: 1.0,
                     radius: 8.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         );
@@ -256,6 +258,7 @@ pub fn view<'a>(
                         width: 1.0,
                         radius: 8.0.into(),
                     },
+                    snap: true,
                     ..Default::default()
                 }),
         );
@@ -272,6 +275,7 @@ pub fn view<'a>(
                         width: 1.0,
                         radius: 8.0.into(),
                     },
+                    snap: true,
                     ..Default::default()
                 }),
         );
@@ -327,6 +331,7 @@ pub fn view<'a>(
                                     width: 1.0,
                                     radius: 8.0.into(),
                                 },
+                                snap: true,
                                 ..Default::default()
                             }),
                         column![

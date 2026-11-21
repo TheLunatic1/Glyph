@@ -1,6 +1,6 @@
 use crate::theme::{
-    ghost_icon_button, titlebar_bg, BRAND_300, BRAND_400, FONT_MONO_BOLD, LOGO_PNG, RED_400,
-    TEXT_DIM, TEXT_MUTED, TEXT_SECONDARY,
+    ghost_icon_button, logo_handle, titlebar_bg, truncate_ellipsis, BRAND_300, BRAND_400,
+    FONT_MONO_BOLD, RED_400, TEXT_DIM, TEXT_MUTED, TEXT_SECONDARY,
 };
 use crate::ui::icons;
 use iced::widget::{button, container, image, mouse_area, row, space, text};
@@ -19,14 +19,16 @@ pub fn view<'a>(
     title: impl Into<std::borrow::Cow<'a, str>>,
     show_attribution: bool,
 ) -> Element<'a, TitleBarMsg> {
-    let logo_handle = image::Handle::from_bytes(LOGO_PNG);
+    let raw_title: std::borrow::Cow<'a, str> = title.into();
+    let display_title = truncate_ellipsis(raw_title.as_ref(), 48);
 
     let mut left = row![
-        image(logo_handle).width(16).height(16),
-        text(title.into())
+        image(logo_handle()).width(16).height(16),
+        text(display_title)
             .size(12)
             .font(FONT_MONO_BOLD)
-            .color(BRAND_300),
+            .color(BRAND_300)
+            .wrapping(text::Wrapping::None),
     ]
     .spacing(8)
     .align_y(alignment::Vertical::Center);
@@ -36,10 +38,15 @@ pub fn view<'a>(
             .push(text("•").size(10).color(TEXT_DIM))
             .push(text("Made by").size(10).color(TEXT_MUTED))
             .push(
-                button(text("TheLunatic1 (Salman Toha)").size(10).color(BRAND_400))
-                    .padding([1, 3])
-                    .style(ghost_icon_button)
-                    .on_press(TitleBarMsg::OpenGithub),
+                button(
+                    text("TheLunatic1 (Salman Toha)")
+                        .size(10)
+                        .color(BRAND_400)
+                        .wrapping(text::Wrapping::None),
+                )
+                .padding([1, 3])
+                .style(ghost_icon_button)
+                .on_press(TitleBarMsg::OpenGithub),
             );
     }
 
@@ -64,7 +71,7 @@ pub fn view<'a>(
 
     container(
         row![
-            container(left).padding([0, 12]),
+            container(left).padding([0, 12]).clip(true),
             drag_area,
             controls
         ]

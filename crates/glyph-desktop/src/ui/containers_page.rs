@@ -1,9 +1,9 @@
 use crate::theme::{
     brand_button, danger_button, dark_card, dark_input, dark_pick_list, dark_scrollable,
-    ghost_icon_button, glass_panel, pill_badge, rgba, secondary_button, BRAND_300, BRAND_400,
-    BRAND_500, DARK_700, DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, GREEN_500,
-    RED_400, RED_500, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400,
-    YELLOW_500,
+    ghost_icon_button, glass_panel, pill_badge, rgba, secondary_button, truncate_ellipsis,
+    BRAND_300, BRAND_400, BRAND_500, DARK_700, DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD,
+    GREEN_400, GREEN_500, RED_400, RED_500, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+    YELLOW_400, YELLOW_500,
 };
 use crate::ui::icons;
 use glyph_core::containers::{ContainerAction, ContainerDetails, ContainerSummary};
@@ -169,19 +169,25 @@ fn build_tab_bar<'a>(st: &'a ContainersPageState) -> Element<'a, ContainersPageM
         }
     }
 
-    container(tabs)
-        .width(Length::Fill)
-        .padding([8, 20])
-        .style(|_| container::Style {
-            background: Some(Background::Color(DARK_800)),
-            border: Border {
-                color: DARK_700,
-                width: 1.0,
-                radius: 0.0.into(),
-            },
-            ..Default::default()
-        })
-        .into()
+    container(
+        scrollable(tabs)
+            .horizontal()
+            .width(Length::Fill)
+            .style(dark_scrollable),
+    )
+    .width(Length::Fill)
+    .padding([8, 20])
+    .style(|_| container::Style {
+        background: Some(Background::Color(DARK_800)),
+        border: Border {
+            color: DARK_700,
+            width: 1.0,
+            radius: 0.0.into(),
+        },
+        snap: true,
+        ..Default::default()
+    })
+    .into()
 }
 
 fn tab_btn_style(active: bool) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
@@ -200,6 +206,7 @@ fn tab_btn_style(active: bool) -> impl Fn(&iced::Theme, button::Status) -> butto
                 width: if active { 1.0 } else { 0.0 },
                 radius: 8.0.into(),
             },
+            snap: true,
             ..Default::default()
         }
     }
@@ -216,6 +223,7 @@ fn view_list<'a>(st: &'a ContainersPageState) -> Element<'a, ContainersPageMsg> 
                     width: 1.0,
                     radius: 10.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         column![
@@ -464,23 +472,30 @@ fn view_list<'a>(st: &'a ContainersPageState) -> Element<'a, ContainersPageMsg> 
                 container(
                     row![
                         button(
-                            text(&c.name)
+                            text(truncate_ellipsis(&c.name, 26))
                                 .size(13)
                                 .font(FONT_MONO_BOLD)
-                                .color(BRAND_300),
+                                .color(BRAND_300)
+                                .wrapping(text::Wrapping::None),
                         )
                         .padding([4, 6])
                         .width(Length::FillPortion(3))
+                        .clip(true)
                         .style(|_, _| button::Style {
                             background: None,
+                            snap: true,
                             ..Default::default()
                         })
                         .on_press(ContainersPageMsg::OpenContainerTab(c_open)),
-                        text(&c.image)
-                            .size(12)
-                            .font(FONT_MONO)
-                            .color(TEXT_LIGHT)
-                            .width(Length::FillPortion(3)),
+                        container(
+                            text(truncate_ellipsis(&c.image, 28))
+                                .size(12)
+                                .font(FONT_MONO)
+                                .color(TEXT_LIGHT)
+                                .wrapping(text::Wrapping::None),
+                        )
+                        .width(Length::FillPortion(3))
+                        .clip(true),
                         container(
                             container(
                                 text(&c.state)
@@ -492,10 +507,14 @@ fn view_list<'a>(st: &'a ContainersPageState) -> Element<'a, ContainersPageMsg> 
                             .style(pill_badge(state_bg, rgba(state_col, 0.35), state_col)),
                         )
                         .width(Length::Fixed(100.0)),
-                        text(&c.status)
-                            .size(12)
-                            .color(TEXT_SECONDARY)
-                            .width(Length::FillPortion(2)),
+                        container(
+                            text(truncate_ellipsis(&c.status, 24))
+                                .size(12)
+                                .color(TEXT_SECONDARY)
+                                .wrapping(text::Wrapping::None),
+                        )
+                        .width(Length::FillPortion(2))
+                        .clip(true),
                         act_row,
                     ]
                     .align_y(alignment::Vertical::Center),
@@ -523,6 +542,7 @@ fn view_list<'a>(st: &'a ContainersPageState) -> Element<'a, ContainersPageMsg> 
                 width: 1.0,
                 radius: 12.0.into(),
             },
+            snap: true,
             ..Default::default()
         }),
     );
@@ -545,7 +565,7 @@ fn view_detail<'a>(
                     .size(18)
                     .font(FONT_MONO_BOLD)
                     .color(TEXT_PRIMARY),
-                text(format!("{}  ·  {}", det.summary.image, det.summary.status))
+                text(format!("{}  Â·  {}", det.summary.image, det.summary.status))
                     .size(11)
                     .font(FONT_MONO)
                     .color(TEXT_SECONDARY),
@@ -786,7 +806,7 @@ fn mini_stat<'a>(label: &'static str, val: &'a str) -> Element<'a, ContainersPag
     container(
         column![
             text(label).size(10).color(TEXT_MUTED),
-            text(if val.is_empty() { "—" } else { val })
+            text(if val.is_empty() { "â€”" } else { val })
                 .size(12)
                 .font(FONT_MONO_BOLD)
                 .color(TEXT_PRIMARY),

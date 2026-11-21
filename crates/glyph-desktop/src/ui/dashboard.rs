@@ -1,8 +1,9 @@
 use crate::theme::{
     dark_card, dark_scrollable, ghost_icon_button, glass_panel, modal_backdrop, modal_card, rgba,
-    server_card_button, BLUE_400, BRAND_300, BRAND_400, BRAND_500, CYAN_400, DARK_600, DARK_700,
-    DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, ORANGE_400, PURPLE_400, RED_400,
-    RED_500, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400, YELLOW_500,
+    server_card_button, truncate_ellipsis, BLUE_400, BRAND_300, BRAND_400, BRAND_500, CYAN_400,
+    DARK_600, DARK_700, DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, ORANGE_400,
+    PURPLE_400, RED_400, RED_500, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400,
+    YELLOW_500,
 };
 use crate::ui::icons;
 use crate::ui::os_logo::os_logo;
@@ -38,25 +39,36 @@ pub struct DashboardState {
 pub fn view<'a>(
     state: &'a DashboardState,
     server: &'a ServerSummary,
+    window_width: f32,
 ) -> Element<'a, DashboardMsg> {
     let header_left = column![
         text("Server Dashboard")
-            .size(30)
+            .size(28)
             .font(FONT_MONO_BOLD)
             .color(TEXT_PRIMARY),
         text("Live metrics - click any card for details")
-            .size(14)
+            .size(13)
             .color(TEXT_SECONDARY),
     ]
     .spacing(6);
 
+    let srv_title = truncate_ellipsis(
+        if server.name.is_empty() {
+            &server.host
+        } else {
+            &server.name
+        },
+        24,
+    );
+    let srv_sub = truncate_ellipsis(&format!("{}@{}:{}", server.username, server.host, server.port), 30);
+
     let server_pill = container(
         row![
             container(os_logo(server.os.as_deref(), &server.name, 30.0))
-                .width(Length::Fixed(48.0))
-                .height(Length::Fixed(48.0))
-                .center_x(Length::Fixed(48.0))
-                .center_y(Length::Fixed(48.0))
+                .width(Length::Fixed(46.0))
+                .height(Length::Fixed(46.0))
+                .center_x(Length::Fixed(46.0))
+                .center_y(Length::Fixed(46.0))
                 .style(|_| container::Style {
                     background: Some(iced::Background::Color(DARK_900)),
                     border: Border {
@@ -64,39 +76,46 @@ pub fn view<'a>(
                         width: 1.0,
                         radius: 999.0.into(),
                     },
+                    snap: true,
                     ..Default::default()
                 }),
             column![
-                text(&server.name)
-                    .size(18)
+                text(srv_title)
+                    .size(17)
                     .font(FONT_MONO_BOLD)
-                    .color(TEXT_PRIMARY),
-                text(format!("{}@{}:{}", server.username, server.host, server.port))
-                    .size(13)
+                    .color(TEXT_PRIMARY)
+                    .wrapping(text::Wrapping::None),
+                text(srv_sub)
+                    .size(12)
                     .font(FONT_MONO)
-                    .color(TEXT_SECONDARY),
+                    .color(TEXT_SECONDARY)
+                    .wrapping(text::Wrapping::None),
             ]
             .spacing(2),
         ]
-        .spacing(16)
+        .spacing(14)
         .align_y(alignment::Vertical::Center),
     )
-    .padding(16)
+    .max_width(380)
+    .clip(true)
+    .padding(14)
     .style(|_| container::Style {
-        background: Some(iced::Background::Color(rgba(DARK_800, 0.55))),
+        background: Some(iced::Background::Color(DARK_800)),
         border: Border {
             color: DARK_700,
             width: 1.0,
-            radius: 16.0.into(),
+            radius: 14.0.into(),
         },
+        snap: true,
         ..Default::default()
     });
 
     let header = row![header_left, space().width(Length::Fill), server_pill]
+        .spacing(16)
         .align_y(alignment::Vertical::Center)
         .width(Length::Fill);
 
-    let mut body = column![header].spacing(28).width(Length::Fill);
+    let mut body = column![header].spacing(24).width(Length::Fill);
 
     if state.stats.cores.len() > 16 {
         let banner = container(
@@ -125,26 +144,46 @@ pub fn view<'a>(
                 width: 1.0,
                 radius: 12.0.into(),
             },
+            snap: true,
             ..Default::default()
         });
         body = body.push(banner);
     }
 
-    // Top circular gauge cards + network card (matching preview.png!)
-    let mut top_cards = row![
-        circular_card(state.stats.cpu_pct, "CPU USAGE", DetailModal::Cpu),
-        circular_card(state.stats.mem_pct, "MEMORY", DetailModal::Memory),
-        circular_card(state.stats.disk_pct, "DISK USAGE", DetailModal::Disk),
-    ]
-    .spacing(16)
-    .width(Length::Fill);
-
-    if let Some(gpu) = state.stats.gpu_pct {
-        top_cards = top_cards.push(circular_card(gpu, "GPU USAGE", DetailModal::Gpu));
+    // Top circular gauge cards + network card â€” wrap cleanly onto 2 rows when narrow or 5 cards
+    let has_gpu = state.stats.gpu_pct.is_some();
+    if !has_gpu && window_width >= 1160.0 {
+        let top_cards = row![
+            circular_card(state.stats.cpu_pct, "CPU USAGE", DetailModal::Cpu),
+            circular_card(state.stats.mem_pct, "MEMORY", DetailModal::Memory),
+            circular_card(state.stats.disk_pct, "DISK USAGE", DetailModal::Disk),
+            network_card(&state.stats),
+        ]
+        .spacing(16)
+        .width(Length::Fill);
+        body = body.push(top_cards);
+    } else {
+        let row1 = row![
+            circular_card(state.stats.cpu_pct, "CPU USAGE", DetailModal::Cpu),
+            circular_card(state.stats.mem_pct, "MEMORY", DetailModal::Memory),
+            circular_card(state.stats.disk_pct, "DISK USAGE", DetailModal::Disk),
+        ]
+        .spacing(16)
+        .width(Length::Fill);
+        let mut row2 = row![].spacing(16).width(Length::Fill);
+        if let Some(gpu) = state.stats.gpu_pct {
+            row2 = row2.push(circular_card(gpu, "GPU USAGE", DetailModal::Gpu));
+        }
+        row2 = row2.push(network_card(&state.stats));
+        if !has_gpu {
+            row2 = row2
+                .push(space().width(Length::FillPortion(1)))
+                .push(space().width(Length::FillPortion(1)));
+        } else {
+            row2 = row2.push(space().width(Length::FillPortion(1)));
+        }
+        body = body.push(row1).push(row2);
     }
-    top_cards = top_cards.push(network_card(&state.stats));
-
-    body = body.push(top_cards);
 
     // Bottom 2-column Uptime & Active Users cards
     let uptime_card = container(
@@ -401,6 +440,7 @@ fn render_modal<'a>(modal: DetailModal, stats: &'a TelemetrySnapshot) -> Element
             width: 1.0,
             radius: 0.0.into(),
         },
+        snap: true,
         ..Default::default()
     });
 
@@ -540,9 +580,9 @@ fn cpu_modal_body<'a>(stats: &'a TelemetrySnapshot) -> Element<'a, DashboardMsg>
                         column![
                             text(&t.label).size(12).color(TEXT_SECONDARY),
                             text(if t.celsius > 0.0 {
-                                format!("{:.0}°C", t.celsius)
+                                format!("{:.0}Â°C", t.celsius)
                             } else {
-                                "—".to_string()
+                                "â€”".to_string()
                             })
                             .size(15)
                             .font(FONT_MONO_BOLD)
@@ -799,9 +839,9 @@ fn gpu_modal_body<'a>(stats: &'a TelemetrySnapshot) -> Element<'a, DashboardMsg>
                             column![
                                 text("TEMPERATURE").size(11).color(TEXT_SECONDARY),
                                 text(if g.temp_c > 0.0 {
-                                    format!("{:.0}°C", g.temp_c)
+                                    format!("{:.0}Â°C", g.temp_c)
                                 } else {
-                                    "—".to_string()
+                                    "â€”".to_string()
                                 })
                                 .size(18)
                                 .font(FONT_MONO_BOLD)
@@ -849,8 +889,8 @@ fn net_modal_body<'a>(stats: &'a TelemetrySnapshot) -> Element<'a, DashboardMsg>
 
     let hdr = row![
         text("INTERFACE").size(11).color(TEXT_MUTED).width(Length::FillPortion(2)),
-        text("↓ SPEED").size(11).color(GREEN_400).width(Length::FillPortion(2)),
-        text("↑ SPEED").size(11).color(BLUE_400).width(Length::FillPortion(2)),
+        text("â†“ SPEED").size(11).color(GREEN_400).width(Length::FillPortion(2)),
+        text("â†‘ SPEED").size(11).color(BLUE_400).width(Length::FillPortion(2)),
         text("TOTAL RX").size(11).color(TEXT_MUTED).width(Length::FillPortion(2)),
         text("TOTAL TX").size(11).color(TEXT_MUTED).width(Length::FillPortion(2)),
     ]
@@ -876,6 +916,7 @@ fn net_modal_body<'a>(stats: &'a TelemetrySnapshot) -> Element<'a, DashboardMsg>
                                     radius: 999.0.into(),
                                     ..Default::default()
                                 },
+                                snap: true,
                                 ..Default::default()
                             }),
                         text(&iface.iface).size(13).font(FONT_MONO_BOLD).color(TEXT_PRIMARY),
@@ -979,6 +1020,7 @@ fn progress_bar<'a>(
                     radius: 999.0.into(),
                     ..Default::default()
                 },
+                snap: true,
                 ..Default::default()
             })]
     } else if pct <= 0.001 {
@@ -994,6 +1036,7 @@ fn progress_bar<'a>(
                         radius: 999.0.into(),
                         ..Default::default()
                     },
+                    snap: true,
                     ..Default::default()
                 }),
             space().width(Length::FillPortion(rest_portion)),
@@ -1009,6 +1052,7 @@ fn progress_bar<'a>(
                 radius: 999.0.into(),
                 ..Default::default()
             },
+            snap: true,
             ..Default::default()
         })
         .into()

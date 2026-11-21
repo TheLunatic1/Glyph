@@ -72,6 +72,7 @@ pub fn view<'a>(st: &'a TunnelsPageState) -> Element<'a, TunnelsPageMsg> {
                     width: 1.0,
                     radius: 10.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         column![
@@ -303,6 +304,7 @@ pub fn view<'a>(st: &'a TunnelsPageState) -> Element<'a, TunnelsPageMsg> {
                         .padding([4, 6])
                         .style(|_, _| button::Style {
                             background: None,
+                            snap: true,
                             ..Default::default()
                         })
                         .on_press(TunnelsPageMsg::OpenUrl(url)),
@@ -386,6 +388,7 @@ pub fn view<'a>(st: &'a TunnelsPageState) -> Element<'a, TunnelsPageMsg> {
                     width: 1.0,
                     radius: 8.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             });
 
@@ -423,6 +426,7 @@ pub fn view<'a>(st: &'a TunnelsPageState) -> Element<'a, TunnelsPageMsg> {
             width: 1.0,
             radius: 12.0.into(),
         },
+        snap: true,
         ..Default::default()
     });
 

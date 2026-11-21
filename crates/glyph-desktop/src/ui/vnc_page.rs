@@ -79,6 +79,7 @@ pub fn view<'a>(st: &'a VncPageState) -> Element<'a, VncPageMsg> {
                     width: 1.0,
                     radius: 10.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         column![

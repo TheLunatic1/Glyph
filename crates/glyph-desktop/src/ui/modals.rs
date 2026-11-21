@@ -453,6 +453,7 @@ fn view_delete<'a>(st: &'a DeleteConfirmState) -> Element<'a, ModalMsg> {
                     width: 1.0,
                     radius: 10.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         column![
@@ -519,6 +520,7 @@ fn view_export<'a>(st: &'a ExportModalState, servers: &'a [ServerSummary]) -> El
                     width: 1.0,
                     radius: 10.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         column![
@@ -526,7 +528,7 @@ fn view_export<'a>(st: &'a ExportModalState, servers: &'a [ServerSummary]) -> El
                 .size(17)
                 .font(FONT_MONO_BOLD)
                 .color(TEXT_PRIMARY),
-            text("AES-256-GCM + scrypt · Compatible with Glyph v2 & Mobile")
+            text("AES-256-GCM + scrypt Â· Compatible with Glyph v2 & Mobile")
                 .size(11)
                 .color(TEXT_SECONDARY),
         ]
@@ -600,6 +602,7 @@ fn view_export<'a>(st: &'a ExportModalState, servers: &'a [ServerSummary]) -> El
                         width: 1.0,
                         radius: 8.0.into(),
                     },
+                    snap: true,
                     ..Default::default()
                 }),
             );
@@ -619,6 +622,7 @@ fn view_export<'a>(st: &'a ExportModalState, servers: &'a [ServerSummary]) -> El
             width: 1.0,
             radius: 10.0.into(),
         },
+        snap: true,
         ..Default::default()
     });
 
@@ -706,6 +710,7 @@ fn view_import<'a>(st: &'a ImportModalState) -> Element<'a, ModalMsg> {
                     width: 1.0,
                     radius: 10.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         column![
@@ -874,6 +879,7 @@ fn view_import<'a>(st: &'a ImportModalState) -> Element<'a, ModalMsg> {
                             width: 1.0,
                             radius: 8.0.into(),
                         },
+                        snap: true,
                         ..Default::default()
                     }),
                 );
@@ -892,6 +898,7 @@ fn view_import<'a>(st: &'a ImportModalState) -> Element<'a, ModalMsg> {
                     width: 1.0,
                     radius: 10.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             });
 
@@ -917,7 +924,7 @@ fn view_import<'a>(st: &'a ImportModalState) -> Element<'a, ModalMsg> {
 
             content = content.push(
                 row![
-                    button(text("← Back").size(13).color(TEXT_LIGHT))
+                    button(text("â† Back").size(13).color(TEXT_LIGHT))
                         .padding([9, 14])
                         .style(secondary_button)
                         .on_press(ModalMsg::ImportBackToUnlock),
@@ -955,6 +962,7 @@ fn view_ssh_keys<'a>(
                     width: 1.0,
                     radius: 10.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         column![
@@ -1065,6 +1073,7 @@ fn view_ssh_keys<'a>(
                 width: 1.0,
                 radius: 10.0.into(),
             },
+            snap: true,
             ..Default::default()
         });
         content = content.push(gen_form);
@@ -1298,6 +1307,7 @@ fn view_ssh_keys<'a>(
                             width: 1.0,
                             radius: 8.0.into(),
                         },
+                        snap: true,
                         ..Default::default()
                     }),
                 );
@@ -1394,9 +1404,9 @@ fn view_connecting<'a>(st: &'a ConnectingModalState) -> Element<'a, ModalMsg> {
     for (idx, line) in st.logs.iter().enumerate() {
         let is_last = idx + 1 == st.logs.len();
         let line_txt = if is_last && st.error.is_none() && st.host_key_prompt.is_none() && st.blink_on {
-            format!("❯ {line} █")
+            format!("â¯ {line} â–ˆ")
         } else {
-            format!("❯ {line}")
+            format!("â¯ {line}")
         };
         log_col = log_col.push(
             text(line_txt)
@@ -1426,6 +1436,7 @@ fn view_connecting<'a>(st: &'a ConnectingModalState) -> Element<'a, ModalMsg> {
             width: 1.0,
             radius: 10.0.into(),
         },
+        snap: true,
         ..Default::default()
     });
 
@@ -1455,7 +1466,7 @@ fn view_connecting<'a>(st: &'a ConnectingModalState) -> Element<'a, ModalMsg> {
             .spacing(8)
             .align_y(alignment::Vertical::Center),
             text(format!(
-                "Host: {}:{}   ·   Algorithm: {}",
+                "Host: {}:{}   Â·   Algorithm: {}",
                 prompt.host, prompt.port, prompt.algorithm
             ))
             .size(12)
@@ -1516,6 +1527,7 @@ fn view_connecting<'a>(st: &'a ConnectingModalState) -> Element<'a, ModalMsg> {
                     width: 1.0,
                     radius: 10.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             });
         content = content.push(prompt_box);
@@ -1566,6 +1578,7 @@ fn view_settings<'a>(
                     width: 1.0,
                     radius: 10.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         column![
@@ -1573,7 +1586,7 @@ fn view_settings<'a>(
                 .size(18)
                 .font(FONT_MONO_BOLD)
                 .color(TEXT_PRIMARY),
-            text(format!("Glyph v{APP_VERSION} · Pure Rust Edition"))
+            text(format!("Glyph v{APP_VERSION} Â· Pure Rust Edition"))
                 .size(11)
                 .color(TEXT_SECONDARY),
         ]
@@ -1621,6 +1634,7 @@ fn view_settings<'a>(
                     width: if active { 1.0 } else { 0.0 },
                     radius: 8.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }
         })
@@ -1662,6 +1676,7 @@ fn view_settings<'a>(
             width: 1.0,
             radius: 12.0.into(),
         },
+        snap: true,
         ..Default::default()
     });
 
@@ -1797,25 +1812,21 @@ fn view_settings_mcp<'a>(st: &'a SettingsModalState) -> Element<'a, ModalMsg> {
                         width: 1.0,
                         radius: 6.0.into(),
                     },
+                    snap: true,
                     ..Default::default()
                 }),
-                column![
-                    text(c.name)
-                        .size(13)
-                        .font(FONT_MONO_BOLD)
-                        .color(TEXT_PRIMARY),
-                    text(c.config_path.display().to_string())
-                        .size(10)
-                        .font(FONT_MONO)
-                        .color(TEXT_MUTED),
-                ]
-                .spacing(2),
+                text(c.name)
+                    .size(13)
+                    .font(FONT_MONO_BOLD)
+                    .color(TEXT_PRIMARY)
+                    .wrapping(text::Wrapping::None),
                 space().width(Length::Fill),
                 container(
                     text(badge_lbl)
                         .size(10)
                         .font(FONT_MONO_BOLD)
-                        .color(badge_col),
+                        .color(badge_col)
+                        .wrapping(text::Wrapping::None),
                 )
                 .padding([3, 8])
                 .style(pill_badge(badge_bg, rgba(badge_col, 0.35), badge_col)),
@@ -1835,8 +1846,16 @@ fn view_settings_mcp<'a>(st: &'a SettingsModalState) -> Element<'a, ModalMsg> {
             ]
             .spacing(8)
             .align_y(alignment::Vertical::Center),
+            container(
+                text(c.config_path.display().to_string())
+                    .size(10)
+                    .font(FONT_MONO)
+                    .color(TEXT_MUTED),
+            )
+            .width(Length::Fill)
+            .clip(true),
         ]
-        .spacing(8);
+        .spacing(6);
 
         if expanded {
             let snippet = build_config_snippet(c.format, None, Path::new(&st.mcp_bin_path));
@@ -1878,6 +1897,7 @@ fn view_settings_mcp<'a>(st: &'a SettingsModalState) -> Element<'a, ModalMsg> {
                         width: 1.0,
                         radius: 8.0.into(),
                     },
+                    snap: true,
                     ..Default::default()
                 }),
             );
@@ -1894,6 +1914,7 @@ fn view_settings_mcp<'a>(st: &'a SettingsModalState) -> Element<'a, ModalMsg> {
                         width: 1.0,
                         radius: 10.0.into(),
                     },
+                    snap: true,
                     ..Default::default()
                 }),
         );
@@ -2158,7 +2179,7 @@ fn view_settings_updates<'a>(st: &'a SettingsModalState) -> Element<'a, ModalMsg
                         .size(15)
                         .font(FONT_MONO_BOLD)
                         .color(TEXT_PRIMARY),
-                    text("Made by TheLunatic1 (Salman Toha) · Pure Rust v3")
+                    text("Made by TheLunatic1 (Salman Toha) Â· Pure Rust v3")
                         .size(11)
                         .color(TEXT_SECONDARY),
                 ]
@@ -2244,6 +2265,7 @@ fn view_mobile<'a>(st: &'a MobileModalState) -> Element<'a, ModalMsg> {
                 radius: 4.0.into(),
                 ..Default::default()
             },
+            snap: true,
             ..Default::default()
         });
 
@@ -2257,6 +2279,7 @@ fn view_mobile<'a>(st: &'a MobileModalState) -> Element<'a, ModalMsg> {
                     width: 1.0,
                     radius: 10.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         column![
@@ -2274,7 +2297,7 @@ fn view_mobile<'a>(st: &'a MobileModalState) -> Element<'a, ModalMsg> {
             ]
             .spacing(8)
             .align_y(alignment::Vertical::Center),
-            text("Manage your infrastructure anywhere — TheLunatic1/glyph-app")
+            text("Manage your infrastructure anywhere â€” TheLunatic1/glyph-app")
                 .size(11)
                 .color(TEXT_SECONDARY),
         ]
@@ -2289,18 +2312,24 @@ fn view_mobile<'a>(st: &'a MobileModalState) -> Element<'a, ModalMsg> {
     .align_y(alignment::Vertical::Center);
 
     let qr_card: Element<'a, ModalMsg> = if let Some(handle) = &st.qr_handle {
-        container(image(handle.clone()).width(216).height(216))
-            .padding(10)
-            .style(|_| container::Style {
-                background: Some(Background::Color(Color::WHITE)),
-                border: Border {
-                    color: DARK_700,
-                    width: 1.0,
-                    radius: 12.0.into(),
-                },
-                ..Default::default()
-            })
-            .into()
+        container(
+            image(handle.clone())
+                .width(216)
+                .height(216)
+                .filter_method(image::FilterMethod::Nearest),
+        )
+        .padding(10)
+        .style(|_| container::Style {
+            background: Some(Background::Color(Color::WHITE)),
+            border: Border {
+                color: DARK_700,
+                width: 1.0,
+                radius: 12.0.into(),
+            },
+            snap: true,
+            ..Default::default()
+        })
+        .into()
     } else {
         container(icons::qr_code(80.0, TEXT_MUTED))
             .width(Length::Fixed(236.0))
@@ -2426,6 +2455,7 @@ fn view_mobile<'a>(st: &'a MobileModalState) -> Element<'a, ModalMsg> {
             width: 1.0,
             radius: 10.0.into(),
         },
+        snap: true,
         ..Default::default()
     });
 
@@ -2512,6 +2542,7 @@ fn error_banner<'a, M: 'a>(msg: &'a str) -> Element<'a, M> {
             width: 1.0,
             radius: 8.0.into(),
         },
+        snap: true,
         ..Default::default()
     })
     .into()
@@ -2535,6 +2566,7 @@ fn success_banner<'a, M: 'a>(msg: &'a str) -> Element<'a, M> {
             width: 1.0,
             radius: 8.0.into(),
         },
+        snap: true,
         ..Default::default()
     })
     .into()

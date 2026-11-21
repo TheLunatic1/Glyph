@@ -1,7 +1,7 @@
 use crate::theme::{
-    danger_ghost_button, ghost_icon_button, mobile_pill_button, sidebar_bg, sidebar_nav_button,
-    APP_VERSION, BRAND_300, BRAND_400, FONT_MONO_BOLD, LOGO_PNG, RED_400, TEXT_DIM, TEXT_LIGHT,
-    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+    danger_ghost_button, ghost_icon_button, logo_handle, mobile_pill_button, sidebar_bg,
+    sidebar_nav_button, APP_VERSION, BRAND_300, BRAND_400, FONT_MONO_BOLD, RED_400, TEXT_DIM,
+    TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
 };
 use crate::ui::icons;
 use iced::widget::{button, column, container, image, row, scrollable, space, text};
@@ -43,7 +43,7 @@ pub enum SidebarMsg {
 pub fn view<'a>(active_tab: ServerTab) -> Element<'a, SidebarMsg> {
     let brand_header = container(
         row![
-            image(image::Handle::from_bytes(LOGO_PNG)).width(36).height(36),
+            image(logo_handle()).width(36).height(36),
             text("Glyph")
                 .size(20)
                 .font(FONT_MONO_BOLD)

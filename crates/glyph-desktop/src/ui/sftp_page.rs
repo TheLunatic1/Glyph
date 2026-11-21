@@ -1,9 +1,9 @@
 use crate::theme::{
     brand_button, danger_button, danger_ghost_button, dark_card, dark_input, dark_scrollable,
     dark_text_editor, ghost_icon_button, glass_panel, modal_card, pill_badge, rgba,
-    secondary_button, BRAND_300, BRAND_400, BRAND_500, DARK_600, DARK_700, DARK_800, DARK_900,
-    FONT_MONO, FONT_MONO_BOLD, GREEN_400, GREEN_500, RED_400, RED_500, TEXT_DIM, TEXT_LIGHT,
-    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400,
+    secondary_button, truncate_ellipsis, BRAND_300, BRAND_400, BRAND_500, DARK_600, DARK_700,
+    DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, GREEN_500, RED_400, RED_500,
+    TEXT_DIM, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400,
 };
 use crate::ui::icons;
 use glyph_core::sftp::{format_permissions_octal, join_remote_path, SftpEntry, SftpProgress, TransferKind};
@@ -196,9 +196,14 @@ pub fn view<'a>(st: &'a SftpPageState) -> Element<'a, SftpPageMsg> {
         );
 
     let top_bar = container(
-        row![up_btn, breadcrumb_bar, actions]
-            .spacing(10)
-            .align_y(alignment::Vertical::Center),
+        column![
+            row![up_btn, breadcrumb_bar]
+                .spacing(10)
+                .align_y(alignment::Vertical::Center),
+            row![space().width(Length::Fill), actions]
+                .align_y(alignment::Vertical::Center),
+        ]
+        .spacing(8),
     )
     .width(Length::Fill)
     .padding(12)
@@ -229,6 +234,7 @@ pub fn view<'a>(st: &'a SftpPageState) -> Element<'a, SftpPageMsg> {
                     width: 1.0,
                     radius: 8.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         );
@@ -253,6 +259,7 @@ pub fn view<'a>(st: &'a SftpPageState) -> Element<'a, SftpPageMsg> {
                     width: 1.0,
                     radius: 8.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         );
@@ -280,6 +287,7 @@ pub fn view<'a>(st: &'a SftpPageState) -> Element<'a, SftpPageMsg> {
             width: 1.0,
             radius: 8.0.into(),
         },
+        snap: true,
         ..Default::default()
     });
 
@@ -338,6 +346,7 @@ pub fn view<'a>(st: &'a SftpPageState) -> Element<'a, SftpPageMsg> {
             width: 1.0,
             radius: 12.0.into(),
         },
+        snap: true,
         ..Default::default()
     });
 
@@ -376,6 +385,7 @@ pub fn view<'a>(st: &'a SftpPageState) -> Element<'a, SftpPageMsg> {
                 width: 2.0,
                 radius: 12.0.into(),
             },
+            snap: true,
             ..Default::default()
         });
         stack![base, overlay]
@@ -398,6 +408,7 @@ fn view_landing<'a>(loading: bool, error: Option<&'a str>) -> Element<'a, SftpPa
                     width: 1.0,
                     radius: 16.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         text("File Explorer")
@@ -470,8 +481,14 @@ fn build_breadcrumbs<'a>(current_path: &'a str, copied: bool) -> Element<'a, Sft
 
     container(
         row![
-            crumbs,
-            space().width(Length::Fill),
+            container(
+                scrollable(crumbs)
+                    .horizontal()
+                    .width(Length::Fill)
+                    .style(dark_scrollable),
+            )
+            .width(Length::Fill)
+            .clip(true),
             button(
                 row![
                     if copied {
@@ -481,7 +498,8 @@ fn build_breadcrumbs<'a>(current_path: &'a str, copied: bool) -> Element<'a, Sft
                     },
                     text(if copied { "Copied" } else { "Copy" })
                         .size(11)
-                        .color(if copied { GREEN_400 } else { TEXT_SECONDARY }),
+                        .color(if copied { GREEN_400 } else { TEXT_SECONDARY })
+                        .wrapping(text::Wrapping::None),
                 ]
                 .spacing(4)
                 .align_y(alignment::Vertical::Center),
@@ -490,6 +508,7 @@ fn build_breadcrumbs<'a>(current_path: &'a str, copied: bool) -> Element<'a, Sft
             .style(ghost_icon_button)
             .on_press(SftpPageMsg::CopyCurrentPath),
         ]
+        .spacing(8)
         .align_y(alignment::Vertical::Center),
     )
     .width(Length::Fill)
@@ -501,6 +520,7 @@ fn build_breadcrumbs<'a>(current_path: &'a str, copied: bool) -> Element<'a, Sft
             width: 1.0,
             radius: 8.0.into(),
         },
+        snap: true,
         ..Default::default()
     })
     .into()
@@ -599,6 +619,7 @@ fn sort_header_btn<'a>(
         .width(width)
         .style(|_, _| button::Style {
             background: None,
+            snap: true,
             ..Default::default()
         })
         .on_press(SftpPageMsg::ToggleSort(col))
@@ -619,10 +640,15 @@ fn view_entry_row<'a>(entry: &'a SftpEntry) -> Element<'a, SftpPageMsg> {
 
     let mut name_row = row![
         icon,
-        text(&entry.filename)
-            .size(12)
-            .font(FONT_MONO)
-            .color(if is_dir { TEXT_PRIMARY } else { TEXT_LIGHT }),
+        container(
+            text(truncate_ellipsis(&entry.filename, 36))
+                .size(12)
+                .font(FONT_MONO)
+                .color(if is_dir { TEXT_PRIMARY } else { TEXT_LIGHT })
+                .wrapping(text::Wrapping::None),
+        )
+        .width(Length::Fill)
+        .clip(true),
     ]
     .spacing(8)
     .align_y(alignment::Vertical::Center);
@@ -641,6 +667,7 @@ fn view_entry_row<'a>(entry: &'a SftpEntry) -> Element<'a, SftpPageMsg> {
     let name_btn = button(name_row)
         .padding([4, 6])
         .width(Length::FillPortion(5))
+        .clip(true)
         .style(|_, status| {
             let bg = match status {
                 button::Status::Hovered => rgba(BRAND_500, 0.08),
@@ -652,6 +679,7 @@ fn view_entry_row<'a>(entry: &'a SftpEntry) -> Element<'a, SftpPageMsg> {
                     radius: 6.0.into(),
                     ..Default::default()
                 },
+                snap: true,
                 ..Default::default()
             }
         })
@@ -672,6 +700,7 @@ fn view_entry_row<'a>(entry: &'a SftpEntry) -> Element<'a, SftpPageMsg> {
                 width: 1.0,
                 radius: 6.0.into(),
             },
+            snap: true,
             ..Default::default()
         }),
     )
@@ -679,6 +708,7 @@ fn view_entry_row<'a>(entry: &'a SftpEntry) -> Element<'a, SftpPageMsg> {
     .padding(0)
     .style(|_, _| button::Style {
         background: None,
+        snap: true,
         ..Default::default()
     })
     .on_press(SftpPageMsg::OpenChmodPrompt(path.clone(), entry.permissions));
@@ -754,6 +784,7 @@ fn view_entry_row<'a>(entry: &'a SftpEntry) -> Element<'a, SftpPageMsg> {
                 width: 1.0,
                 radius: 8.0.into(),
             },
+            snap: true,
             ..Default::default()
         }),
     )
@@ -888,6 +919,7 @@ fn view_transfer_toast<'a>(tr: &'a SftpProgress) -> Element<'a, SftpPageMsg> {
                 radius: 4.0.into(),
                 ..Default::default()
             },
+            snap: true,
             ..Default::default()
         })];
     if rem_p > 0 {
@@ -925,6 +957,7 @@ fn view_transfer_toast<'a>(tr: &'a SftpProgress) -> Element<'a, SftpPageMsg> {
                         radius: 4.0.into(),
                         ..Default::default()
                     },
+                    snap: true,
                     ..Default::default()
                 }),
         ]

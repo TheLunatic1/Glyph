@@ -1,7 +1,8 @@
 use iced::font::{Family, Weight};
 use iced::theme::Palette;
-use iced::widget::{button, container, pick_list, scrollable, text_editor, text_input};
+use iced::widget::{button, container, image, pick_list, scrollable, text_editor, text_input};
 use iced::{color, Background, Border, Color, Font, Shadow, Theme, Vector};
+use std::sync::OnceLock;
 
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -53,6 +54,27 @@ pub const ORANGE_400: Color = color!(0xfb923c);
 pub const PURPLE_400: Color = color!(0xc084fc);
 pub const CYAN_400: Color = color!(0x22d3ee);
 
+static CACHED_LOGO: OnceLock<image::Handle> = OnceLock::new();
+
+pub fn logo_handle() -> image::Handle {
+    CACHED_LOGO
+        .get_or_init(|| image::Handle::from_bytes(LOGO_PNG))
+        .clone()
+}
+
+pub fn truncate_ellipsis(s: &str, max_chars: usize) -> String {
+    if max_chars <= 1 {
+        return "…".to_string();
+    }
+    let count = s.chars().count();
+    if count <= max_chars {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max_chars - 1).collect();
+    out.push('…');
+    out
+}
+
 pub fn glyph_theme() -> Theme {
     Theme::custom(
         "Glyph",
@@ -75,6 +97,7 @@ pub fn dark_900_bg(_: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(DARK_900)),
         text_color: Some(TEXT_PRIMARY),
+        snap: true,
         ..Default::default()
     }
 }
@@ -83,13 +106,14 @@ pub fn dark_800_bg(_: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(DARK_800)),
         text_color: Some(TEXT_PRIMARY),
+        snap: true,
         ..Default::default()
     }
 }
 
 pub fn glass_panel(_: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(rgba(DARK_800, 0.85))),
+        background: Some(Background::Color(DARK_800)),
         text_color: Some(TEXT_PRIMARY),
         border: Border {
             color: DARK_700,
@@ -97,10 +121,26 @@ pub fn glass_panel(_: &Theme) -> container::Style {
             radius: 12.0.into(),
         },
         shadow: Shadow {
-            color: rgba(Color::BLACK, 0.35),
-            offset: Vector::new(0.0, 8.0),
-            blur_radius: 20.0,
+            color: rgba(Color::BLACK, 0.20),
+            offset: Vector::new(0.0, 2.0),
+            blur_radius: 4.0,
         },
+        snap: true,
+    }
+}
+
+/// Crisp, zero-bleed card surface for dense multi-column grids.
+#[allow(dead_code)]
+pub fn grid_card(_: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(DARK_800)),
+        text_color: Some(TEXT_PRIMARY),
+        border: Border {
+            color: Color::from_rgb8(42, 47, 71),
+            width: 1.0,
+            radius: 12.0.into(),
+        },
+        shadow: Shadow::default(),
         snap: true,
     }
 }
@@ -112,15 +152,17 @@ pub fn dark_card(_: &Theme) -> container::Style {
         border: Border {
             color: DARK_700,
             width: 1.0,
-            radius: 12.0.into(),
+            radius: 10.0.into(),
         },
-        ..Default::default()
+        shadow: Shadow::default(),
+        snap: true,
     }
 }
 
 pub fn modal_backdrop(_: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(rgba(Color::BLACK, 0.65))),
+        background: Some(Background::Color(rgba(Color::BLACK, 0.68))),
+        snap: true,
         ..Default::default()
     }
 }
@@ -130,14 +172,14 @@ pub fn modal_card(_: &Theme) -> container::Style {
         background: Some(Background::Color(DARK_900)),
         text_color: Some(TEXT_PRIMARY),
         border: Border {
-            color: DARK_700,
+            color: Color::from_rgb8(53, 59, 87),
             width: 1.0,
-            radius: 16.0.into(),
+            radius: 14.0.into(),
         },
         shadow: Shadow {
-            color: rgba(Color::BLACK, 0.55),
-            offset: Vector::new(0.0, 14.0),
-            blur_radius: 32.0,
+            color: rgba(Color::BLACK, 0.45),
+            offset: Vector::new(0.0, 8.0),
+            blur_radius: 14.0,
         },
         snap: true,
     }
@@ -147,10 +189,11 @@ pub fn titlebar_bg(_: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(DARK_900)),
         border: Border {
-            color: DARK_800,
+            color: DARK_700,
             width: 1.0,
             radius: 0.0.into(),
         },
+        snap: true,
         ..Default::default()
     }
 }
@@ -163,6 +206,7 @@ pub fn sidebar_bg(_: &Theme) -> container::Style {
             width: 1.0,
             radius: 0.0.into(),
         },
+        snap: true,
         ..Default::default()
     }
 }
@@ -182,23 +226,21 @@ pub fn brand_button(_: &Theme, status: button::Status) -> button::Style {
         },
         border: Border {
             radius: 8.0.into(),
-            width: 0.0,
-            color: Color::TRANSPARENT,
+            width: 1.0,
+            color: rgba(BRAND_300, 0.22),
         },
-        shadow: Shadow {
-            color: rgba(BRAND_500, 0.22),
-            offset: Vector::new(0.0, 4.0),
-            blur_radius: 12.0,
-        },
+        shadow: Shadow::default(),
         snap: true,
     }
 }
 
 pub fn secondary_button(_: &Theme, status: button::Status) -> button::Style {
-    let bg = match status {
-        button::Status::Hovered | button::Status::Pressed => DARK_600,
-        button::Status::Disabled => rgba(DARK_700, 0.5),
-        button::Status::Active => DARK_700,
+    let (bg, border_c) = match status {
+        button::Status::Hovered | button::Status::Pressed => {
+            (DARK_600, Color::from_rgb8(75, 85, 110))
+        }
+        button::Status::Disabled => (rgba(DARK_700, 0.5), DARK_700),
+        button::Status::Active => (DARK_700, Color::from_rgb8(54, 60, 88)),
     };
     button::Style {
         background: Some(Background::Color(bg)),
@@ -206,15 +248,16 @@ pub fn secondary_button(_: &Theme, status: button::Status) -> button::Style {
         border: Border {
             radius: 8.0.into(),
             width: 1.0,
-            color: DARK_600,
+            color: border_c,
         },
-        ..Default::default()
+        shadow: Shadow::default(),
+        snap: true,
     }
 }
 
 pub fn ghost_icon_button(_: &Theme, status: button::Status) -> button::Style {
     let (bg, txt) = match status {
-        button::Status::Hovered | button::Status::Pressed => (rgba(BRAND_500, 0.14), BRAND_400),
+        button::Status::Hovered | button::Status::Pressed => (rgba(BRAND_500, 0.16), BRAND_400),
         _ => (Color::TRANSPARENT, TEXT_SECONDARY),
     };
     button::Style {
@@ -224,7 +267,8 @@ pub fn ghost_icon_button(_: &Theme, status: button::Status) -> button::Style {
             radius: 8.0.into(),
             ..Default::default()
         },
-        ..Default::default()
+        shadow: Shadow::default(),
+        snap: true,
     }
 }
 
@@ -239,15 +283,17 @@ pub fn danger_button(_: &Theme, status: button::Status) -> button::Style {
         text_color: Color::WHITE,
         border: Border {
             radius: 8.0.into(),
-            ..Default::default()
+            width: 1.0,
+            color: rgba(RED_400, 0.3),
         },
-        ..Default::default()
+        shadow: Shadow::default(),
+        snap: true,
     }
 }
 
 pub fn danger_ghost_button(_: &Theme, status: button::Status) -> button::Style {
     let (bg, txt) = match status {
-        button::Status::Hovered | button::Status::Pressed => (rgba(RED_500, 0.14), RED_400),
+        button::Status::Hovered | button::Status::Pressed => (rgba(RED_500, 0.16), RED_400),
         _ => (Color::TRANSPARENT, RED_400),
     };
     button::Style {
@@ -257,45 +303,45 @@ pub fn danger_ghost_button(_: &Theme, status: button::Status) -> button::Style {
             radius: 8.0.into(),
             ..Default::default()
         },
-        ..Default::default()
+        shadow: Shadow::default(),
+        snap: true,
     }
 }
 
 pub fn mobile_pill_button(_: &Theme, status: button::Status) -> button::Style {
     let alpha = match status {
-        button::Status::Hovered | button::Status::Pressed => 0.25,
-        _ => 0.14,
+        button::Status::Hovered | button::Status::Pressed => 0.26,
+        _ => 0.15,
     };
     button::Style {
         background: Some(Background::Color(rgba(BRAND_500, alpha))),
         text_color: BRAND_300,
         border: Border {
-            radius: 10.0.into(),
+            radius: 8.0.into(),
             width: 1.0,
-            color: rgba(BRAND_500, 0.35),
+            color: rgba(BRAND_500, 0.38),
         },
-        ..Default::default()
+        shadow: Shadow::default(),
+        snap: true,
     }
 }
 
 pub fn server_card_button(_: &Theme, status: button::Status) -> button::Style {
-    let border_color = match status {
-        button::Status::Hovered | button::Status::Pressed => rgba(BRAND_500, 0.65),
-        _ => DARK_700,
+    let (bg, border_color) = match status {
+        button::Status::Hovered | button::Status::Pressed => {
+            (Color::from_rgb8(31, 35, 55), rgba(BRAND_500, 0.72))
+        }
+        _ => (DARK_800, Color::from_rgb8(42, 47, 71)),
     };
     button::Style {
-        background: Some(Background::Color(rgba(DARK_800, 0.85))),
+        background: Some(Background::Color(bg)),
         text_color: TEXT_PRIMARY,
         border: Border {
             color: border_color,
             width: 1.0,
             radius: 12.0.into(),
         },
-        shadow: Shadow {
-            color: rgba(Color::BLACK, 0.35),
-            offset: Vector::new(0.0, 6.0),
-            blur_radius: 14.0,
-        },
+        shadow: Shadow::default(),
         snap: true,
     }
 }
@@ -304,13 +350,15 @@ pub fn sidebar_nav_button(active: bool) -> impl Fn(&Theme, button::Status) -> bu
     move |_, status| {
         if active {
             button::Style {
-                background: Some(Background::Color(rgba(BRAND_500, 0.14))),
+                background: Some(Background::Color(rgba(BRAND_500, 0.16))),
                 text_color: BRAND_400,
                 border: Border {
                     radius: 8.0.into(),
-                    ..Default::default()
+                    width: 1.0,
+                    color: rgba(BRAND_500, 0.28),
                 },
-                ..Default::default()
+                shadow: Shadow::default(),
+                snap: true,
             }
         } else {
             let (bg, txt) = match status {
@@ -324,7 +372,8 @@ pub fn sidebar_nav_button(active: bool) -> impl Fn(&Theme, button::Status) -> bu
                     radius: 8.0.into(),
                     ..Default::default()
                 },
-                ..Default::default()
+                shadow: Shadow::default(),
+                snap: true,
             }
         }
     }
@@ -383,7 +432,12 @@ pub fn dark_scrollable(theme: &Theme, status: scrollable::Status) -> scrollable:
         ..Default::default()
     };
     base.horizontal_rail.background = Some(Background::Color(Color::TRANSPARENT));
+    base.horizontal_rail.border = Border::default();
     base.horizontal_rail.scroller.background = Background::Color(thumb);
+    base.horizontal_rail.scroller.border = Border {
+        radius: 4.0.into(),
+        ..Default::default()
+    };
     base
 }
 
@@ -396,6 +450,7 @@ pub fn pill_badge(bg: Color, border: Color, fg: Color) -> impl Fn(&Theme) -> con
             width: 1.0,
             radius: 999.0.into(),
         },
+        snap: true,
         ..Default::default()
     }
 }

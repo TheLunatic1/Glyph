@@ -1,10 +1,10 @@
 use crate::theme::{
     brand_button, danger_ghost_button, dark_900_bg, dark_card, dark_input, dark_pick_list,
-    dark_scrollable, ghost_icon_button, glass_panel, mobile_pill_button, pill_badge, rgba,
-    secondary_button, APP_VERSION, BRAND_300, BRAND_400, BRAND_500, DARK_600, DARK_700, DARK_800,
-    DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, GREEN_500, LOGO_PNG, RED_400, RED_500,
-    RED_600, TEXT_DIM, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400,
-    YELLOW_500,
+    dark_scrollable, ghost_icon_button, glass_panel, grid_card, logo_handle, mobile_pill_button,
+    pill_badge, rgba, secondary_button, truncate_ellipsis, APP_VERSION, BRAND_300, BRAND_400,
+    BRAND_500, DARK_600, DARK_700, DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400,
+    GREEN_500, RED_400, RED_500, RED_600, TEXT_DIM, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY,
+    TEXT_SECONDARY, YELLOW_400, YELLOW_500,
 };
 use crate::ui::icons;
 use crate::ui::os_logo::os_logo;
@@ -190,8 +190,9 @@ pub fn view<'a>(
     ssh_keys: &'a [SshKeySummary],
     form: Option<&'a ServerFormState>,
     disconnect_banner: Option<&'a str>,
+    window_width: f32,
 ) -> Element<'a, ManagerMsg> {
-    let mut root = column![].spacing(24);
+    let mut root = column![].spacing(20);
 
     if let Some(reason) = disconnect_banner {
         let banner = container(
@@ -219,28 +220,26 @@ pub fn view<'a>(
                 width: 1.0,
                 radius: 10.0.into(),
             },
+            snap: true,
             ..Default::default()
         });
         root = root.push(banner);
     }
 
-    // ── Header ────────────────────────────────────────────────────────────────
+    // â”€â”€ Header + Mobile Quick Pill â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let brand_header = row![
-        container(
-            image(image::Handle::from_bytes(LOGO_PNG))
-                .width(44)
-                .height(44)
-        )
-        .padding(4)
-        .style(|_| container::Style {
-            background: Some(Background::Color(DARK_800)),
-            border: Border {
-                color: DARK_700,
-                width: 1.0,
-                radius: 12.0.into(),
-            },
-            ..Default::default()
-        }),
+        container(image(logo_handle()).width(44).height(44))
+            .padding(4)
+            .style(|_| container::Style {
+                background: Some(Background::Color(DARK_800)),
+                border: Border {
+                    color: DARK_700,
+                    width: 1.0,
+                    radius: 12.0.into(),
+                },
+                snap: true,
+                ..Default::default()
+            }),
         column![
             row![
                 text("Glyph")
@@ -267,24 +266,6 @@ pub fn view<'a>(
                 .color(TEXT_SECONDARY),
         ]
         .spacing(2),
-    ]
-    .spacing(14)
-    .align_y(alignment::Vertical::Center);
-
-    root = root.push(brand_header);
-
-    // ── Saved Servers Action Bar ──────────────────────────────────────────────
-    let key_label = if ssh_keys.is_empty() {
-        "SSH Keys".to_string()
-    } else {
-        format!("SSH Keys ({})", ssh_keys.len())
-    };
-
-    let action_bar = row![
-        text("Saved Servers")
-            .size(18)
-            .font(FONT_MONO_BOLD)
-            .color(TEXT_PRIMARY),
         space().width(Length::Fill),
         button(
             row![
@@ -309,6 +290,29 @@ pub fn view<'a>(
         .padding([8, 12])
         .style(mobile_pill_button)
         .on_press(ManagerMsg::OpenMobileModal),
+        button(icons::settings(15.0, TEXT_LIGHT))
+            .padding([8, 10])
+            .style(secondary_button)
+            .on_press(ManagerMsg::OpenSettingsModal),
+    ]
+    .spacing(12)
+    .align_y(alignment::Vertical::Center);
+
+    root = root.push(brand_header);
+
+    // â”€â”€ Saved Servers Action Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    let key_label = if ssh_keys.is_empty() {
+        "SSH Keys".to_string()
+    } else {
+        format!("SSH Keys ({})", ssh_keys.len())
+    };
+
+    let action_bar = row![
+        text("Saved Servers")
+            .size(18)
+            .font(FONT_MONO_BOLD)
+            .color(TEXT_PRIMARY),
+        space().width(Length::Fill),
         button(
             row![
                 icons::key(14.0, TEXT_LIGHT),
@@ -342,10 +346,6 @@ pub fn view<'a>(
         .padding([8, 12])
         .style(secondary_button)
         .on_press(ManagerMsg::OpenExportModal),
-        button(icons::settings(15.0, TEXT_LIGHT))
-            .padding([8, 10])
-            .style(secondary_button)
-            .on_press(ManagerMsg::OpenSettingsModal),
         button(
             row![
                 icons::plus(15.0, Color::WHITE),
@@ -366,12 +366,13 @@ pub fn view<'a>(
 
     root = root.push(action_bar);
 
-    // ── Add / Edit Server Form ────────────────────────────────────────────────
+    // â”€â”€ Add / Edit Server Form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if let Some(f) = form {
         root = root.push(view_server_form(f, servers, ssh_keys));
     }
 
-    // ── Server Cards Grid (3 columns) ─────────────────────────────────────────
+    // â”€â”€ Server Cards Grid (Responsive 2 or 3 columns, zero overlap) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    let cols = if window_width < 1040.0 { 2 } else { 3 };
     if servers.is_empty() && form.is_none() {
         let empty = container(
             column![
@@ -405,23 +406,24 @@ pub fn view<'a>(
         .padding(44)
         .align_x(alignment::Horizontal::Center)
         .style(|_| container::Style {
-            background: Some(Background::Color(rgba(DARK_800, 0.45))),
+            background: Some(Background::Color(DARK_800)),
             border: Border {
                 color: DARK_700,
                 width: 1.0,
                 radius: 14.0.into(),
             },
+            snap: true,
             ..Default::default()
         });
         root = root.push(empty);
     } else if !servers.is_empty() {
         let mut grid = column![].spacing(14);
-        for chunk in servers.chunks(3) {
-            let mut r = row![].spacing(14);
+        for chunk in servers.chunks(cols) {
+            let mut r = row![].spacing(14).width(Length::Fill);
             for srv in chunk {
                 r = r.push(view_server_card(srv));
             }
-            for _ in chunk.len()..3 {
+            for _ in chunk.len()..cols {
                 r = r.push(space().width(Length::Fill));
             }
             grid = grid.push(r);
@@ -763,6 +765,7 @@ fn view_server_form<'a>(
                     width: 1.0,
                     radius: 8.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         );
@@ -800,25 +803,33 @@ fn view_server_form<'a>(
 }
 
 fn view_server_card<'a>(s: &'a ServerSummary) -> Element<'a, ManagerMsg> {
-    let title = if s.name.is_empty() { &s.host } else { &s.name };
+    let raw_title = if s.name.is_empty() { &s.host } else { &s.name };
+    let title = truncate_ellipsis(raw_title, 22);
+    let subtitle = truncate_ellipsis(&format!("{}@{}:{}", s.username, s.host, s.port), 28);
     let sid_edit = s.id.clone();
     let sid_del = s.id.clone();
     let sid_conn = s.id.clone();
 
     let top = row![
-        os_logo(s.os.as_deref(), title, 40.0),
-        column![
-            text(title)
-                .size(15)
-                .font(FONT_MONO_BOLD)
-                .color(TEXT_PRIMARY),
-            text(format!("{}@{}:{}", s.username, s.host, s.port))
-                .size(11)
-                .font(FONT_MONO)
-                .color(TEXT_SECONDARY),
-        ]
-        .spacing(2)
-        .width(Length::Fill),
+        os_logo(s.os.as_deref(), raw_title, 40.0),
+        container(
+            column![
+                text(title)
+                    .size(15)
+                    .font(FONT_MONO_BOLD)
+                    .color(TEXT_PRIMARY)
+                    .wrapping(text::Wrapping::None),
+                text(subtitle)
+                    .size(11)
+                    .font(FONT_MONO)
+                    .color(TEXT_SECONDARY)
+                    .wrapping(text::Wrapping::None),
+            ]
+            .spacing(2)
+            .width(Length::Fill),
+        )
+        .width(Length::Fill)
+        .clip(true),
         row![
             button(icons::edit(14.0, TEXT_SECONDARY))
                 .padding(6)
@@ -831,30 +842,41 @@ fn view_server_card<'a>(s: &'a ServerSummary) -> Element<'a, ManagerMsg> {
         ]
         .spacing(2),
     ]
-    .spacing(12)
+    .spacing(10)
     .align_y(alignment::Vertical::Center);
 
     let os_badge: Element<'a, ManagerMsg> = if let Some(os) = &s.os {
-        container(text(os).size(10).font(FONT_MONO_BOLD).color(GREEN_400))
-            .padding([2, 8])
-            .style(pill_badge(
-                rgba(GREEN_500, 0.14),
-                rgba(GREEN_500, 0.3),
-                GREEN_400,
-            ))
-            .into()
+        container(
+            text(truncate_ellipsis(os, 10))
+                .size(10)
+                .font(FONT_MONO_BOLD)
+                .color(GREEN_400)
+                .wrapping(text::Wrapping::None),
+        )
+        .padding([2, 8])
+        .style(pill_badge(
+            rgba(GREEN_500, 0.14),
+            rgba(GREEN_500, 0.3),
+            GREEN_400,
+        ))
+        .into()
     } else {
-        container(text("Saved").size(10).color(TEXT_SECONDARY))
-            .padding([2, 8])
-            .style(pill_badge(DARK_900, DARK_700, TEXT_SECONDARY))
-            .into()
+        container(
+            text("Saved")
+                .size(10)
+                .color(TEXT_SECONDARY)
+                .wrapping(text::Wrapping::None),
+        )
+        .padding([2, 8])
+        .style(pill_badge(DARK_900, DARK_700, TEXT_SECONDARY))
+        .into()
     };
 
-    let mut badges = row![os_badge].spacing(6);
+    let mut badges = row![os_badge].spacing(5).align_y(alignment::Vertical::Center);
     if !s.zerotier.is_empty() {
         badges = badges.push(
             container(text("ZT").size(10).font(FONT_MONO_BOLD).color(YELLOW_400))
-                .padding([2, 7])
+                .padding([2, 6])
                 .style(pill_badge(
                     rgba(YELLOW_500, 0.14),
                     rgba(YELLOW_500, 0.35),
@@ -865,7 +887,7 @@ fn view_server_card<'a>(s: &'a ServerSummary) -> Element<'a, ManagerMsg> {
     if s.auth_method == AuthMethod::VaultKey || !s.private_key_path.is_empty() {
         badges = badges.push(
             container(text("KEY").size(10).font(FONT_MONO_BOLD).color(BRAND_300))
-                .padding([2, 7])
+                .padding([2, 6])
                 .style(pill_badge(
                     rgba(BRAND_500, 0.14),
                     rgba(BRAND_500, 0.3),
@@ -876,7 +898,7 @@ fn view_server_card<'a>(s: &'a ServerSummary) -> Element<'a, ManagerMsg> {
     if s.proxy_jump_id.is_some() {
         badges = badges.push(
             container(text("JUMP").size(10).font(FONT_MONO_BOLD).color(BRAND_400))
-                .padding([2, 7])
+                .padding([2, 6])
                 .style(pill_badge(
                     rgba(BRAND_500, 0.12),
                     rgba(BRAND_500, 0.28),
@@ -886,14 +908,14 @@ fn view_server_card<'a>(s: &'a ServerSummary) -> Element<'a, ManagerMsg> {
     }
 
     let bottom = row![
-        badges,
-        space().width(Length::Fill),
+        container(badges).width(Length::Fill).clip(true),
         button(
             row![
                 text("Connect")
                     .size(12)
                     .font(FONT_MONO_BOLD)
-                    .color(Color::WHITE),
+                    .color(Color::WHITE)
+                    .wrapping(text::Wrapping::None),
                 icons::play(11.0, Color::WHITE),
             ]
             .spacing(6)
@@ -903,12 +925,13 @@ fn view_server_card<'a>(s: &'a ServerSummary) -> Element<'a, ManagerMsg> {
         .style(brand_button)
         .on_press(ManagerMsg::ConnectServer(sid_conn)),
     ]
+    .spacing(8)
     .align_y(alignment::Vertical::Center);
 
-    container(column![top, bottom].spacing(18))
+    container(column![top, bottom].spacing(16))
         .width(Length::Fill)
         .padding(18)
-        .style(glass_panel)
+        .style(grid_card)
         .into()
 }
 

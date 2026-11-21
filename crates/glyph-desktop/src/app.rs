@@ -319,6 +319,8 @@ pub enum Message {
     LocalApiStarted(Result<u16, String>),
     Bus(BusEvent),
     WindowCloseRequested(window::Id),
+    WindowOpened(window::Id),
+    WindowResized(window::Id, Size),
     TitleBar(window::Id, TitleBarMsg),
     Manager(ManagerMsg),
     Modal(ModalMsg),
@@ -364,6 +366,7 @@ struct ServerWindowState {
     last_container_poll: Instant,
     cached_commands: Vec<CommandSnippet>,
     cached_secrets: Vec<SecretSummary>,
+    window_size: Size,
     closing: bool,
 }
 
@@ -389,6 +392,7 @@ impl ServerWindowState {
             last_container_poll: Instant::now(),
             cached_commands,
             cached_secrets,
+            window_size: Size::new(1280.0, 820.0),
             closing: false,
         }
     }
@@ -403,9 +407,12 @@ pub struct GlyphApp {
     tray: Option<TrayManager>,
 
     manager_window: Option<window::Id>,
+    manager_size: Size,
     manager_visible: bool,
     show_splash: bool,
-    boot_instant: Instant,
+    splash_started_at: Option<Instant>,
+    splash_alpha: f32,
+    boot_tick_count: u8,
     disconnect_banner: Option<String>,
     form: Option<ServerFormState>,
     modal: Option<ManagerModal>,
@@ -450,9 +457,12 @@ impl GlyphApp {
             known_hosts,
             tray,
             manager_window: Some(manager_id),
+            manager_size: Size::new(1200.0, 800.0),
             manager_visible: true,
             show_splash: true,
-            boot_instant: Instant::now(),
+            splash_started_at: None,
+            splash_alpha: 1.0,
+            boot_tick_count: 0,
             disconnect_banner: None,
             form: None,
             modal: None,
@@ -486,11 +496,18 @@ impl GlyphApp {
     }
 
     fn subscription(&self) -> Subscription<Message> {
+        let tick_ms = if self.show_splash { 50 } else { 120 };
         Subscription::batch([
             Subscription::run(bus_stream).map(Message::Bus),
             window::close_requests().map(Message::WindowCloseRequested),
-            iced::time::every(Duration::from_millis(120)).map(|_| Message::Tick),
+            iced::time::every(Duration::from_millis(tick_ms)).map(|_| Message::Tick),
             iced::event::listen_with(|ev, _status, wid| match ev {
+                iced::Event::Window(window::Event::Opened { .. }) => {
+                    Some(Message::WindowOpened(wid))
+                }
+                iced::Event::Window(window::Event::Resized(size)) => {
+                    Some(Message::WindowResized(wid, size))
+                }
                 iced::Event::Window(window::Event::FileHovered(_)) => {
                     Some(Message::FileHovered(wid))
                 }
@@ -573,6 +590,20 @@ impl GlyphApp {
                 Task::none()
             }
             Message::WindowCloseRequested(wid) => self.handle_window_close(wid),
+            Message::WindowOpened(wid) => {
+                if Some(wid) == self.manager_window && self.show_splash && self.splash_started_at.is_none() {
+                    self.splash_started_at = Some(Instant::now());
+                }
+                Task::none()
+            }
+            Message::WindowResized(wid, size) => {
+                if Some(wid) == self.manager_window {
+                    self.manager_size = size;
+                } else if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    srv.window_size = size;
+                }
+                Task::none()
+            }
             Message::TitleBar(wid, tmsg) => {
                 if matches!(tmsg, TitleBarMsg::Close) {
                     self.handle_window_close(wid)
@@ -807,8 +838,25 @@ impl GlyphApp {
     }
 
     fn handle_tick(&mut self) -> Task<Message> {
-        if self.show_splash && self.boot_instant.elapsed() >= Duration::from_millis(650) {
-            self.show_splash = false;
+        if self.show_splash {
+            if self.splash_started_at.is_none() {
+                self.boot_tick_count = self.boot_tick_count.saturating_add(1);
+                if self.boot_tick_count >= 2 {
+                    self.splash_started_at = Some(Instant::now());
+                }
+            }
+            if let Some(started) = self.splash_started_at {
+                let elapsed_ms = started.elapsed().as_millis() as u64;
+                if elapsed_ms < 1150 {
+                    self.splash_alpha = 1.0;
+                } else if elapsed_ms < 1500 {
+                    let t = (elapsed_ms - 1150) as f32 / 350.0;
+                    self.splash_alpha = (1.0 - t).clamp(0.0, 1.0);
+                } else {
+                    self.splash_alpha = 0.0;
+                    self.show_splash = false;
+                }
+            }
         }
 
         if let Some(ManagerModal::Connecting(st)) = &mut self.modal {
@@ -2583,31 +2631,33 @@ impl GlyphApp {
         }
 
         let title_el = titlebar::view("Glyph", true).map(move |m| Message::TitleBar(wid, m));
-        if self.show_splash {
-            return column![title_el, splash::view()]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into();
-        }
-
         let base = manager::view(
             &self.servers,
             &self.ssh_keys,
             self.form.as_ref(),
             self.disconnect_banner.as_deref(),
+            self.manager_size.width,
         )
         .map(Message::Manager);
 
-        let body: Element<'_, Message> = if let Some(modal) = &self.modal {
+        let mut layers: Vec<Element<'_, Message>> = vec![base];
+        if let Some(modal) = &self.modal {
             let overlay = modals::view(modal, &self.servers, &self.ssh_keys, &self.known_hosts)
                 .map(Message::Modal);
-            stack![base, overlay]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            base
-        };
+            layers.push(overlay);
+        }
+
+        if self.show_splash {
+            let elapsed_ms = self
+                .splash_started_at
+                .map(|t| t.elapsed().as_millis() as u64)
+                .unwrap_or(0);
+            layers.push(splash::view(elapsed_ms, self.splash_alpha));
+        }
+
+        let body = stack(layers)
+            .width(Length::Fill)
+            .height(Length::Fill);
 
         column![title_el, body]
             .width(Length::Fill)
@@ -2635,9 +2685,8 @@ impl GlyphApp {
             .unwrap_or(true);
 
         let main_pane: Element<'a, Message> = match srv.active_tab {
-            ServerTab::Dashboard => {
-                dashboard::view(&srv.dashboard, &srv.server).map(move |m| Message::Dashboard(wid, m))
-            }
+            ServerTab::Dashboard => dashboard::view(&srv.dashboard, &srv.server, srv.window_size.width)
+                .map(move |m| Message::Dashboard(wid, m)),
             ServerTab::Terminal => {
                 terminal_page::view(&srv.terminal, &srv.cached_commands, &srv.cached_secrets)
                     .map(move |m| Message::Terminal(wid, m))

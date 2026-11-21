@@ -1,14 +1,14 @@
 use crate::theme::{
-    brand_button, dark_800_bg, dark_card, dark_input, dark_pick_list, ghost_icon_button, rgba,
-    secondary_button, BRAND_300, BRAND_400, BRAND_500, DARK_600, DARK_700, DARK_800, DARK_900,
-    FONT_MONO, FONT_MONO_BOLD, RED_400, TEXT_LIGHT, TEXT_MUTED, TEXT_SECONDARY,
+    brand_button, dark_800_bg, dark_card, dark_input, dark_pick_list, dark_scrollable,
+    ghost_icon_button, rgba, secondary_button, BRAND_300, BRAND_400, BRAND_500, DARK_600, DARK_700,
+    DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, RED_400, TEXT_LIGHT, TEXT_MUTED, TEXT_SECONDARY,
 };
 use crate::ui::icons;
 use glyph_core::models::{CommandSnippet, SecretSummary};
 use glyph_core::ssh::{ShellHandle, SshSession};
 use glyph_terminal::{TerminalCanvas, TerminalEmulator, TerminalEvent, TerminalThemeId};
 use iced::widget::{
-    button, canvas, column, container, pick_list, row, space, stack, text, text_input,
+    button, canvas, column, container, pick_list, row, scrollable, space, stack, text, text_input,
 };
 use iced::{alignment, Border, Element, Length};
 
@@ -153,7 +153,7 @@ pub fn view<'a>(
     let palette = state.theme.palette();
     let bg_color = palette.background;
 
-    // ── Top Toolbar (48px) ────────────────────────────────────────────────────
+    // â”€â”€ Top Toolbar (48px) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let snippets_btn = button(
         row![
             icons::zap(14.0, TEXT_LIGHT),
@@ -186,24 +186,25 @@ pub fn view<'a>(
         TerminalPageMsg::SelectTheme,
     )
     .text_size(12)
-    .padding([6, 10])
+    .padding([5, 10])
+    .width(Length::Fixed(136.0))
     .style(dark_pick_list);
 
     let font_controls = row![
-        button(icons::minus(15.0, TEXT_SECONDARY))
-            .padding(6)
+        button(icons::minus(14.0, TEXT_SECONDARY))
+            .padding(5)
             .style(ghost_icon_button)
             .on_press(TerminalPageMsg::FontSmaller),
-        text(format!("{}", state.font_size as i32))
-            .size(12)
+        text(format!("{}pt", state.font_size as i32))
+            .size(11)
             .font(FONT_MONO)
             .color(TEXT_SECONDARY),
-        button(icons::plus(15.0, TEXT_SECONDARY))
-            .padding(6)
+        button(icons::plus(14.0, TEXT_SECONDARY))
+            .padding(5)
             .style(ghost_icon_button)
             .on_press(TerminalPageMsg::FontLarger),
     ]
-    .spacing(6)
+    .spacing(4)
     .align_y(alignment::Vertical::Center);
 
     let split_active = state.split_tab_id.is_some();
@@ -226,14 +227,14 @@ pub fn view<'a>(
     .on_press(TerminalPageMsg::ToggleSplit);
 
     let search_btn = button(icons::search(
-        16.0,
+        15.0,
         if state.show_search {
             iced::Color::WHITE
         } else {
             TEXT_SECONDARY
         },
     ))
-    .padding(7)
+    .padding(6)
     .style(if state.show_search {
         brand_button
     } else {
@@ -241,8 +242,8 @@ pub fn view<'a>(
     })
     .on_press(TerminalPageMsg::ToggleSearch);
 
-    let clear_btn = button(icons::trash(16.0, RED_400))
-        .padding(7)
+    let clear_btn = button(icons::trash(15.0, RED_400))
+        .padding(6)
         .style(ghost_icon_button)
         .on_press(TerminalPageMsg::ClearActive);
 
@@ -263,20 +264,21 @@ pub fn view<'a>(
         .spacing(8)
         .align_y(alignment::Vertical::Center),
     )
-    .height(Length::Fixed(48.0))
+    .height(Length::Fixed(46.0))
     .width(Length::Fill)
-    .padding([0, 16])
+    .padding([0, 14])
     .style(|_| container::Style {
-        background: Some(iced::Background::Color(rgba(DARK_800, 0.85))),
+        background: Some(iced::Background::Color(DARK_800)),
         border: Border {
             color: DARK_700,
             width: 1.0,
             ..Default::default()
         },
+        snap: true,
         ..Default::default()
     });
 
-    // ── Tab Bar ───────────────────────────────────────────────────────────────
+    // â”€â”€ Horizontally Scrollable Tab Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let mut tab_row = row![].spacing(6).align_y(alignment::Vertical::Center);
     for tab in &state.tabs {
         let is_active = state.active_tab_id == tab.id;
@@ -285,11 +287,14 @@ pub fn view<'a>(
         let id_close = tab.id.clone();
 
         let mut inner = row![
-            text(&tab.title).size(12).color(if is_active || is_split {
-                BRAND_300
-            } else {
-                TEXT_SECONDARY
-            }),
+            text(&tab.title)
+                .size(12)
+                .color(if is_active || is_split {
+                    BRAND_300
+                } else {
+                    TEXT_SECONDARY
+                })
+                .wrapping(text::Wrapping::None),
         ]
         .spacing(6)
         .align_y(alignment::Vertical::Center);
@@ -327,6 +332,7 @@ pub fn view<'a>(
                         width: if is_active { 1.0 } else { 0.0 },
                         radius: 6.0.into(),
                     },
+                    snap: true,
                     ..Default::default()
                 }
             })
@@ -342,20 +348,26 @@ pub fn view<'a>(
             .on_press(TerminalPageMsg::NewTab),
     );
 
-    let tab_bar = container(tab_row)
-        .width(Length::Fill)
-        .padding([6, 12])
-        .style(|_| container::Style {
-            background: Some(iced::Background::Color(rgba(DARK_900, 0.75))),
-            border: Border {
-                color: DARK_700,
-                width: 1.0,
-                ..Default::default()
-            },
+    let tab_bar = container(
+        scrollable(tab_row)
+            .horizontal()
+            .width(Length::Fill)
+            .style(dark_scrollable),
+    )
+    .width(Length::Fill)
+    .padding([6, 12])
+    .style(|_| container::Style {
+        background: Some(iced::Background::Color(DARK_900)),
+        border: Border {
+            color: DARK_700,
+            width: 1.0,
             ..Default::default()
-        });
+        },
+        snap: true,
+        ..Default::default()
+    });
 
-    // ── Terminal Pane(s) ──────────────────────────────────────────────────────
+    // â”€â”€ Terminal Pane(s) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let active_tab = state
         .tabs
         .iter()
@@ -427,6 +439,7 @@ pub fn view<'a>(
         .height(Length::Fill)
         .style(move |_| container::Style {
             background: Some(iced::Background::Color(bg_color)),
+            snap: true,
             ..Default::default()
         })
         .into()];
@@ -464,6 +477,7 @@ pub fn view<'a>(
                 width: 1.0,
                 radius: 8.0.into(),
             },
+            snap: true,
             ..Default::default()
         });
 
@@ -561,6 +575,7 @@ fn v_divider<'a, Message: 'a>() -> Element<'a, Message> {
         .height(Length::Fixed(22.0))
         .style(|_| container::Style {
             background: Some(iced::Background::Color(DARK_700)),
+            snap: true,
             ..Default::default()
         })
         .into()

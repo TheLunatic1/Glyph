@@ -39,6 +39,7 @@ pub fn view<'a>(
                     width: 1.0,
                     radius: 10.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }),
         column![
@@ -213,6 +214,7 @@ fn snippet_card<'a>(item: &'a CommandSnippet) -> Element<'a, CommandsPageMsg> {
                     width: 1.0,
                     radius: 8.0.into(),
                 },
+                snap: true,
                 ..Default::default()
             }
         })
@@ -240,6 +242,7 @@ fn snippet_card<'a>(item: &'a CommandSnippet) -> Element<'a, CommandsPageMsg> {
             width: 1.0,
             radius: 8.0.into(),
         },
+        snap: true,
         ..Default::default()
     });
 
