@@ -1,4 +1,9 @@
-node_modules/
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# Packaging / Build outputs
 dist/
 out/
 build/
@@ -12,7 +17,6 @@ zt_storage/
 
 # Logs
 *.log
-npm-debug.log*
 
 # Editor directories and files
 .vscode/
@@ -26,15 +30,3 @@ npm-debug.log*
 # OS metadata
 .DS_Store
 Thumbs.db
-
-# Vite
-.vite/
-
-# Archives
-OLD VERSION/
-
-# Generated MCP bundle (produced by scripts/bundle-mcp.cjs)
-resources/mcp.js
-branch_structure.json
-temp_auto_push.bat
-temp_interactive_push.bat
