@@ -2392,12 +2392,16 @@ dependencies = [
  "iced",
  "image",
  "log",
+ "lucide-icons",
  "muda",
  "qrcode",
+ "reqwest",
+ "resvg",
  "rfd",
  "serde",
  "serde_json",
  "single-instance",
+ "tiny-skia",
  "tokio",
  "tokio-util",
  "tray-icon",
@@ -3656,6 +3660,12 @@ name = "lru"
 version = "0.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f66e8d5d03f609abc3a39e6f08e4164ebf1447a732906d39eb9b99b7919ef39"
+
+[[package]]
+name = "lucide-icons"
+version = "1.77.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9306277cb545b55e87866b0c5f44a692b81431cfbceff3bf1b6fa41b5c46bc3"
 
 [[package]]
 name = "lyon"

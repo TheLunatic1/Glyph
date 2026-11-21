@@ -59,6 +59,9 @@ rfd = "0.18"
 arboard = "3.7"
 single-instance = "0.3"
 image = { version = "0.25", default-features = false, features = ["png", "ico"] }
+lucide-icons = { version = "1.77", default-features = false }
+resvg = "0.45"
+tiny-skia = "0.11"
 tray-icon = "0.26"
 muda = "0.21"
 

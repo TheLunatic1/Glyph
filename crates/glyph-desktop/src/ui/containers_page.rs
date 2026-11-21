@@ -2,8 +2,8 @@ use crate::theme::{
     brand_button, danger_button, dark_card, dark_input, dark_pick_list, dark_scrollable,
     ghost_icon_button, glass_panel, pill_badge, rgba, secondary_button, truncate_ellipsis,
     BRAND_300, BRAND_400, BRAND_500, DARK_700, DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD,
-    GREEN_400, GREEN_500, RED_400, RED_500, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
-    YELLOW_400, YELLOW_500,
+    FONT_UI_BOLD, FONT_UI_SEMIBOLD, GREEN_400, GREEN_500, RED_400, RED_500, TEXT_LIGHT,
+    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400, YELLOW_500,
 };
 use crate::ui::icons;
 use glyph_core::containers::{ContainerAction, ContainerDetails, ContainerSummary};
@@ -131,7 +131,7 @@ fn build_tab_bar<'a>(st: &'a ContainersPageState) -> Element<'a, ContainersPageM
             icons::cube(14.0, if is_list { BRAND_400 } else { TEXT_SECONDARY }),
             text("Container List")
                 .size(12)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_SEMIBOLD)
                 .color(if is_list { TEXT_PRIMARY } else { TEXT_SECONDARY }),
         ]
         .spacing(6)
@@ -229,7 +229,7 @@ fn view_list<'a>(st: &'a ContainersPageState) -> Element<'a, ContainersPageMsg> 
         column![
             text("Docker Containers")
                 .size(20)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
             text("Manage Docker & Podman containers, logs, and Compose stacks")
                 .size(12)
@@ -563,10 +563,10 @@ fn view_detail<'a>(
             column![
                 text(&det.summary.name)
                     .size(18)
-                    .font(FONT_MONO_BOLD)
+                    .font(FONT_UI_BOLD)
                     .color(TEXT_PRIMARY),
-                text(format!("{}  Â·  {}", det.summary.image, det.summary.status))
-                    .size(11)
+                text(format!("{}  ·  {}", det.summary.image, det.summary.status))
+                    .size(12)
                     .font(FONT_MONO)
                     .color(TEXT_SECONDARY),
             ]
@@ -576,7 +576,7 @@ fn view_detail<'a>(
                 button(
                     row![
                         icons::square(12.0, Color::WHITE),
-                        text("Stop").size(12).font(FONT_MONO_BOLD).color(Color::WHITE),
+                        text("Stop").size(12).font(FONT_UI_SEMIBOLD).color(Color::WHITE),
                     ]
                     .spacing(6)
                     .align_y(alignment::Vertical::Center),
@@ -588,7 +588,7 @@ fn view_detail<'a>(
                 button(
                     row![
                         icons::play(12.0, Color::WHITE),
-                        text("Start").size(12).font(FONT_MONO_BOLD).color(Color::WHITE),
+                        text("Start").size(12).font(FONT_UI_SEMIBOLD).color(Color::WHITE),
                     ]
                     .spacing(6)
                     .align_y(alignment::Vertical::Center),
@@ -787,7 +787,7 @@ fn subtab_btn<'a>(
     button(
         text(label)
             .size(12)
-            .font(FONT_MONO_BOLD)
+            .font(FONT_UI_SEMIBOLD)
             .color(if active { Color::WHITE } else { TEXT_SECONDARY }),
     )
     .padding([7, 14])
@@ -806,7 +806,7 @@ fn mini_stat<'a>(label: &'static str, val: &'a str) -> Element<'a, ContainersPag
     container(
         column![
             text(label).size(10).color(TEXT_MUTED),
-            text(if val.is_empty() { "â€”" } else { val })
+            text(if val.is_empty() { "—" } else { val })
                 .size(12)
                 .font(FONT_MONO_BOLD)
                 .color(TEXT_PRIMARY),

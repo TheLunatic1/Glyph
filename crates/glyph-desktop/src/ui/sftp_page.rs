@@ -2,8 +2,9 @@ use crate::theme::{
     brand_button, danger_button, danger_ghost_button, dark_card, dark_input, dark_pick_list,
     dark_scrollable, dark_text_editor, ghost_icon_button, glass_panel, modal_card, pill_badge,
     rgba, secondary_button, truncate_ellipsis, BRAND_300, BRAND_400, BRAND_500, DARK_600,
-    DARK_700, DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, GREEN_500, RED_400,
-    RED_500, TEXT_DIM, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400,
+    DARK_700, DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, FONT_UI_SEMIBOLD, GREEN_400,
+    GREEN_500, RED_400, RED_500, TEXT_DIM, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+    YELLOW_400,
 };
 use crate::ui::icons;
 use directories::BaseDirs;
@@ -394,7 +395,7 @@ pub fn view<'a>(
             button(
                 row![
                     icons::upload(14.0, Color::WHITE),
-                    text("Upload").size(12).font(FONT_MONO_BOLD).color(Color::WHITE),
+                    text("Upload").size(12).font(FONT_UI_SEMIBOLD).color(Color::WHITE),
                 ]
                 .spacing(5)
                 .align_y(alignment::Vertical::Center),

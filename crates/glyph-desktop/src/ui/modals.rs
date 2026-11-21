@@ -2,9 +2,9 @@ use crate::theme::{
     brand_button, danger_button, danger_ghost_button, dark_card, dark_input, dark_pick_list,
     dark_scrollable, ghost_icon_button, modal_backdrop, modal_card, pill_badge, rgba,
     secondary_button, APP_VERSION, BRAND_300, BRAND_400, BRAND_500, DARK_600, DARK_700, DARK_800,
-    DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, GREEN_500, ORANGE_400, PURPLE_400, RED_400,
-    RED_500, TEXT_DIM, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400,
-    YELLOW_500,
+    DARK_900, FONT_MONO, FONT_MONO_BOLD, FONT_MONO_MEDIUM, FONT_UI, FONT_UI_BOLD,
+    FONT_UI_SEMIBOLD, GREEN_400, GREEN_500, ORANGE_400, PURPLE_400, RED_400, RED_500, TEXT_DIM,
+    TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400, YELLOW_500,
 };
 use crate::ui::icons;
 use crate::ui::os_logo::os_logo;
@@ -533,7 +533,7 @@ fn view_delete<'a>(st: &'a DeleteConfirmState) -> Element<'a, ModalMsg> {
         column![
             text("Delete Server")
                 .size(18)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
             text(format!("{} ({})", st.server_name, st.host))
                 .size(12)
@@ -565,7 +565,7 @@ fn view_delete<'a>(st: &'a DeleteConfirmState) -> Element<'a, ModalMsg> {
         button(
             row![
                 icons::trash(14.0, Color::WHITE),
-                text("Delete Server").size(13).font(FONT_MONO_BOLD).color(Color::WHITE),
+                text("Delete Server").size(13).font(FONT_UI_SEMIBOLD).color(Color::WHITE),
             ]
             .spacing(6)
             .align_y(alignment::Vertical::Center)
@@ -600,9 +600,9 @@ fn view_export<'a>(st: &'a ExportModalState, servers: &'a [ServerSummary]) -> El
         column![
             text("Export Encrypted Backup (.glyph)")
                 .size(17)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
-            text("AES-256-GCM + scrypt Â· Compatible with Glyph v2 & Mobile")
+            text("AES-256-GCM + scrypt · Compatible with Glyph v2 & Mobile")
                 .size(11)
                 .color(TEXT_SECONDARY),
         ]
@@ -790,7 +790,7 @@ fn view_import<'a>(st: &'a ImportModalState) -> Element<'a, ModalMsg> {
         column![
             text("Import Encrypted Backup (.glyph)")
                 .size(17)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
             text("Restore servers exported from Glyph Desktop or Mobile")
                 .size(11)
@@ -998,7 +998,7 @@ fn view_import<'a>(st: &'a ImportModalState) -> Element<'a, ModalMsg> {
 
             content = content.push(
                 row![
-                    button(text("â† Back").size(13).color(TEXT_LIGHT))
+                    button(text("← Back").size(13).color(TEXT_LIGHT))
                         .padding([9, 14])
                         .style(secondary_button)
                         .on_press(ModalMsg::ImportBackToUnlock),
@@ -1042,7 +1042,7 @@ fn view_ssh_keys<'a>(
         column![
             text("SSH Key Vault")
                 .size(18)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
             text("Generate, import, copy public keys, and 1-click deploy to servers")
                 .size(11)
@@ -1053,7 +1053,7 @@ fn view_ssh_keys<'a>(
         button(
             row![
                 icons::plus(13.0, Color::WHITE),
-                text("Generate Key").size(12).font(FONT_MONO_BOLD).color(Color::WHITE),
+                text("Generate Key").size(12).font(FONT_UI_SEMIBOLD).color(Color::WHITE),
             ]
             .spacing(5)
             .align_y(alignment::Vertical::Center)
@@ -1453,7 +1453,7 @@ fn view_connecting<'a>(st: &'a ConnectingModalState) -> Element<'a, ModalMsg> {
                     &st.server_name
                 })
                 .size(17)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
                 badge,
             ]
@@ -1461,7 +1461,7 @@ fn view_connecting<'a>(st: &'a ConnectingModalState) -> Element<'a, ModalMsg> {
             .align_y(alignment::Vertical::Center),
             text(format!("{}@{}:{}", st.username, st.host, st.port))
                 .size(12)
-                .font(FONT_MONO)
+                .font(FONT_MONO_MEDIUM)
                 .color(TEXT_SECONDARY),
         ]
         .spacing(4),
@@ -1478,9 +1478,9 @@ fn view_connecting<'a>(st: &'a ConnectingModalState) -> Element<'a, ModalMsg> {
     for (idx, line) in st.logs.iter().enumerate() {
         let is_last = idx + 1 == st.logs.len();
         let line_txt = if is_last && st.error.is_none() && st.host_key_prompt.is_none() && st.blink_on {
-            format!("â¯ {line} â–ˆ")
+            format!("❯ {line} █")
         } else {
-            format!("â¯ {line}")
+            format!("❯ {line}")
         };
         log_col = log_col.push(
             text(line_txt)
@@ -1540,7 +1540,7 @@ fn view_connecting<'a>(st: &'a ConnectingModalState) -> Element<'a, ModalMsg> {
             .spacing(8)
             .align_y(alignment::Vertical::Center),
             text(format!(
-                "Host: {}:{}   Â·   Algorithm: {}",
+                "Host: {}:{}   ·   Algorithm: {}",
                 prompt.host, prompt.port, prompt.algorithm
             ))
             .size(12)
@@ -1658,9 +1658,9 @@ fn view_settings<'a>(
         column![
             text("Settings")
                 .size(18)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
-            text(format!("Glyph v{APP_VERSION} Â· Pure Rust Edition"))
+            text(format!("Glyph v{APP_VERSION} · Pure Rust Edition"))
                 .size(11)
                 .color(TEXT_SECONDARY),
         ]
@@ -1681,7 +1681,7 @@ fn view_settings<'a>(
                 icon_el,
                 text(label)
                     .size(12)
-                    .font(if active { FONT_MONO_BOLD } else { FONT_MONO })
+                    .font(if active { FONT_UI_SEMIBOLD } else { FONT_UI })
                     .color(if active { BRAND_300 } else { TEXT_LIGHT }),
             ]
             .spacing(10)
@@ -1782,7 +1782,7 @@ fn view_settings<'a>(
         split,
         row![
             space().width(Length::Fill),
-            button(text("Done").size(13).font(FONT_MONO_BOLD).color(Color::WHITE))
+            button(text("Done").size(13).font(FONT_UI_SEMIBOLD).color(Color::WHITE))
                 .padding([8, 20])
                 .style(brand_button)
                 .on_press(ModalMsg::Close),
@@ -1803,7 +1803,7 @@ fn view_settings_mcp<'a>(st: &'a SettingsModalState) -> Element<'a, ModalMsg> {
             column![
                 text("Model Context Protocol (MCP)")
                     .size(15)
-                    .font(FONT_MONO_BOLD)
+                    .font(FONT_UI_BOLD)
                     .color(TEXT_PRIMARY),
                 text("Allow Antigravity, Claude, Cursor, or VS Code to operate your connected servers securely.")
                     .size(11)
@@ -1827,12 +1827,12 @@ fn view_settings_mcp<'a>(st: &'a SettingsModalState) -> Element<'a, ModalMsg> {
         container(
             column![
                 row![
-                    container(text("Local API Active").size(10).font(FONT_MONO_BOLD).color(GREEN_400))
+                    container(text("Local API Active").size(10).font(FONT_UI_BOLD).color(GREEN_400))
                         .padding([2, 8])
                         .style(pill_badge(rgba(GREEN_500, 0.14), rgba(GREEN_500, 0.35), GREEN_400)),
                     text(format!("127.0.0.1:{}", st.api_port))
                         .size(12)
-                        .font(FONT_MONO_BOLD)
+                        .font(FONT_MONO_MEDIUM)
                         .color(TEXT_LIGHT),
                 ]
                 .spacing(8)
@@ -2574,9 +2574,9 @@ fn view_settings_updates<'a>(st: &'a SettingsModalState) -> Element<'a, ModalMsg
                 column![
                     text(format!("Glyph Desktop v{APP_VERSION}"))
                         .size(15)
-                        .font(FONT_MONO_BOLD)
+                        .font(FONT_UI_BOLD)
                         .color(TEXT_PRIMARY),
-                    text("Made by TheLunatic1 (Salman Toha) Â· Pure Rust v3")
+                    text("Made by TheLunatic1 (Salman Toha) · Pure Rust v3")
                         .size(11)
                         .color(TEXT_SECONDARY),
                 ]
@@ -2683,18 +2683,18 @@ fn view_mobile<'a>(st: &'a MobileModalState) -> Element<'a, ModalMsg> {
             row![
                 text("Glyph Mobile")
                     .size(18)
-                    .font(FONT_MONO_BOLD)
+                    .font(FONT_UI_BOLD)
                     .color(TEXT_PRIMARY),
-                container(text("Android APK").size(10).font(FONT_MONO_BOLD).color(BRAND_300))
+                container(text("Android APK").size(10).font(FONT_UI_BOLD).color(BRAND_300))
                     .padding([2, 8])
                     .style(pill_badge(rgba(BRAND_500, 0.14), rgba(BRAND_500, 0.3), BRAND_300)),
-                container(text(ver_label).size(10).font(FONT_MONO_BOLD).color(GREEN_400))
+                container(text(ver_label).size(10).font(FONT_MONO_MEDIUM).color(GREEN_400))
                     .padding([2, 8])
                     .style(pill_badge(rgba(GREEN_500, 0.14), rgba(GREEN_500, 0.3), GREEN_400)),
             ]
             .spacing(8)
             .align_y(alignment::Vertical::Center),
-            text("Manage your infrastructure anywhere â€” TheLunatic1/glyph-app")
+            text("Manage your infrastructure anywhere — TheLunatic1/glyph-app")
                 .size(11)
                 .color(TEXT_SECONDARY),
         ]

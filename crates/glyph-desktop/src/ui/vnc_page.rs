@@ -1,7 +1,8 @@
 use crate::theme::{
     brand_button, danger_button, dark_card, dark_input, dark_scrollable, glass_panel, pill_badge,
     rgba, secondary_button, BRAND_300, BRAND_400, BRAND_500, DARK_700, FONT_MONO, FONT_MONO_BOLD,
-    GREEN_400, GREEN_500, RED_400, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+    FONT_UI_BOLD, FONT_UI_SEMIBOLD, GREEN_400, GREEN_500, RED_400, TEXT_LIGHT, TEXT_MUTED,
+    TEXT_PRIMARY, TEXT_SECONDARY,
 };
 use crate::ui::icons;
 use glyph_vnc::{vnc_viewport, VncClientHandle, VncFrame, VncUiEvent};
@@ -85,7 +86,7 @@ pub fn view<'a>(st: &'a VncPageState) -> Element<'a, VncPageMsg> {
         column![
             text("VNC Remote Desktop (over SSH)")
                 .size(20)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
             text("RFB 3.8 encrypted end-to-end inside SSH direct-tcpip")
                 .size(12)
@@ -176,7 +177,7 @@ pub fn view<'a>(st: &'a VncPageState) -> Element<'a, VncPageMsg> {
                         icons::unlink(14.0, Color::WHITE),
                         text("Disconnect")
                             .size(12)
-                            .font(FONT_MONO_BOLD)
+                            .font(FONT_UI_SEMIBOLD)
                             .color(Color::WHITE),
                     ]
                     .spacing(6)
@@ -202,7 +203,7 @@ pub fn view<'a>(st: &'a VncPageState) -> Element<'a, VncPageMsg> {
                     "Connect VNC"
                 })
                 .size(12)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_SEMIBOLD)
                 .color(Color::WHITE),
             ]
             .spacing(6)

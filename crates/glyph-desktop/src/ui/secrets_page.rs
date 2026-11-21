@@ -1,8 +1,8 @@
 use crate::theme::{
     brand_button, danger_ghost_button, dark_card, dark_input, dark_scrollable, glass_panel,
     ghost_icon_button, modal_card, rgba, secondary_button, BRAND_400, BRAND_500, DARK_700,
-    DARK_800, FONT_MONO, FONT_MONO_BOLD, GREEN_400, GREEN_500, RED_400, RED_500, TEXT_LIGHT,
-    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400, YELLOW_500,
+    DARK_800, FONT_MONO, FONT_MONO_BOLD, FONT_UI_BOLD, FONT_UI_SEMIBOLD, GREEN_400, GREEN_500,
+    RED_400, RED_500, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400, YELLOW_500,
 };
 use crate::ui::icons;
 use glyph_core::models::SecretSummary;
@@ -66,7 +66,7 @@ pub fn view<'a>(
         column![
             text("Secrets Vault")
                 .size(20)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
             text("Encrypted per-server API tokens, passwords, and credentials")
                 .size(12)
@@ -107,7 +107,7 @@ pub fn view<'a>(
             container(
                 row![
                     icons::alert_triangle(15.0, YELLOW_400),
-                    text("OS keychain unavailable â€” secrets are secured with machine-wrapped encryption.")
+                    text("OS keychain unavailable — secrets are secured with machine-wrapped encryption.")
                         .size(12)
                         .color(YELLOW_400),
                 ]
@@ -133,7 +133,7 @@ pub fn view<'a>(
         column![
             text("Store New Secret")
                 .size(13)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_SEMIBOLD)
                 .color(TEXT_LIGHT),
             row![
                 text_input("Secret Alias (e.g. DB_PASSWORD)", &st.new_name)
@@ -163,7 +163,7 @@ pub fn view<'a>(
                 button(
                     row![
                         icons::plus(14.0, Color::WHITE),
-                        text("Add").size(13).font(FONT_MONO_BOLD).color(Color::WHITE),
+                        text("Add").size(13).font(FONT_UI_SEMIBOLD).color(Color::WHITE),
                     ]
                     .spacing(6)
                     .align_y(alignment::Vertical::Center),
@@ -199,7 +199,7 @@ pub fn view<'a>(
                     row![
                         text(title)
                             .size(13)
-                            .font(FONT_MONO_BOLD)
+                            .font(FONT_UI_BOLD)
                             .color(TEXT_PRIMARY),
                         space().width(Length::Fill),
                         button(icons::x_close(14.0, TEXT_SECONDARY))
@@ -228,7 +228,7 @@ pub fn view<'a>(
                         button(
                             text(action_label)
                                 .size(12)
-                                .font(FONT_MONO_BOLD)
+                                .font(FONT_UI_SEMIBOLD)
                                 .color(Color::WHITE),
                         )
                         .padding([8, 14])
@@ -286,7 +286,7 @@ pub fn view<'a>(
             icons::shield_check(15.0, GREEN_400),
             text(format!("Encrypted Keys ({})", secrets.len()))
                 .size(13)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_SEMIBOLD)
                 .color(TEXT_LIGHT),
         ]
         .spacing(8)

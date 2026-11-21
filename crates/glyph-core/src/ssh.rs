@@ -400,7 +400,7 @@ impl SshSession {
     pub async fn detect_os(&self) -> Option<String> {
         let cmd = concat!(
             r#"if [ -f /etc/openwrt_release ]; then echo openwrt; "#,
-            r#"elif [ -f /etc/os-release ]; then grep "^ID=" /etc/os-release 2>/dev/null | head -1 | cut -d= -f2 | tr -d '"'; "#,
+            r#"elif [ -f /etc/os-release ]; then grep "^ID=" /etc/os-release 2>/dev/null | head -1 | cut -d= -f2 | tr -d "\"'\r"; "#,
             r#"elif [ -f /etc/alpine-release ]; then echo alpine; "#,
             r#"elif [ -f /etc/gentoo-release ]; then echo gentoo; "#,
             r#"elif [ -f /etc/freebsd-version ] || uname -s 2>/dev/null | grep -qi freebsd; then echo freebsd; "#,

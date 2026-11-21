@@ -1,9 +1,9 @@
 use crate::theme::{
     dark_card, dark_scrollable, ghost_icon_button, glass_panel, modal_backdrop, modal_card, rgba,
     server_card_button, truncate_ellipsis, BLUE_400, BRAND_300, BRAND_400, BRAND_500, CYAN_400,
-    DARK_600, DARK_700, DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, ORANGE_400,
-    PURPLE_400, RED_400, RED_500, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400,
-    YELLOW_500,
+    DARK_600, DARK_700, DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, FONT_MONO_MEDIUM,
+    FONT_UI_BOLD, FONT_UI_SEMIBOLD, GREEN_400, ORANGE_400, PURPLE_400, RED_400, RED_500,
+    TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400, YELLOW_500,
 };
 use crate::ui::icons;
 use crate::ui::os_logo::os_logo;
@@ -44,7 +44,7 @@ pub fn view<'a>(
     let header_left = column![
         text("Server Dashboard")
             .size(28)
-            .font(FONT_MONO_BOLD)
+            .font(FONT_UI_BOLD)
             .color(TEXT_PRIMARY),
         text("Live metrics - click any card for details")
             .size(13)
@@ -82,12 +82,12 @@ pub fn view<'a>(
             column![
                 text(srv_title)
                     .size(17)
-                    .font(FONT_MONO_BOLD)
+                    .font(FONT_UI_BOLD)
                     .color(TEXT_PRIMARY)
                     .wrapping(text::Wrapping::None),
                 text(srv_sub)
                     .size(12)
-                    .font(FONT_MONO)
+                    .font(FONT_MONO_MEDIUM)
                     .color(TEXT_SECONDARY)
                     .wrapping(text::Wrapping::None),
             ]
@@ -124,7 +124,7 @@ pub fn view<'a>(
                 column![
                     text("High-capacity host detected (Shared Hosting / Large VM)")
                         .size(13)
-                        .font(FONT_MONO_BOLD)
+                        .font(FONT_UI_BOLD)
                         .color(BRAND_400),
                     text("Your own container stats may not be available. Displayed metrics (like CPU cores and disk) reflect the entire physical server hardware, not just your specific allocation.")
                         .size(12)
@@ -150,7 +150,7 @@ pub fn view<'a>(
         body = body.push(banner);
     }
 
-    // Top circular gauge cards + network card â€” wrap cleanly onto 2 rows when narrow or 5 cards
+    // Top circular gauge cards + network card — wrap cleanly onto 2 rows when narrow or 5 cards
     let has_gpu = state.stats.gpu_pct.is_some();
     if !has_gpu && window_width >= 1160.0 {
         let top_cards = row![
@@ -421,7 +421,7 @@ fn render_modal<'a>(modal: DetailModal, stats: &'a TelemetrySnapshot) -> Element
             icon,
             text(title)
                 .size(18)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
             space().width(Length::Fill),
             button(icons::x_close(18.0, TEXT_SECONDARY))
@@ -580,9 +580,9 @@ fn cpu_modal_body<'a>(stats: &'a TelemetrySnapshot) -> Element<'a, DashboardMsg>
                         column![
                             text(&t.label).size(12).color(TEXT_SECONDARY),
                             text(if t.celsius > 0.0 {
-                                format!("{:.0}Â°C", t.celsius)
+                                format!("{:.0}°C", t.celsius)
                             } else {
-                                "â€”".to_string()
+                                "—".to_string()
                             })
                             .size(15)
                             .font(FONT_MONO_BOLD)
@@ -760,14 +760,14 @@ fn gpu_modal_body<'a>(stats: &'a TelemetrySnapshot) -> Element<'a, DashboardMsg>
             column![
                 text("No GPU Stats Available")
                     .size(16)
-                    .font(FONT_MONO_BOLD)
+                    .font(FONT_UI_BOLD)
                     .color(TEXT_PRIMARY),
                 text("We could not detect any GPU monitoring tools on this server. Install the matching driver/tools:")
                     .size(13)
                     .color(TEXT_SECONDARY),
                 container(
                     column![
-                        text("NVIDIA GPUs").size(13).font(FONT_MONO_BOLD).color(GREEN_400),
+                        text("NVIDIA GPUs").size(13).font(FONT_UI_SEMIBOLD).color(GREEN_400),
                         text("sudo apt install nvidia-utils-535").size(13).font(FONT_MONO).color(BRAND_300),
                     ]
                     .spacing(4),
@@ -839,9 +839,9 @@ fn gpu_modal_body<'a>(stats: &'a TelemetrySnapshot) -> Element<'a, DashboardMsg>
                             column![
                                 text("TEMPERATURE").size(11).color(TEXT_SECONDARY),
                                 text(if g.temp_c > 0.0 {
-                                    format!("{:.0}Â°C", g.temp_c)
+                                    format!("{:.0}°C", g.temp_c)
                                 } else {
-                                    "â€”".to_string()
+                                    "—".to_string()
                                 })
                                 .size(18)
                                 .font(FONT_MONO_BOLD)
@@ -889,8 +889,8 @@ fn net_modal_body<'a>(stats: &'a TelemetrySnapshot) -> Element<'a, DashboardMsg>
 
     let hdr = row![
         text("INTERFACE").size(11).color(TEXT_MUTED).width(Length::FillPortion(2)),
-        text("â†“ SPEED").size(11).color(GREEN_400).width(Length::FillPortion(2)),
-        text("â†‘ SPEED").size(11).color(BLUE_400).width(Length::FillPortion(2)),
+        text("↓ SPEED").size(11).color(GREEN_400).width(Length::FillPortion(2)),
+        text("↑ SPEED").size(11).color(BLUE_400).width(Length::FillPortion(2)),
         text("TOTAL RX").size(11).color(TEXT_MUTED).width(Length::FillPortion(2)),
         text("TOTAL TX").size(11).color(TEXT_MUTED).width(Length::FillPortion(2)),
     ]

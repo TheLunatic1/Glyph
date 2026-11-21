@@ -1015,7 +1015,7 @@ impl VaultManager {
             .commands
             .entry(server_id.to_string())
             .or_insert_with(default_commands);
-        let id = Utc::now().timestamp_millis() as u64;
+        let id = next_snippet_id(list);
         list.push(CommandSnippet {
             id,
             name: name.to_string(),
@@ -1081,7 +1081,7 @@ impl VaultManager {
             .iter_mut()
             .find(|p| p.id == package_id)
             .ok_or_else(|| anyhow!("Snippet package not found"))?;
-        let id = Utc::now().timestamp_millis() as u64;
+        let id = next_snippet_id(&pkg.snippets);
         pkg.snippets.push(CommandSnippet {
             id,
             name: name.trim().to_string(),
@@ -1467,6 +1467,12 @@ fn default_highlight_rules() -> Vec<HighlightRule> {
     ]
 }
 
+fn next_snippet_id(list: &[CommandSnippet]) -> u64 {
+    let now_ms = Utc::now().timestamp_millis().max(1) as u64;
+    let max_existing = list.iter().map(|c| c.id).max().unwrap_or(0);
+    now_ms.max(max_existing.saturating_add(1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1717,5 +1723,70 @@ mod tests {
         let _ = fs::remove_dir_all(dir_a);
         let _ = fs::remove_dir_all(dir_b);
         let _ = fs::remove_dir_all(sync_dir);
+    }
+
+    #[test]
+    fn commands_and_secrets_roundtrip() {
+        let dir = temp_dir("commands_secrets");
+        let mut vault = VaultManager::open_for_test(dir.clone(), [15u8; 32]).unwrap();
+        let srv_id = vault
+            .add_server(ServerConfigInput {
+                name: "OracleProd".into(),
+                host: "10.20.30.40".into(),
+                username: "opc".into(),
+                password: Some("pw".into()),
+                ..Default::default()
+            })
+            .unwrap();
+
+        // Commands: server starts with default seeded commands; adding two yields base + 2
+        let base = vault.list_commands(&srv_id).len();
+        let c1 = vault.add_command(&srv_id, "Check Disk", "df -h").unwrap();
+        let c2 = vault
+            .add_command(&srv_id, "Restart Nginx", "sudo systemctl reload nginx")
+            .unwrap();
+        assert_ne!(c1, c2);
+        vault.increment_command_use(&srv_id, c2).unwrap();
+        vault.increment_command_use(&srv_id, c2).unwrap();
+        let cmds = vault.list_commands(&srv_id);
+        assert_eq!(cmds.len(), base + 2);
+        assert_eq!(cmds[0].id, c2);
+        assert_eq!(cmds[0].uses, 2);
+        vault.remove_command(&srv_id, c1).unwrap();
+        assert_eq!(vault.list_commands(&srv_id).len(), base + 1);
+
+        // Secrets: add encrypted, list, decrypt, export/import .glyph bundle, delete
+        let sec_id = vault
+            .add_secret(&srv_id, "API_TOKEN", "super-secret-value-999")
+            .unwrap();
+        let listed = vault.list_secrets(&srv_id);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].name, "API_TOKEN");
+        assert_eq!(
+            vault.get_secret_value(&sec_id).unwrap().as_deref(),
+            Some("super-secret-value-999")
+        );
+
+        let bundle = vault
+            .export_secrets_encrypted(&srv_id, "bundle-pw-123")
+            .unwrap();
+        vault.delete_secret(&sec_id).unwrap();
+        assert!(vault.list_secrets(&srv_id).is_empty());
+
+        let imported = vault
+            .import_secrets_encrypted(&srv_id, &bundle, "bundle-pw-123")
+            .unwrap();
+        assert_eq!(imported, 1);
+        let listed_after = vault.list_secrets(&srv_id);
+        assert_eq!(listed_after.len(), 1);
+        assert_eq!(
+            vault
+                .get_secret_value(&listed_after[0].id)
+                .unwrap()
+                .as_deref(),
+            Some("super-secret-value-999")
+        );
+
+        let _ = fs::remove_dir_all(dir);
     }
 }

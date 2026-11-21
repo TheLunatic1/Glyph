@@ -1,7 +1,8 @@
 use crate::theme::{
     brand_button, danger_ghost_button, dark_input, dark_pick_list, dark_scrollable, glass_panel,
-    logo_handle, rgba, secondary_button, truncate_ellipsis, BRAND_400, BRAND_500, DARK_700,
-    DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, RED_400, RED_500, TEXT_LIGHT, TEXT_PRIMARY,
+    logo_handle_for, rgba, secondary_button, truncate_ellipsis, window_close_button,
+    window_control_button, BRAND_400, BRAND_500, DARK_700, DARK_900, FONT_MONO, FONT_MONO_BOLD,
+    FONT_UI_BOLD, FONT_UI_SEMIBOLD, GREEN_400, RED_400, RED_500, TEXT_LIGHT, TEXT_PRIMARY,
     TEXT_SECONDARY, YELLOW_400,
 };
 use crate::ui::icons;
@@ -243,39 +244,88 @@ pub fn view<'a>(
     st: &'a QuickTerminalState,
     highlight_rules: &'a [CompiledHighlightRule],
 ) -> Element<'a, QuickTerminalMsg> {
+    let minimize_glyph = container(
+        container(space().width(Length::Fixed(10.0)).height(Length::Fixed(1.5))).style(|_| {
+            container::Style {
+                background: Some(Background::Color(TEXT_LIGHT)),
+                snap: true,
+                ..Default::default()
+            }
+        }),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .center_x(Length::Fill)
+    .center_y(Length::Fill);
+
+    let maximize_glyph = container(
+        container(space().width(Length::Fixed(10.0)).height(Length::Fixed(10.0))).style(|_| {
+            container::Style {
+                border: Border {
+                    color: TEXT_LIGHT,
+                    width: 1.5,
+                    radius: 0.0.into(),
+                },
+                snap: true,
+                ..Default::default()
+            }
+        }),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .center_x(Length::Fill)
+    .center_y(Length::Fill);
+
+    let close_glyph = container(icons::x_close_inherit(14.0))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill);
+
     let titlebar = container(
         row![
             mouse_area(
                 row![
-                    image(logo_handle()).width(20).height(20),
+                    space().width(10),
+                    image(logo_handle_for(20))
+                        .width(20)
+                        .height(20)
+                        .filter_method(image::FilterMethod::Linear),
                     space().width(8),
                     text(truncate_ellipsis(&st.title(), 48))
                         .size(13)
-                        .font(FONT_MONO_BOLD)
+                        .font(FONT_UI_SEMIBOLD)
                         .color(TEXT_PRIMARY),
                 ]
                 .align_y(alignment::Vertical::Center)
-                .width(Length::Fill),
+                .width(Length::Fill)
+                .height(Length::Fixed(34.0)),
             )
             .on_press(QuickTerminalMsg::StartDrag),
-            button(text("_").size(12).color(TEXT_SECONDARY))
+            button(minimize_glyph)
                 .on_press(QuickTerminalMsg::MinimizeWindow)
-                .padding([4, 10])
-                .style(secondary_button),
-            button(text("[]").size(11).color(TEXT_SECONDARY))
+                .width(Length::Fixed(42.0))
+                .height(Length::Fixed(34.0))
+                .padding(0)
+                .style(window_control_button),
+            button(maximize_glyph)
                 .on_press(QuickTerminalMsg::MaximizeWindow)
-                .padding([4, 10])
-                .style(secondary_button),
-            button(text("X").size(12).color(RED_400))
+                .width(Length::Fixed(42.0))
+                .height(Length::Fixed(34.0))
+                .padding(0)
+                .style(window_control_button),
+            button(close_glyph)
                 .on_press(QuickTerminalMsg::CloseWindow)
-                .padding([4, 10])
-                .style(danger_ghost_button),
+                .width(Length::Fixed(42.0))
+                .height(Length::Fixed(34.0))
+                .padding(0)
+                .style(window_close_button),
         ]
-        .spacing(6)
         .align_y(alignment::Vertical::Center),
     )
-    .padding([6, 10])
+    .padding(0)
     .width(Length::Fill)
+    .height(Length::Fixed(34.0))
     .style(bar_bg);
 
     let connected = st.transport.is_connected();
@@ -287,7 +337,7 @@ pub fn view<'a>(
         space().width(4),
         text(st.protocol.label())
             .size(12)
-            .font(FONT_MONO_BOLD)
+            .font(FONT_UI_BOLD)
             .color(TEXT_PRIMARY),
         space().width(8),
         button(

@@ -1,6 +1,7 @@
 use crate::theme::{
-    dark_900_bg, glyph_theme, APP_VERSION, FONT_MONO, JETBRAINS_MONO_BOLD, JETBRAINS_MONO_REGULAR,
-    LOGO_PNG,
+    dark_900_bg, glyph_theme, APP_VERSION, FONT_UI, IBM_PLEX_MONO_BOLD, IBM_PLEX_MONO_MEDIUM,
+    IBM_PLEX_MONO_REGULAR, IBM_PLEX_SANS_BOLD, IBM_PLEX_SANS_MEDIUM, IBM_PLEX_SANS_REGULAR,
+    IBM_PLEX_SANS_SEMIBOLD, LOGO_PNG,
 };
 use crate::tray::{TrayCommand, TrayManager};
 use crate::ui::commands_page::{self, CommandsPageMsg, CommandsPageState};
@@ -8,11 +9,13 @@ use crate::ui::containers_page::{
     self, ContainerSubTab, ContainerTabDetail, ContainersPageMsg, ContainersPageState,
 };
 use crate::ui::dashboard::{self, DashboardMsg, DashboardState};
+use crate::ui::icons;
 use crate::ui::manager::{self, ManagerMsg, ServerFormState};
 use crate::ui::modals::{
     self, ConnectingModalState, DeleteConfirmState, ExportModalState, HostKeyPromptUi,
     ImportModalState, ImportStep, ManagerModal, MobileModalState, ModalMsg, SshKeysModalState,
 };
+use crate::ui::os_logo;
 use crate::ui::quick_terminal::{QuickProtocol, QuickTransport};
 use crate::ui::secrets_page::{self, SecretsBundleMode, SecretsPageMsg, SecretsPageState};
 use crate::ui::sftp_page::{self, SftpEditorState, SftpPageMsg, SftpPageState, SftpPrompt};
@@ -126,6 +129,7 @@ pub enum BusEvent {
     ComposeDone(window::Id, Result<String, String>),
     VncConnected(window::Id, Result<VncClientHandle, String>),
     VncEvent(window::Id, VncEvent),
+    OsIconFetched(String, Vec<u8>),
 }
 
 impl fmt::Debug for BusEvent {
@@ -235,6 +239,11 @@ impl fmt::Debug for BusEvent {
             Self::ComposeDone(wid, _) => f.debug_tuple("ComposeDone").field(wid).finish(),
             Self::VncConnected(wid, _) => f.debug_tuple("VncConnected").field(wid).finish(),
             Self::VncEvent(wid, _) => f.debug_tuple("VncEvent").field(wid).finish(),
+            Self::OsIconFetched(slug, bytes) => f
+                .debug_tuple("OsIconFetched")
+                .field(slug)
+                .field(&bytes.len())
+                .finish(),
         }
     }
 }
@@ -489,9 +498,15 @@ pub fn run() -> iced::Result {
         .title(GlyphApp::title)
         .theme(GlyphApp::theme)
         .subscription(GlyphApp::subscription)
-        .font(JETBRAINS_MONO_REGULAR)
-        .font(JETBRAINS_MONO_BOLD)
-        .default_font(FONT_MONO)
+        .font(IBM_PLEX_SANS_REGULAR)
+        .font(IBM_PLEX_SANS_MEDIUM)
+        .font(IBM_PLEX_SANS_SEMIBOLD)
+        .font(IBM_PLEX_SANS_BOLD)
+        .font(IBM_PLEX_MONO_REGULAR)
+        .font(IBM_PLEX_MONO_MEDIUM)
+        .font(IBM_PLEX_MONO_BOLD)
+        .font(icons::LUCIDE_FONT_BYTES)
+        .default_font(FONT_UI)
         .antialiasing(true)
         .run()
 }
@@ -501,6 +516,7 @@ impl GlyphApp {
         ensure_rustls_ring_provider();
         let vault_raw =
             VaultManager::open_default().expect("Failed to initialize Glyph encrypted Vault");
+        os_logo::set_icon_cache_dir(vault_raw.data_dir().join("os-icons"));
         let servers = vault_raw.list_servers();
         let ssh_keys = vault_raw.list_ssh_keys();
         let known_hosts = vault_raw.list_known_hosts().to_vec();
@@ -551,6 +567,7 @@ impl GlyphApp {
         };
         app.reload_termius_caches();
         app.locked = app.app_lock_cfg.enabled;
+        app.trigger_os_icon_fetches(app.servers.iter().map(|s| s.os.as_deref()).collect());
 
         (app, Task::batch([open_task.discard(), api_task]))
     }
@@ -631,6 +648,22 @@ impl GlyphApp {
         ])
     }
 
+    pub(crate) fn trigger_os_icon_fetches(&self, os_list: Vec<Option<&str>>) {
+        let mut slugs = Vec::new();
+        for os in os_list.into_iter().flatten() {
+            if let Some(slug) = os_logo::needs_fetch(os) {
+                slugs.push(slug);
+            }
+        }
+        for slug in slugs {
+            tokio::spawn(async move {
+                if let Some(bytes) = os_logo::fetch_devicon_svg(&slug).await {
+                    let _ = app_bus_sender().send(BusEvent::OsIconFetched(slug, bytes));
+                }
+            });
+        }
+    }
+
     pub(crate) fn refresh_vault_cache(&mut self) {
         let (servers, ssh_keys, known_hosts) = self.with_vault(|v| {
             (
@@ -642,6 +675,7 @@ impl GlyphApp {
         self.servers = servers;
         self.ssh_keys = ssh_keys;
         self.known_hosts = known_hosts;
+        self.trigger_os_icon_fetches(self.servers.iter().map(|s| s.os.as_deref()).collect());
         if let Some(tray) = &mut self.tray {
             tray.update_servers(&self.servers);
         }
@@ -1776,6 +1810,10 @@ impl GlyphApp {
                         }
                     }
                 }
+                Task::none()
+            }
+            BusEvent::OsIconFetched(slug, bytes) => {
+                os_logo::register_fetched_svg(&slug, bytes);
                 Task::none()
             }
         }

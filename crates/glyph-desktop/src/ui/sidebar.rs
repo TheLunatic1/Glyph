@@ -1,7 +1,7 @@
 use crate::theme::{
-    danger_ghost_button, ghost_icon_button, logo_handle, mobile_pill_button, sidebar_bg,
-    sidebar_nav_button, APP_VERSION, BRAND_300, BRAND_400, FONT_MONO_BOLD, RED_400, TEXT_DIM,
-    TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+    danger_ghost_button, ghost_icon_button, logo_handle_for, mobile_pill_button, sidebar_bg,
+    sidebar_nav_button, APP_VERSION, BRAND_300, BRAND_400, FONT_MONO_MEDIUM, FONT_UI_BOLD,
+    FONT_UI_SEMIBOLD, RED_400, TEXT_DIM, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
 };
 use crate::ui::icons;
 use iced::widget::{button, column, container, image, row, scrollable, space, text};
@@ -43,10 +43,13 @@ pub enum SidebarMsg {
 pub fn view<'a>(active_tab: ServerTab) -> Element<'a, SidebarMsg> {
     let brand_header = container(
         row![
-            image(logo_handle()).width(36).height(36),
+            image(logo_handle_for(36))
+                .width(36)
+                .height(36)
+                .filter_method(image::FilterMethod::Linear),
             text("Glyph")
                 .size(20)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
         ]
         .spacing(12)
@@ -72,7 +75,10 @@ pub fn view<'a>(active_tab: ServerTab) -> Element<'a, SidebarMsg> {
         let btn = button(
             row![
                 icon,
-                text(label).size(14).color(if is_active { BRAND_400 } else { TEXT_LIGHT }),
+                text(label)
+                    .size(14)
+                    .font(if is_active { FONT_UI_SEMIBOLD } else { crate::theme::FONT_UI })
+                    .color(if is_active { BRAND_400 } else { TEXT_LIGHT }),
             ]
             .spacing(12)
             .align_y(alignment::Vertical::Center),
@@ -123,7 +129,10 @@ pub fn view<'a>(active_tab: ServerTab) -> Element<'a, SidebarMsg> {
         ]
         .align_y(alignment::Vertical::Center),
         text("(Salman Toha)").size(11).color(BRAND_400),
-        text(format!("v{APP_VERSION}")).size(11).color(TEXT_DIM),
+        text(format!("v{APP_VERSION}"))
+            .size(11)
+            .font(FONT_MONO_MEDIUM)
+            .color(TEXT_DIM),
     ]
     .spacing(2)
     .align_x(alignment::Horizontal::Center)

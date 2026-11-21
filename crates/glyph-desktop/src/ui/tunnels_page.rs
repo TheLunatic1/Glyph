@@ -1,8 +1,9 @@
 use crate::theme::{
     brand_button, danger_ghost_button, dark_card, dark_input, dark_pick_list, dark_scrollable,
     glass_panel, pill_badge, rgba, secondary_button, BLUE_400, BRAND_300, BRAND_400, BRAND_500,
-    DARK_700, DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, GREEN_500, RED_400,
-    TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400,
+    DARK_700, DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, FONT_UI_BOLD, FONT_UI_SEMIBOLD,
+    GREEN_400, GREEN_500, RED_400, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+    YELLOW_400,
 };
 use crate::ui::icons;
 use glyph_core::models::SavedTunnelRule;
@@ -95,7 +96,7 @@ pub fn view<'a>(
         column![
             text("Port Forwarding")
                 .size(20)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
             text("Encrypted Local (-L), Remote (-R), Dynamic SOCKS5 (-D), and Saved Profiles")
                 .size(12)
@@ -123,7 +124,7 @@ pub fn view<'a>(
         button(
             text(label)
                 .size(12)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_SEMIBOLD)
                 .color(if active { Color::WHITE } else { TEXT_SECONDARY }),
         )
         .padding([6, 12])

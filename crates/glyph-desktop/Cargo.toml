@@ -26,6 +26,10 @@ rfd.workspace = true
 arboard.workspace = true
 single-instance.workspace = true
 image.workspace = true
+lucide-icons.workspace = true
+resvg.workspace = true
+tiny-skia.workspace = true
+reqwest.workspace = true
 directories.workspace = true
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]

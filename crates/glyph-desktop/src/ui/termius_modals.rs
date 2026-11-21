@@ -1,6 +1,6 @@
 use crate::theme::{
     brand_button, danger_ghost_button, dark_input, dark_pick_list, dark_scrollable, glass_panel,
-    modal_card, rgba, secondary_button, truncate_ellipsis, BRAND_400, BRAND_500, FONT_MONO_BOLD,
+    modal_card, rgba, secondary_button, truncate_ellipsis, BRAND_400, BRAND_500, FONT_UI_BOLD,
     GREEN_400, RED_400, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
 };
 use crate::ui::icons;
@@ -277,7 +277,7 @@ fn modal_shell<'a>(
     let header = row![
         text(title)
             .size(17)
-            .font(FONT_MONO_BOLD)
+            .font(FONT_UI_BOLD)
             .color(TEXT_PRIMARY)
             .width(Length::Fill),
         button(text("Close").size(12).color(TEXT_LIGHT))
@@ -341,7 +341,7 @@ fn view_identities<'a>(
         row![
             text("Saved Identities")
                 .size(13)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_LIGHT)
                 .width(Length::Fill),
             button(text("+ New").size(11))
@@ -417,7 +417,7 @@ fn view_identities<'a>(
             "Create Identity"
         })
         .size(14)
-        .font(FONT_MONO_BOLD)
+        .font(FONT_UI_BOLD)
         .color(TEXT_PRIMARY),
         row![
             text("Label")
@@ -1119,7 +1119,7 @@ fn view_group_run<'a>(
                         row![
                             text(&r.server_name)
                                 .size(13)
-                                .font(FONT_MONO_BOLD)
+                                .font(FONT_UI_BOLD)
                                 .color(TEXT_PRIMARY)
                                 .width(Length::Fill),
                             text(&r.status).size(11).color(status_color),

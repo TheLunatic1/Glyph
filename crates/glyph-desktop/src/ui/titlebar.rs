@@ -1,10 +1,11 @@
 use crate::theme::{
-    ghost_icon_button, logo_handle, titlebar_bg, truncate_ellipsis, BRAND_300, BRAND_400,
-    FONT_MONO_BOLD, RED_400, TEXT_DIM, TEXT_MUTED, TEXT_SECONDARY,
+    ghost_icon_button, logo_handle_for, titlebar_bg, truncate_ellipsis, window_close_button,
+    window_control_button, BRAND_300, BRAND_400, FONT_UI, FONT_UI_SEMIBOLD, TEXT_DIM, TEXT_LIGHT,
+    TEXT_MUTED,
 };
 use crate::ui::icons;
 use iced::widget::{button, container, image, mouse_area, row, space, text};
-use iced::{alignment, window, Element, Length};
+use iced::{alignment, window, Background, Border, Element, Length};
 
 #[derive(Debug, Clone)]
 pub enum TitleBarMsg {
@@ -23,10 +24,13 @@ pub fn view<'a>(
     let display_title = truncate_ellipsis(raw_title.as_ref(), 48);
 
     let mut left = row![
-        image(logo_handle()).width(16).height(16),
+        image(logo_handle_for(20))
+            .width(20)
+            .height(20)
+            .filter_method(image::FilterMethod::Linear),
         text(display_title)
-            .size(12)
-            .font(FONT_MONO_BOLD)
+            .size(13)
+            .font(FONT_UI_SEMIBOLD)
             .color(BRAND_300)
             .wrapping(text::Wrapping::None),
     ]
@@ -35,16 +39,17 @@ pub fn view<'a>(
 
     if show_attribution {
         left = left
-            .push(text("•").size(10).color(TEXT_DIM))
-            .push(text("Made by").size(10).color(TEXT_MUTED))
+            .push(text("·").size(11).font(FONT_UI).color(TEXT_DIM))
+            .push(text("Made by").size(11).font(FONT_UI).color(TEXT_MUTED))
             .push(
                 button(
                     text("TheLunatic1 (Salman Toha)")
-                        .size(10)
+                        .size(11)
+                        .font(FONT_UI)
                         .color(BRAND_400)
                         .wrapping(text::Wrapping::None),
                 )
-                .padding([1, 3])
+                .padding([1, 4])
                 .style(ghost_icon_button)
                 .on_press(TitleBarMsg::OpenGithub),
             );
@@ -53,18 +58,62 @@ pub fn view<'a>(
     let drag_area = mouse_area(space().width(Length::Fill).height(Length::Fill))
         .on_press(TitleBarMsg::Drag);
 
+    let minimize_glyph = container(
+        container(space().width(Length::Fixed(10.0)).height(Length::Fixed(1.5))).style(|_| {
+            container::Style {
+                background: Some(Background::Color(TEXT_LIGHT)),
+                snap: true,
+                ..Default::default()
+            }
+        }),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .center_x(Length::Fill)
+    .center_y(Length::Fill);
+
+    let maximize_glyph = container(
+        container(space().width(Length::Fixed(10.0)).height(Length::Fixed(10.0))).style(|_| {
+            container::Style {
+                border: Border {
+                    color: TEXT_LIGHT,
+                    width: 1.5,
+                    radius: 0.0.into(),
+                },
+                snap: true,
+                ..Default::default()
+            }
+        }),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .center_x(Length::Fill)
+    .center_y(Length::Fill);
+
+    let close_glyph = container(icons::x_close_inherit(15.0))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill);
+
     let controls = row![
-        button(icons::minus(13.0, TEXT_SECONDARY))
-            .padding([6, 12])
-            .style(ghost_icon_button)
+        button(minimize_glyph)
+            .width(Length::Fixed(44.0))
+            .height(Length::Fixed(34.0))
+            .padding(0)
+            .style(window_control_button)
             .on_press(TitleBarMsg::Minimize),
-        button(icons::maximize_box(12.0, TEXT_SECONDARY))
-            .padding([6, 12])
-            .style(ghost_icon_button)
+        button(maximize_glyph)
+            .width(Length::Fixed(44.0))
+            .height(Length::Fixed(34.0))
+            .padding(0)
+            .style(window_control_button)
             .on_press(TitleBarMsg::ToggleMaximize),
-        button(icons::x_close(13.0, RED_400))
-            .padding([6, 12])
-            .style(ghost_icon_button)
+        button(close_glyph)
+            .width(Length::Fixed(44.0))
+            .height(Length::Fixed(34.0))
+            .padding(0)
+            .style(window_close_button)
             .on_press(TitleBarMsg::Close),
     ]
     .align_y(alignment::Vertical::Center);
@@ -76,11 +125,11 @@ pub fn view<'a>(
             controls
         ]
         .width(Length::Fill)
-        .height(Length::Fixed(32.0))
+        .height(Length::Fixed(34.0))
         .align_y(alignment::Vertical::Center),
     )
     .width(Length::Fill)
-    .height(Length::Fixed(32.0))
+    .height(Length::Fixed(34.0))
     .style(titlebar_bg)
     .into()
 }

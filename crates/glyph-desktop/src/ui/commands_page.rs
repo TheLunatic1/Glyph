@@ -1,8 +1,8 @@
 use crate::theme::{
     brand_button, danger_ghost_button, dark_card, dark_input, dark_scrollable, glass_panel,
     pill_badge, rgba, secondary_button, truncate_ellipsis, BRAND_300, BRAND_400, BRAND_500,
-    DARK_700, DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, GREEN_500, RED_400, TEXT_LIGHT,
-    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+    DARK_700, DARK_900, FONT_MONO, FONT_UI_BOLD, FONT_UI_SEMIBOLD, GREEN_400, GREEN_500, RED_400,
+    TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
 };
 use crate::ui::icons;
 use glyph_core::models::{CommandSnippet, SnippetPackage};
@@ -58,7 +58,7 @@ pub fn view<'a>(
         button(
             text("This Server")
                 .size(12)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_SEMIBOLD)
                 .color(if st.sub_view == CommandsSubView::ServerSnippets {
                     Color::WHITE
                 } else {
@@ -75,7 +75,7 @@ pub fn view<'a>(
         button(
             text(format!("Global Packages ({})", packages.len()))
                 .size(12)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_SEMIBOLD)
                 .color(if st.sub_view == CommandsSubView::Packages {
                     Color::WHITE
                 } else {
@@ -108,7 +108,7 @@ pub fn view<'a>(
         column![
             text("Saved Commands & Snippet Packages")
                 .size(20)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
             text("Run snippets on this session, substitute {{vars}}, or execute across a host group")
                 .size(12)
@@ -138,7 +138,7 @@ pub fn view<'a>(
                 column![
                     text("Add Server Command Snippet")
                         .size(13)
-                        .font(FONT_MONO_BOLD)
+                        .font(FONT_UI_SEMIBOLD)
                         .color(TEXT_LIGHT),
                     row![
                         text_input("Snippet Name (e.g. Reload Nginx)", &st.new_name)
@@ -161,7 +161,7 @@ pub fn view<'a>(
                                 icons::plus(14.0, Color::WHITE),
                                 text("Add")
                                     .size(13)
-                                    .font(FONT_MONO_BOLD)
+                                    .font(FONT_UI_SEMIBOLD)
                                     .color(Color::WHITE),
                             ]
                             .spacing(6)
@@ -185,7 +185,7 @@ pub fn view<'a>(
                     icons::zap(15.0, BRAND_400),
                     text("Sorted by Most Used")
                         .size(13)
-                        .font(FONT_MONO_BOLD)
+                        .font(FONT_UI_SEMIBOLD)
                         .color(TEXT_LIGHT),
                     space().width(Length::Fill),
                     text(format!("{} snippets", commands.len()))
@@ -258,7 +258,7 @@ pub fn view<'a>(
                             icons::command(12.0, if selected { Color::WHITE } else { BRAND_400 }),
                             text(format!("{} ({})", pkg.name, pkg.snippets.len()))
                                 .size(12)
-                                .font(FONT_MONO_BOLD)
+                                .font(FONT_UI_SEMIBOLD)
                                 .color(if selected { Color::WHITE } else { TEXT_LIGHT }),
                         ]
                         .spacing(6)
@@ -330,7 +330,7 @@ pub fn view<'a>(
                     column![
                         text(&pkg.name)
                             .size(15)
-                            .font(FONT_MONO_BOLD)
+                            .font(FONT_UI_BOLD)
                             .color(TEXT_PRIMARY),
                         text(&pkg.description).size(12).color(TEXT_SECONDARY),
                     ]
@@ -464,7 +464,7 @@ fn snippet_card<'a>(
         column![
             text(truncate_ellipsis(&item.name, 28))
                 .size(14)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
             badges,
         ]
@@ -484,7 +484,7 @@ fn snippet_card<'a>(
         button(
             row![
                 icons::play(12.0, GREEN_400),
-                text("Run").size(11).font(FONT_MONO_BOLD).color(GREEN_400),
+                text("Run").size(11).font(FONT_UI_SEMIBOLD).color(GREEN_400),
             ]
             .spacing(5)
             .align_y(alignment::Vertical::Center),

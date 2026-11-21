@@ -1,6 +1,6 @@
 use crate::theme::{
-    logo_handle, rgba, APP_VERSION, BRAND_300, BRAND_400, BRAND_500, DARK_700, DARK_800, DARK_900,
-    FONT_MONO, FONT_MONO_BOLD, TEXT_MUTED, TEXT_PRIMARY,
+    logo_handle_for, rgba, APP_VERSION, BRAND_300, BRAND_400, BRAND_500, DARK_700, DARK_800,
+    DARK_900, FONT_MONO_MEDIUM, FONT_UI, FONT_UI_BOLD, FONT_UI_MEDIUM, TEXT_MUTED, TEXT_PRIMARY,
 };
 use iced::widget::{column, container, image, row, space, text};
 use iced::{alignment, Background, Border, Color, Element, Length};
@@ -10,7 +10,7 @@ pub fn view<'a, Message: 'a>(elapsed_ms: u64, alpha: f32) -> Element<'a, Message
     let pulse = ((elapsed_ms as f32 / 180.0).sin() * 0.5 + 0.5).clamp(0.0, 1.0);
 
     let logo = container(
-        image(logo_handle())
+        image(logo_handle_for(88))
             .width(88)
             .height(88)
             .filter_method(image::FilterMethod::Linear),
@@ -69,8 +69,8 @@ pub fn view<'a, Message: 'a>(elapsed_ms: u64, alpha: f32) -> Element<'a, Message
 
     let version_pill = container(
         text(format!("v{APP_VERSION}"))
-            .size(11)
-            .font(FONT_MONO_BOLD)
+            .size(12)
+            .font(FONT_MONO_MEDIUM)
             .color(rgba(BRAND_300, a)),
     )
     .padding([3, 10])
@@ -90,20 +90,21 @@ pub fn view<'a, Message: 'a>(elapsed_ms: u64, alpha: f32) -> Element<'a, Message
         row![
             text("Glyph")
                 .size(38)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(rgba(TEXT_PRIMARY, a)),
             version_pill,
         ]
         .spacing(10)
         .align_y(alignment::Vertical::Center),
         text("Secure SSH & Server Management")
-            .size(13)
-            .font(FONT_MONO)
+            .size(14)
+            .font(FONT_UI_MEDIUM)
             .color(rgba(TEXT_MUTED, a)),
         progress_track,
         dots,
         text("Made by TheLunatic1 (Salman Toha)")
-            .size(11)
+            .size(12)
+            .font(FONT_UI)
             .color(rgba(Color::from_rgb8(90, 99, 128), a)),
     ]
     .spacing(14)

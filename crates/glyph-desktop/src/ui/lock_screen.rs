@@ -1,6 +1,6 @@
 use crate::theme::{
-    brand_button, dark_900_bg, dark_input, logo_handle, modal_card, rgba, BRAND_400,
-    FONT_MONO_BOLD, RED_400, RED_500, TEXT_PRIMARY, TEXT_SECONDARY,
+    brand_button, dark_900_bg, dark_input, logo_handle_for, modal_card, rgba, BRAND_400,
+    FONT_UI_BOLD, RED_400, RED_500, TEXT_PRIMARY, TEXT_SECONDARY,
 };
 use crate::ui::icons;
 use iced::widget::{button, column, container, image, row, space, text, text_input};
@@ -42,7 +42,10 @@ pub fn view<'a>(st: &'a LockScreenState) -> Element<'a, LockScreenMsg> {
 
     let mut card_col = column![
         row![
-            image(logo_handle()).width(42).height(42),
+            image(logo_handle_for(42))
+                .width(42)
+                .height(42)
+                .filter_method(image::FilterMethod::Linear),
             space().width(10),
             icons::lock_open(22.0, BRAND_400),
         ]
@@ -50,7 +53,7 @@ pub fn view<'a>(st: &'a LockScreenState) -> Element<'a, LockScreenMsg> {
         space().height(12),
         text("Glyph Vault Locked")
             .size(20)
-            .font(FONT_MONO_BOLD)
+            .font(FONT_UI_BOLD)
             .color(TEXT_PRIMARY),
         space().height(4),
         text(subtitle).size(13).color(TEXT_SECONDARY),
@@ -81,7 +84,7 @@ pub fn view<'a>(st: &'a LockScreenState) -> Element<'a, LockScreenMsg> {
             container(
                 text("Unlock Glyph")
                     .size(14)
-                    .font(FONT_MONO_BOLD)
+                    .font(FONT_UI_BOLD)
                     .color(Color::WHITE),
             )
             .width(Length::Fill)

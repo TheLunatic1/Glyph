@@ -1,13 +1,13 @@
 use crate::theme::{
     brand_button, danger_ghost_button, dark_900_bg, dark_card, dark_input, dark_pick_list,
-    dark_scrollable, ghost_icon_button, glass_panel, grid_card, logo_handle, mobile_pill_button,
+    dark_scrollable, ghost_icon_button, glass_panel, grid_card, logo_handle_for, mobile_pill_button,
     pill_badge, rgba, secondary_button, truncate_ellipsis, APP_VERSION, BRAND_300, BRAND_400,
-    BRAND_500, DARK_600, DARK_700, DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400,
-    GREEN_500, RED_400, RED_500, RED_600, TEXT_DIM, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY,
-    TEXT_SECONDARY, YELLOW_400, YELLOW_500,
+    BRAND_500, DARK_600, DARK_700, DARK_800, DARK_900, FONT_MONO_MEDIUM, FONT_UI_BOLD,
+    FONT_UI_SEMIBOLD, GREEN_400, GREEN_500, RED_400, RED_500, RED_600, TEXT_DIM, TEXT_LIGHT,
+    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400, YELLOW_500,
 };
 use crate::ui::icons;
-use crate::ui::os_logo::os_logo;
+use crate::ui::os_logo::{os_display_name, os_logo};
 use glyph_core::models::{
     format_env_vars, format_port_knock, parse_env_vars, parse_port_knock, AuthMethod, HostGroup,
     IdentitySummary, ServerConfigInput, ServerSummary, SshKeySummary,
@@ -382,7 +382,7 @@ pub fn view<'a>(
                 icons::alert_triangle(18.0, Color::WHITE),
                 text(format!("Connection Closed: {reason}"))
                     .size(13)
-                    .font(FONT_MONO_BOLD)
+                    .font(FONT_UI_BOLD)
                     .color(Color::WHITE),
                 space().width(Length::Fill),
                 button(icons::x_close(16.0, Color::WHITE))
@@ -413,7 +413,7 @@ pub fn view<'a>(
         button(
             row![
                 icons::command(13.0, BRAND_300),
-                text("Ctrl+K").size(11).font(FONT_MONO).color(BRAND_300),
+                text("Ctrl+K").size(12).font(FONT_MONO_MEDIUM).color(BRAND_300),
             ]
             .spacing(5)
             .align_y(alignment::Vertical::Center),
@@ -449,8 +449,8 @@ pub fn view<'a>(
                     text("Mobile App").size(12).color(BRAND_300),
                     container(
                         text("APK")
-                            .size(9)
-                            .font(FONT_MONO_BOLD)
+                            .size(10)
+                            .font(FONT_UI_BOLD)
                             .color(BRAND_300)
                     )
                     .padding([1, 5])
@@ -475,28 +475,33 @@ pub fn view<'a>(
         );
 
     let brand_header = row![
-        container(image(logo_handle()).width(44).height(44))
-            .padding(4)
-            .style(|_| container::Style {
-                background: Some(Background::Color(DARK_800)),
-                border: Border {
-                    color: DARK_700,
-                    width: 1.0,
-                    radius: 12.0.into(),
-                },
-                snap: true,
-                ..Default::default()
-            }),
+        container(
+            image(logo_handle_for(44))
+                .width(44)
+                .height(44)
+                .filter_method(image::FilterMethod::Linear),
+        )
+        .padding(4)
+        .style(|_| container::Style {
+            background: Some(Background::Color(DARK_800)),
+            border: Border {
+                color: DARK_700,
+                width: 1.0,
+                radius: 12.0.into(),
+            },
+            snap: true,
+            ..Default::default()
+        }),
         column![
             row![
                 text("Glyph")
                     .size(28)
-                    .font(FONT_MONO_BOLD)
+                    .font(FONT_UI_BOLD)
                     .color(TEXT_PRIMARY),
                 container(
                     text(format!("v{APP_VERSION}"))
                         .size(11)
-                        .font(FONT_MONO)
+                        .font(FONT_MONO_MEDIUM)
                         .color(BRAND_300)
                 )
                 .padding([2, 8])
@@ -524,8 +529,8 @@ pub fn view<'a>(
     // ── Left Sidebar: Quick Launch, Groups Tree, Tags ─────────────────────────
     let quick_box = column![
         text("QUICK LAUNCH")
-            .size(10)
-            .font(FONT_MONO_BOLD)
+            .size(11)
+            .font(FONT_UI_BOLD)
             .color(TEXT_MUTED),
         button(
             row![
@@ -571,8 +576,8 @@ pub fn view<'a>(
         row![
             icons::folder_tree(13.0, BRAND_400),
             text("GROUPS")
-                .size(10)
-                .font(FONT_MONO_BOLD)
+                .size(11)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_MUTED)
                 .width(Length::Fill),
             button(text("+ Group").size(11).color(BRAND_300))
@@ -585,7 +590,7 @@ pub fn view<'a>(
         button(
             text(format!("All Hosts ({})", servers.len()))
                 .size(12)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_SEMIBOLD)
                 .color(if selected_group.is_none() {
                     Color::WHITE
                 } else {
@@ -642,8 +647,8 @@ pub fn view<'a>(
         row![
             icons::tag(13.0, BRAND_400),
             text("TAGS")
-                .size(10)
-                .font(FONT_MONO_BOLD)
+                .size(11)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_MUTED)
                 .width(Length::Fill),
         ]
@@ -779,7 +784,7 @@ pub fn view<'a>(
                     icons::plus(15.0, Color::WHITE),
                     text("Add Server")
                         .size(13)
-                        .font(FONT_MONO_BOLD)
+                        .font(FONT_UI_SEMIBOLD)
                         .color(Color::WHITE),
                 ]
                 .spacing(6)
@@ -831,7 +836,7 @@ pub fn view<'a>(
         row![
             text(format!("Saved Servers ({})", filtered.len()))
                 .size(18)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
             space().width(Length::Fixed(12.0)),
             search_bar,
@@ -864,7 +869,7 @@ pub fn view<'a>(
                     "No hosts match the active filters"
                 })
                 .size(16)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_BOLD)
                 .color(TEXT_PRIMARY),
                 text(if servers.is_empty() {
                     "Add a server or import ~/.ssh/config, PuTTY, CSV, or Cloud instances."
@@ -878,7 +883,7 @@ pub fn view<'a>(
                         icons::plus(15.0, Color::WHITE),
                         text("Add Server")
                             .size(13)
-                            .font(FONT_MONO_BOLD)
+                            .font(FONT_UI_SEMIBOLD)
                             .color(Color::WHITE),
                     ]
                     .spacing(6)
@@ -1004,7 +1009,7 @@ fn view_server_form<'a>(
         .or_else(|| identity_options.first().cloned());
 
     let mut form_col = column![
-        text(title).size(15).font(FONT_MONO_BOLD).color(BRAND_300),
+        text(title).size(15).font(FONT_UI_BOLD).color(BRAND_300),
         row![
             labeled_input(
                 "Name (Alias)",
@@ -1401,7 +1406,7 @@ fn view_server_form<'a>(
                     "Save Server"
                 })
                 .size(13)
-                .font(FONT_MONO_BOLD)
+                .font(FONT_UI_SEMIBOLD)
                 .color(Color::WHITE),
             )
             .padding([9, 18])
@@ -1432,12 +1437,12 @@ fn view_server_card<'a>(s: &'a ServerSummary, groups: &'a [HostGroup]) -> Elemen
             column![
                 text(title)
                     .size(15)
-                    .font(FONT_MONO_BOLD)
+                    .font(FONT_UI_BOLD)
                     .color(TEXT_PRIMARY)
                     .wrapping(text::Wrapping::None),
                 text(subtitle)
-                    .size(11)
-                    .font(FONT_MONO)
+                    .size(12)
+                    .font(FONT_MONO_MEDIUM)
                     .color(TEXT_SECONDARY)
                     .wrapping(text::Wrapping::None),
             ]
@@ -1463,9 +1468,9 @@ fn view_server_card<'a>(s: &'a ServerSummary, groups: &'a [HostGroup]) -> Elemen
 
     let os_badge: Element<'a, ManagerMsg> = if let Some(os) = &s.os {
         container(
-            text(truncate_ellipsis(os, 10))
-                .size(10)
-                .font(FONT_MONO_BOLD)
+            text(truncate_ellipsis(&os_display_name(os), 12))
+                .size(11)
+                .font(FONT_UI_SEMIBOLD)
                 .color(GREEN_400)
                 .wrapping(text::Wrapping::None),
         )
@@ -1479,7 +1484,8 @@ fn view_server_card<'a>(s: &'a ServerSummary, groups: &'a [HostGroup]) -> Elemen
     } else {
         container(
             text("Saved")
-                .size(10)
+                .size(11)
+                .font(FONT_UI_SEMIBOLD)
                 .color(TEXT_SECONDARY)
                 .wrapping(text::Wrapping::None),
         )
@@ -1491,7 +1497,7 @@ fn view_server_card<'a>(s: &'a ServerSummary, groups: &'a [HostGroup]) -> Elemen
     let mut badges = row![os_badge].spacing(5).align_y(alignment::Vertical::Center);
     if !s.zerotier.is_empty() {
         badges = badges.push(
-            container(text("ZT").size(10).font(FONT_MONO_BOLD).color(YELLOW_400))
+            container(text("ZT").size(10).font(FONT_UI_BOLD).color(YELLOW_400))
                 .padding([2, 6])
                 .style(pill_badge(
                     rgba(YELLOW_500, 0.14),
@@ -1502,7 +1508,7 @@ fn view_server_card<'a>(s: &'a ServerSummary, groups: &'a [HostGroup]) -> Elemen
     }
     if s.auth_method == AuthMethod::VaultKey || !s.private_key_path.is_empty() {
         badges = badges.push(
-            container(text("KEY").size(10).font(FONT_MONO_BOLD).color(BRAND_300))
+            container(text("KEY").size(10).font(FONT_UI_BOLD).color(BRAND_300))
                 .padding([2, 6])
                 .style(pill_badge(
                     rgba(BRAND_500, 0.14),
@@ -1513,7 +1519,7 @@ fn view_server_card<'a>(s: &'a ServerSummary, groups: &'a [HostGroup]) -> Elemen
     }
     if s.proxy_jump_id.is_some() {
         badges = badges.push(
-            container(text("JUMP").size(10).font(FONT_MONO_BOLD).color(BRAND_400))
+            container(text("JUMP").size(10).font(FONT_UI_BOLD).color(BRAND_400))
                 .padding([2, 6])
                 .style(pill_badge(
                     rgba(BRAND_500, 0.12),
@@ -1524,7 +1530,7 @@ fn view_server_card<'a>(s: &'a ServerSummary, groups: &'a [HostGroup]) -> Elemen
     }
     if s.forward_agent {
         badges = badges.push(
-            container(text("-A").size(10).font(FONT_MONO_BOLD).color(GREEN_400))
+            container(text("-A").size(10).font(FONT_UI_BOLD).color(GREEN_400))
                 .padding([2, 6])
                 .style(pill_badge(
                     rgba(GREEN_500, 0.12),
@@ -1538,7 +1544,7 @@ fn view_server_card<'a>(s: &'a ServerSummary, groups: &'a [HostGroup]) -> Elemen
             badges = badges.push(
                 container(
                     text(truncate_ellipsis(&grp.name, 10))
-                        .size(10)
+                        .size(11)
                         .color(BRAND_300)
                         .wrapping(text::Wrapping::None),
                 )
@@ -1551,7 +1557,7 @@ fn view_server_card<'a>(s: &'a ServerSummary, groups: &'a [HostGroup]) -> Elemen
         badges = badges.push(
             container(
                 text(format!("#{}", truncate_ellipsis(t, 9)))
-                    .size(10)
+                    .size(11)
                     .color(TEXT_SECONDARY)
                     .wrapping(text::Wrapping::None),
             )
@@ -1566,7 +1572,7 @@ fn view_server_card<'a>(s: &'a ServerSummary, groups: &'a [HostGroup]) -> Elemen
             row![
                 text("Connect")
                     .size(12)
-                    .font(FONT_MONO_BOLD)
+                    .font(FONT_UI_SEMIBOLD)
                     .color(Color::WHITE)
                     .wrapping(text::Wrapping::None),
                 icons::play(11.0, Color::WHITE),
