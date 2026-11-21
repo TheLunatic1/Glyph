@@ -1,9 +1,15 @@
+pub mod commands_page;
+pub mod containers_page;
 pub mod dashboard;
 pub mod icons;
 pub mod manager;
 pub mod modals;
 pub mod os_logo;
+pub mod secrets_page;
+pub mod sftp_page;
 pub mod sidebar;
 pub mod splash;
 pub mod terminal_page;
 pub mod titlebar;
+pub mod tunnels_page;
+pub mod vnc_page;

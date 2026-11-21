@@ -1,6 +1,6 @@
 use iced::font::{Family, Weight};
 use iced::theme::Palette;
-use iced::widget::{button, container, pick_list, scrollable, text_input};
+use iced::widget::{button, container, pick_list, scrollable, text_editor, text_input};
 use iced::{color, Background, Border, Color, Font, Shadow, Theme, Vector};
 
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -397,5 +397,24 @@ pub fn pill_badge(bg: Color, border: Color, fg: Color) -> impl Fn(&Theme) -> con
             radius: 999.0.into(),
         },
         ..Default::default()
+    }
+}
+
+pub fn dark_text_editor(_: &Theme, status: text_editor::Status) -> text_editor::Style {
+    let border_color = match status {
+        text_editor::Status::Focused { .. } => BRAND_500,
+        text_editor::Status::Hovered => DARK_600,
+        _ => DARK_700,
+    };
+    text_editor::Style {
+        background: Background::Color(DARK_900),
+        border: Border {
+            color: border_color,
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        placeholder: TEXT_DIM,
+        value: TEXT_LIGHT,
+        selection: rgba(BRAND_500, 0.35),
     }
 }

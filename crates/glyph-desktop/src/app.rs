@@ -1,38 +1,60 @@
 use crate::theme::{
-    dark_900_bg, dark_card, glyph_theme, pill_badge, rgba, BRAND_300, BRAND_400, BRAND_500,
-    DARK_700, FONT_MONO, FONT_MONO_BOLD, JETBRAINS_MONO_BOLD, JETBRAINS_MONO_REGULAR, LOGO_PNG,
-    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+    dark_900_bg, glyph_theme, APP_VERSION, FONT_MONO, JETBRAINS_MONO_BOLD, JETBRAINS_MONO_REGULAR,
+    LOGO_PNG,
 };
 use crate::tray::{TrayCommand, TrayManager};
+use crate::ui::commands_page::{self, CommandsPageMsg, CommandsPageState};
+use crate::ui::containers_page::{
+    self, ContainerSubTab, ContainerTabDetail, ContainersPageMsg, ContainersPageState,
+};
 use crate::ui::dashboard::{self, DashboardMsg, DashboardState};
-use crate::ui::icons;
 use crate::ui::manager::{self, ManagerMsg, ServerFormState};
 use crate::ui::modals::{
     self, ConnectingModalState, DeleteConfirmState, ExportModalState, HostKeyPromptUi,
-    ImportModalState, ImportStep, ManagerModal, ModalMsg, SettingsModalState, SshKeysModalState,
+    ImportModalState, ImportStep, ManagerModal, MobileModalState, ModalMsg, SettingsModalState,
+    SshKeysModalState,
 };
+use crate::ui::secrets_page::{self, SecretsBundleMode, SecretsPageMsg, SecretsPageState};
+use crate::ui::sftp_page::{self, SftpEditorState, SftpPageMsg, SftpPageState, SftpPrompt};
 use crate::ui::sidebar::{self, ServerTab, SidebarMsg};
 use crate::ui::splash;
 use crate::ui::terminal_page::{self, TerminalPageMsg, TerminalPageState};
 use crate::ui::titlebar::{self, TitleBarMsg};
-use glyph_core::models::{
-    AuthMethod, CommandSnippet, SecretSummary, ServerEntry, ServerSummary, SshKeySummary,
+use crate::ui::tunnels_page::{self, TunnelsPageMsg, TunnelsPageState, UiTunnelDirection};
+use crate::ui::vnc_page::{self, VncPageMsg, VncPageState};
+use glyph_api::{
+    default_mcp_token_path, ensure_mcp_token, start_local_api, ApiHostKeyPolicy, ApiUiEvent,
+    ApiUiTab, LocalApiHandle, LocalVaultApiController, DEFAULT_API_PORT,
 };
+use glyph_core::containers::{ContainerDetails, ContainerSummary};
+use glyph_core::mcp_config::{
+    auto_install_mcp_client, build_config_snippet, scan_mcp_clients, write_mcp_config_at,
+};
+use glyph_core::models::{
+    AuthMethod, CommandSnippet, KnownHostEntry, SecretSummary, ServerEntry, ServerSummary,
+    SshKeySummary,
+};
+use glyph_core::sftp::{join_remote_path, SftpEntry, SftpProgress};
 use glyph_core::ssh::{
     HostKeyPrompt, SessionEvent, ShellEvent, ShellHandle, SshSession, TrustedHostRecord,
 };
+use glyph_core::tunnels::TunnelInfo;
+use glyph_core::updater::{ensure_rustls_ring_provider, fetch_latest_release, is_newer_version, ReleaseInfo};
 use glyph_core::vault::VaultManager;
 use glyph_terminal::TerminalEvent;
+use glyph_vnc::{connect_vnc_stream, VncClientHandle, VncEvent, VncUiEvent};
 use iced::futures::future::pending;
 use iced::futures::{SinkExt, Stream};
-use iced::widget::{column, container, row, stack, text};
-use iced::{alignment, window, Border, Element, Length, Size, Subscription, Task, Theme};
+use iced::widget::{column, container, row, stack, text_editor};
+use iced::{window, Element, Length, Size, Subscription, Task, Theme};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex};
 
 // ── Global Async Event Bus & TOFU Responder Registry ──────────────────────────
 
@@ -75,6 +97,26 @@ pub enum BusEvent {
         server_id: String,
         result: Result<String, String>,
     },
+    Api(ApiUiEvent),
+    SftpListed(window::Id, String, Result<Vec<SftpEntry>, String>),
+    SftpFileRead(window::Id, String, Result<String, String>),
+    SftpFileSaved(window::Id, String, Result<(), String>),
+    SftpActionDone(window::Id, Result<String, String>),
+    SftpProgress(window::Id, SftpProgress),
+    TunnelsListed(window::Id, Vec<TunnelInfo>),
+    TunnelOpDone(window::Id, Result<Vec<TunnelInfo>, String>),
+    ContainersListed(window::Id, Result<Vec<ContainerSummary>, String>),
+    ContainerActionDone(window::Id, Result<(), String>),
+    ContainerDetailLoaded {
+        window_id: window::Id,
+        id: String,
+        logs: Result<String, String>,
+        inspect: Result<ContainerDetails, String>,
+    },
+    ContainerUpdateDone(window::Id, String, Result<String, String>),
+    ComposeDone(window::Id, Result<String, String>),
+    VncConnected(window::Id, Result<VncClientHandle, String>),
+    VncEvent(window::Id, VncEvent),
 }
 
 impl fmt::Debug for BusEvent {
@@ -130,6 +172,41 @@ impl fmt::Debug for BusEvent {
                 .field("server_id", server_id)
                 .field("result", result)
                 .finish(),
+            Self::Api(ev) => f.debug_tuple("Api").field(ev).finish(),
+            Self::SftpListed(wid, path, _) => {
+                f.debug_tuple("SftpListed").field(wid).field(path).finish()
+            }
+            Self::SftpFileRead(wid, path, _) => {
+                f.debug_tuple("SftpFileRead").field(wid).field(path).finish()
+            }
+            Self::SftpFileSaved(wid, path, _) => {
+                f.debug_tuple("SftpFileSaved").field(wid).field(path).finish()
+            }
+            Self::SftpActionDone(wid, _) => f.debug_tuple("SftpActionDone").field(wid).finish(),
+            Self::SftpProgress(wid, p) => {
+                f.debug_tuple("SftpProgress").field(wid).field(&p.filename).finish()
+            }
+            Self::TunnelsListed(wid, list) => {
+                f.debug_tuple("TunnelsListed").field(wid).field(&list.len()).finish()
+            }
+            Self::TunnelOpDone(wid, _) => f.debug_tuple("TunnelOpDone").field(wid).finish(),
+            Self::ContainersListed(wid, _) => f.debug_tuple("ContainersListed").field(wid).finish(),
+            Self::ContainerActionDone(wid, _) => {
+                f.debug_tuple("ContainerActionDone").field(wid).finish()
+            }
+            Self::ContainerDetailLoaded { window_id, id, .. } => f
+                .debug_struct("ContainerDetailLoaded")
+                .field("window_id", window_id)
+                .field("id", id)
+                .finish(),
+            Self::ContainerUpdateDone(wid, id, _) => f
+                .debug_tuple("ContainerUpdateDone")
+                .field(wid)
+                .field(id)
+                .finish(),
+            Self::ComposeDone(wid, _) => f.debug_tuple("ComposeDone").field(wid).finish(),
+            Self::VncConnected(wid, _) => f.debug_tuple("VncConnected").field(wid).finish(),
+            Self::VncEvent(wid, _) => f.debug_tuple("VncEvent").field(wid).finish(),
         }
     }
 }
@@ -173,12 +250,55 @@ fn bus_stream() -> impl Stream<Item = BusEvent> {
     })
 }
 
+static API_HANDLE: OnceLock<Mutex<Option<LocalApiHandle>>> = OnceLock::new();
+
+fn api_handle_cell() -> &'static Mutex<Option<LocalApiHandle>> {
+    API_HANDLE.get_or_init(|| Mutex::new(None))
+}
+
+fn start_local_api_task(
+    vault: Arc<Mutex<VaultManager>>,
+    sessions: Arc<AsyncMutex<HashMap<String, SshSession>>>,
+) -> Task<Message> {
+    Task::perform(
+        async move {
+            let token_path = default_mcp_token_path().map_err(|e| e.to_string())?;
+            let token = ensure_mcp_token(&token_path).map_err(|e| e.to_string())?;
+            let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<ApiUiEvent>();
+            let bus = app_bus_sender();
+            tokio::spawn(async move {
+                while let Some(ev) = ui_rx.recv().await {
+                    let _ = bus.send(BusEvent::Api(ev));
+                }
+            });
+
+            let controller = Arc::new(LocalVaultApiController::new(
+                vault,
+                sessions,
+                Some(ui_tx),
+                ApiHostKeyPolicy::AutoTrustFirstUse,
+            ));
+            let addr = SocketAddr::from(([127, 0, 0, 1], DEFAULT_API_PORT));
+            let handle = start_local_api(addr, token, controller)
+                .await
+                .map_err(|e| e.to_string())?;
+            let bound_port = handle.addr().port();
+            if let Ok(mut guard) = api_handle_cell().lock() {
+                *guard = Some(handle);
+            }
+            Ok(bound_port)
+        },
+        Message::LocalApiStarted,
+    )
+}
+
 // ── Top-Level Messages & State ────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum Message {
     Tick,
+    LocalApiStarted(Result<u16, String>),
     Bus(BusEvent),
     WindowCloseRequested(window::Id),
     TitleBar(window::Id, TitleBarMsg),
@@ -187,11 +307,28 @@ pub enum Message {
     Sidebar(window::Id, SidebarMsg),
     Dashboard(window::Id, DashboardMsg),
     Terminal(window::Id, TerminalPageMsg),
+    Sftp(window::Id, SftpPageMsg),
+    Commands(window::Id, CommandsPageMsg),
+    Secrets(window::Id, SecretsPageMsg),
+    Tunnels(window::Id, TunnelsPageMsg),
+    Containers(window::Id, ContainersPageMsg),
+    Vnc(window::Id, VncPageMsg),
+
+    FileHovered(window::Id),
+    FileDropped(window::Id, PathBuf),
+    FilesHoveredLeft(window::Id),
 
     FormPrivateKeyPicked(Option<String>),
     ExportFinished(Result<Option<String>, String>),
     ImportFileLoaded(Result<Option<(String, String)>, String>),
     SshKeyFileLoaded(Result<Option<(String, String)>, String>),
+    CustomMcpPathPicked(Option<String>),
+    MobileReleaseFetched(Result<ReleaseInfo, String>),
+    DesktopUpdateChecked(Result<ReleaseInfo, String>),
+    SftpUploadPicked(window::Id, Vec<PathBuf>),
+    SftpDownloadSavePicked(window::Id, String, Option<PathBuf>),
+    SecretsExportDone(window::Id, Result<Option<String>, String>),
+    SecretsImportLoaded(window::Id, Result<Option<String>, String>),
 }
 
 struct ServerWindowState {
@@ -200,15 +337,51 @@ struct ServerWindowState {
     active_tab: ServerTab,
     dashboard: DashboardState,
     terminal: TerminalPageState,
+    sftp: SftpPageState,
+    commands: CommandsPageState,
+    secrets: SecretsPageState,
+    tunnels: TunnelsPageState,
+    containers: ContainersPageState,
+    vnc: VncPageState,
+    last_container_poll: Instant,
     cached_commands: Vec<CommandSnippet>,
     cached_secrets: Vec<SecretSummary>,
     closing: bool,
 }
 
+impl ServerWindowState {
+    fn new(
+        server: ServerSummary,
+        session: SshSession,
+        cached_commands: Vec<CommandSnippet>,
+        cached_secrets: Vec<SecretSummary>,
+    ) -> Self {
+        Self {
+            server,
+            session,
+            active_tab: ServerTab::Dashboard,
+            dashboard: DashboardState::default(),
+            terminal: TerminalPageState::default(),
+            sftp: SftpPageState::default(),
+            commands: CommandsPageState::default(),
+            secrets: SecretsPageState::default(),
+            tunnels: TunnelsPageState::default(),
+            containers: ContainersPageState::default(),
+            vnc: VncPageState::default(),
+            last_container_poll: Instant::now(),
+            cached_commands,
+            cached_secrets,
+            closing: false,
+        }
+    }
+}
+
 pub struct GlyphApp {
-    vault: VaultManager,
+    vault: Arc<Mutex<VaultManager>>,
+    api_sessions: Arc<AsyncMutex<HashMap<String, SshSession>>>,
     servers: Vec<ServerSummary>,
     ssh_keys: Vec<SshKeySummary>,
+    known_hosts: Vec<KnownHostEntry>,
     tray: Option<TrayManager>,
 
     manager_window: Option<window::Id>,
@@ -238,17 +411,25 @@ pub fn run() -> iced::Result {
 
 impl GlyphApp {
     fn boot() -> (Self, Task<Message>) {
-        let vault = VaultManager::open_default().expect("Failed to initialize Glyph encrypted Vault");
-        let servers = vault.list_servers();
-        let ssh_keys = vault.list_ssh_keys();
+        ensure_rustls_ring_provider();
+        let vault_raw =
+            VaultManager::open_default().expect("Failed to initialize Glyph encrypted Vault");
+        let servers = vault_raw.list_servers();
+        let ssh_keys = vault_raw.list_ssh_keys();
+        let known_hosts = vault_raw.list_known_hosts().to_vec();
+        let vault = Arc::new(Mutex::new(vault_raw));
+        let api_sessions = Arc::new(AsyncMutex::new(HashMap::new()));
         let tray = TrayManager::init(&servers);
 
         let (manager_id, open_task) = window::open(manager_window_settings());
+        let api_task = start_local_api_task(Arc::clone(&vault), Arc::clone(&api_sessions));
 
         let app = Self {
             vault,
+            api_sessions,
             servers,
             ssh_keys,
+            known_hosts,
             tray,
             manager_window: Some(manager_id),
             manager_visible: true,
@@ -262,7 +443,12 @@ impl GlyphApp {
             is_quitting: false,
         };
 
-        (app, open_task.discard())
+        (app, Task::batch([open_task.discard(), api_task]))
+    }
+
+    fn with_vault<R>(&self, f: impl FnOnce(&mut VaultManager) -> R) -> R {
+        let mut guard = self.vault.lock().expect("Vault mutex poisoned");
+        f(&mut guard)
     }
 
     fn title(&self, id: window::Id) -> String {
@@ -286,12 +472,32 @@ impl GlyphApp {
             Subscription::run(bus_stream).map(Message::Bus),
             window::close_requests().map(Message::WindowCloseRequested),
             iced::time::every(Duration::from_millis(120)).map(|_| Message::Tick),
+            iced::event::listen_with(|ev, _status, wid| match ev {
+                iced::Event::Window(window::Event::FileHovered(_)) => {
+                    Some(Message::FileHovered(wid))
+                }
+                iced::Event::Window(window::Event::FileDropped(path)) => {
+                    Some(Message::FileDropped(wid, path))
+                }
+                iced::Event::Window(window::Event::FilesHoveredLeft) => {
+                    Some(Message::FilesHoveredLeft(wid))
+                }
+                _ => None,
+            }),
         ])
     }
 
     fn refresh_vault_cache(&mut self) {
-        self.servers = self.vault.list_servers();
-        self.ssh_keys = self.vault.list_ssh_keys();
+        let (servers, ssh_keys, known_hosts) = self.with_vault(|v| {
+            (
+                v.list_servers(),
+                v.list_ssh_keys(),
+                v.list_known_hosts().to_vec(),
+            )
+        });
+        self.servers = servers;
+        self.ssh_keys = ssh_keys;
+        self.known_hosts = known_hosts;
         if let Some(tray) = &mut self.tray {
             tray.update_servers(&self.servers);
         }
@@ -319,18 +525,35 @@ impl GlyphApp {
             .values()
             .map(|s| s.session.clone())
             .collect();
-        self.server_windows.clear();
-        for sess in sessions {
-            tokio::spawn(async move {
-                sess.disconnect().await;
-            });
+        for srv in self.server_windows.values() {
+            if let Some(vh) = &srv.vnc.handle {
+                vh.disconnect();
+            }
         }
+        self.server_windows.clear();
+        let api_handle = api_handle_cell().lock().ok().and_then(|mut g| g.take());
+        let api_sessions = Arc::clone(&self.api_sessions);
+        tokio::spawn(async move {
+            api_sessions.lock().await.clear();
+            if let Some(h) = api_handle {
+                h.shutdown().await;
+            }
+            for sess in sessions {
+                sess.disconnect().await;
+            }
+        });
         iced::exit()
     }
 
     fn update(&mut self, msg: Message) -> Task<Message> {
         match msg {
             Message::Tick => self.handle_tick(),
+            Message::LocalApiStarted(res) => {
+                if let Err(e) = res {
+                    log::warn!("Glyph Local API failed to start: {e}");
+                }
+                Task::none()
+            }
             Message::WindowCloseRequested(wid) => self.handle_window_close(wid),
             Message::TitleBar(wid, tmsg) => {
                 if matches!(tmsg, TitleBarMsg::Close) {
@@ -353,6 +576,37 @@ impl GlyphApp {
                 Task::none()
             }
             Message::Terminal(wid, tmsg) => self.handle_terminal_msg(wid, tmsg),
+            Message::Sftp(wid, smsg) => self.handle_sftp_msg(wid, smsg),
+            Message::Commands(wid, cmsg) => self.handle_commands_msg(wid, cmsg),
+            Message::Secrets(wid, smsg) => self.handle_secrets_msg(wid, smsg),
+            Message::Tunnels(wid, tmsg) => self.handle_tunnels_msg(wid, tmsg),
+            Message::Containers(wid, cmsg) => self.handle_containers_msg(wid, cmsg),
+            Message::Vnc(wid, vmsg) => self.handle_vnc_msg(wid, vmsg),
+
+            Message::FileHovered(wid) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    if srv.active_tab == ServerTab::Sftp && srv.sftp.opened && srv.sftp.editor.is_none() {
+                        srv.sftp.drag_hover = true;
+                    }
+                }
+                Task::none()
+            }
+            Message::FilesHoveredLeft(wid) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    srv.sftp.drag_hover = false;
+                }
+                Task::none()
+            }
+            Message::FileDropped(wid, path) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    srv.sftp.drag_hover = false;
+                    if srv.active_tab == ServerTab::Sftp && srv.sftp.opened && path.is_file() {
+                        spawn_sftp_upload(wid, srv.session.clone(), srv.sftp.current_path.clone(), vec![path]);
+                    }
+                }
+                Task::none()
+            }
+
             Message::FormPrivateKeyPicked(path_opt) => {
                 if let (Some(form), Some(path)) = (&mut self.form, path_opt) {
                     form.private_key_path = path;
@@ -395,7 +649,7 @@ impl GlyphApp {
                     match res {
                         Ok(Some((path, pem))) => {
                             if st.imp_name.trim().is_empty() {
-                                if let Some(stem) = std::path::Path::new(&path)
+                                if let Some(stem) = Path::new(&path)
                                     .file_name()
                                     .and_then(|s| s.to_str())
                                 {
@@ -409,6 +663,125 @@ impl GlyphApp {
                         Ok(None) => {}
                         Err(e) => st.error = Some(e),
                     }
+                }
+                Task::none()
+            }
+            Message::CustomMcpPathPicked(path_opt) => {
+                if let (Some(ManagerModal::Settings(st)), Some(p)) = (&mut self.modal, path_opt) {
+                    st.custom_path = p;
+                }
+                Task::none()
+            }
+            Message::MobileReleaseFetched(res) => {
+                if let Some(ManagerModal::Mobile(st)) = &mut self.modal {
+                    st.loading = false;
+                    match res {
+                        Ok(rel) => {
+                            st.latest_version = Some(rel.tag_name);
+                            st.direct_apk_url = rel.download_url;
+                            st.page_url = rel.html_url;
+                            st.error = None;
+                            st.refresh_qr();
+                        }
+                        Err(e) => {
+                            st.error = Some(format!("Offline / rate-limited ({e}); showing Releases page URL."));
+                            st.refresh_qr();
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::DesktopUpdateChecked(res) => {
+                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
+                    st.checking_update = false;
+                    match res {
+                        Ok(rel) => {
+                            st.is_newer_available = is_newer_version(APP_VERSION, &rel.version);
+                            st.latest_release = Some(rel);
+                            st.update_error = None;
+                        }
+                        Err(e) => st.update_error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+            Message::SftpUploadPicked(wid, paths) => {
+                if !paths.is_empty() {
+                    if let Some(srv) = self.server_windows.get(&wid) {
+                        spawn_sftp_upload(
+                            wid,
+                            srv.session.clone(),
+                            srv.sftp.current_path.clone(),
+                            paths,
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::SftpDownloadSavePicked(wid, remote_path, save_opt) => {
+                if let Some(local_path) = save_opt {
+                    if let Some(srv) = self.server_windows.get(&wid) {
+                        let sess = srv.session.clone();
+                        tokio::spawn(async move {
+                            let bus = app_bus_sender();
+                            let (ptx, mut prx) = mpsc::unbounded_channel();
+                            let bus_p = bus.clone();
+                            tokio::spawn(async move {
+                                while let Some(p) = prx.recv().await {
+                                    let _ = bus_p.send(BusEvent::SftpProgress(wid, p));
+                                }
+                            });
+                            let res = sess
+                                .sftp_download_file(&remote_path, &local_path, Some(ptx))
+                                .await
+                                .map(|n| format!("Downloaded {n} bytes to {}", local_path.display()))
+                                .map_err(|e| e.to_string());
+                            let _ = bus.send(BusEvent::SftpActionDone(wid, res));
+                        });
+                    }
+                }
+                Task::none()
+            }
+            Message::SecretsExportDone(wid, res) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    srv.secrets.bundle_modal = None;
+                    srv.secrets.bundle_password.clear();
+                    match res {
+                        Ok(Some(path)) => {
+                            srv.secrets.error = None;
+                            srv.secrets.status = Some(format!("Secrets exported to {path}"));
+                        }
+                        Ok(None) => {}
+                        Err(e) => srv.secrets.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+            Message::SecretsImportLoaded(wid, res) => {
+                let Some(srv) = self.server_windows.get_mut(&wid) else {
+                    return Task::none();
+                };
+                match res {
+                    Ok(Some(content)) => {
+                        let pw = srv.secrets.bundle_password.clone();
+                        let sid = srv.server.id.clone();
+                        let import_res = self.vault.lock().map_err(|_| anyhow::anyhow!("Vault busy")).and_then(|mut v| {
+                            let n = v.import_secrets_encrypted(&sid, &content, &pw)?;
+                            Ok((n, v.list_secrets(&sid)))
+                        });
+                        srv.secrets.bundle_modal = None;
+                        srv.secrets.bundle_password.clear();
+                        match import_res {
+                            Ok((count, list)) => {
+                                srv.cached_secrets = list;
+                                srv.secrets.error = None;
+                                srv.secrets.status = Some(format!("Imported {count} secrets into Vault."));
+                            }
+                            Err(e) => srv.secrets.error = Some(e.to_string()),
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => srv.secrets.error = Some(e),
                 }
                 Task::none()
             }
@@ -426,6 +799,23 @@ impl GlyphApp {
                     st.elapsed_ms = started.elapsed().as_millis() as u64;
                 }
                 st.blink_on = !st.blink_on;
+            }
+        }
+
+        // Poll open container detail logs/stats every 3 seconds
+        for (&wid, srv) in &mut self.server_windows {
+            if srv.active_tab == ServerTab::Containers
+                && srv.last_container_poll.elapsed() >= Duration::from_secs(3)
+            {
+                if let Some(cid) = srv.containers.active_tab.clone() {
+                    if let Some(det) = srv.containers.details.get(&cid) {
+                        if matches!(det.subtab, ContainerSubTab::Logs | ContainerSubTab::Inspect) {
+                            srv.last_container_poll = Instant::now();
+                            let running = det.summary.state.eq_ignore_ascii_case("running");
+                            spawn_load_container_detail(wid, srv.session.clone(), cid, running);
+                        }
+                    }
+                }
             }
         }
 
@@ -478,8 +868,14 @@ impl GlyphApp {
 
         if let Some(mut srv) = self.server_windows.remove(&wid) {
             srv.closing = true;
+            if let Some(vh) = &srv.vnc.handle {
+                vh.disconnect();
+            }
+            let sid = srv.server.id;
             let sess = srv.session;
+            let api_sessions = Arc::clone(&self.api_sessions);
             tokio::spawn(async move {
+                api_sessions.lock().await.remove(&sid);
                 sess.disconnect().await;
             });
             return Task::batch([window::close(wid), self.show_manager_window()]);
@@ -531,17 +927,19 @@ impl GlyphApp {
                 event_tx,
                 window_slot,
             } => {
-                for rec in newly_trusted {
-                    let _ = self.vault.trust_host_key(
-                        &rec.host,
-                        rec.port,
-                        &rec.algorithm,
-                        &rec.fingerprint_sha256,
-                    );
-                }
-                if detected_os.is_some() {
-                    let _ = self.vault.update_server_os(&server_id, detected_os.clone());
-                }
+                self.with_vault(|v| {
+                    for rec in newly_trusted {
+                        let _ = v.trust_host_key(
+                            &rec.host,
+                            rec.port,
+                            &rec.algorithm,
+                            &rec.fingerprint_sha256,
+                        );
+                    }
+                    if detected_os.is_some() {
+                        let _ = v.update_server_os(&server_id, detected_os.clone());
+                    }
+                });
                 self.refresh_vault_cache();
 
                 if matches!(&self.modal, Some(ManagerModal::Connecting(st)) if st.server_id == server_id)
@@ -550,7 +948,7 @@ impl GlyphApp {
                 }
                 self.connect_started_at = None;
 
-                let Some(server) = self.vault.get_server(&server_id) else {
+                let Some(server) = self.with_vault(|v| v.get_server(&server_id)) else {
                     tokio::spawn(async move {
                         session.disconnect().await;
                     });
@@ -562,8 +960,15 @@ impl GlyphApp {
                     *guard = Some(new_wid);
                 }
 
-                let cached_commands = self.vault.list_commands(&server.id);
-                let cached_secrets = self.vault.list_secrets(&server.id);
+                let (cached_commands, cached_secrets) =
+                    self.with_vault(|v| (v.list_commands(&server.id), v.list_secrets(&server.id)));
+
+                let api_sessions = Arc::clone(&self.api_sessions);
+                let sid_api = server.id.clone();
+                let sess_api = session.clone();
+                tokio::spawn(async move {
+                    api_sessions.lock().await.insert(sid_api, sess_api);
+                });
 
                 session.start_stat_polling(event_tx);
                 terminal_page::spawn_open_shell(
@@ -576,16 +981,7 @@ impl GlyphApp {
 
                 self.server_windows.insert(
                     new_wid,
-                    ServerWindowState {
-                        server,
-                        session,
-                        active_tab: ServerTab::Dashboard,
-                        dashboard: DashboardState::default(),
-                        terminal: TerminalPageState::default(),
-                        cached_commands,
-                        cached_secrets,
-                        closing: false,
-                    },
+                    ServerWindowState::new(server, session, cached_commands, cached_secrets),
                 );
 
                 Task::batch([open_task.discard(), window::gain_focus(new_wid)])
@@ -628,7 +1024,15 @@ impl GlyphApp {
                         SessionEvent::Disconnected(reason) => {
                             if !srv.closing {
                                 let name = display_server_name(&srv.server);
+                                let sid = srv.server.id.clone();
+                                if let Some(vh) = &srv.vnc.handle {
+                                    vh.disconnect();
+                                }
                                 self.server_windows.remove(&wid);
+                                let api_sessions = Arc::clone(&self.api_sessions);
+                                tokio::spawn(async move {
+                                    api_sessions.lock().await.remove(&sid);
+                                });
                                 self.disconnect_banner = Some(format!("{name}: {reason}"));
                                 return Task::batch([
                                     window::close(wid),
@@ -648,7 +1052,9 @@ impl GlyphApp {
             } => {
                 match result {
                     Ok(ok_msg) => {
-                        let _ = self.vault.set_server_vault_key(&server_id, &key_id);
+                        self.with_vault(|v| {
+                            let _ = v.set_server_vault_key(&server_id, &key_id);
+                        });
                         self.refresh_vault_cache();
                         if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
                             st.busy = false;
@@ -667,6 +1073,250 @@ impl GlyphApp {
                 }
                 Task::none()
             }
+
+            BusEvent::Api(ev) => self.handle_api_ui_event(ev),
+
+            BusEvent::SftpListed(wid, path, res) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    srv.sftp.loading = false;
+                    srv.sftp.opened = true;
+                    match res {
+                        Ok(entries) => {
+                            srv.sftp.current_path = path;
+                            srv.sftp.entries = entries;
+                            srv.sftp.error = None;
+                        }
+                        Err(e) => srv.sftp.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+            BusEvent::SftpFileRead(wid, path, res) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    match res {
+                        Ok(txt) => {
+                            srv.sftp.error = None;
+                            srv.sftp.editor = Some(SftpEditorState {
+                                path,
+                                content: text_editor::Content::with_text(&txt),
+                                dirty: false,
+                                saving: false,
+                            });
+                        }
+                        Err(e) => srv.sftp.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+            BusEvent::SftpFileSaved(wid, path, res) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    if let Some(ed) = &mut srv.sftp.editor {
+                        ed.saving = false;
+                        if res.is_ok() {
+                            ed.dirty = false;
+                        }
+                    }
+                    match res {
+                        Ok(()) => {
+                            srv.sftp.error = None;
+                            srv.sftp.status = Some(format!("Saved {path}"));
+                            spawn_sftp_readdir(wid, srv.session.clone(), srv.sftp.current_path.clone());
+                        }
+                        Err(e) => srv.sftp.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+            BusEvent::SftpActionDone(wid, res) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    srv.sftp.transfer = None;
+                    match res {
+                        Ok(msg) => {
+                            srv.sftp.error = None;
+                            srv.sftp.status = Some(msg);
+                            spawn_sftp_readdir(wid, srv.session.clone(), srv.sftp.current_path.clone());
+                        }
+                        Err(e) => srv.sftp.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+            BusEvent::SftpProgress(wid, p) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    srv.sftp.transfer = Some(p);
+                }
+                Task::none()
+            }
+
+            BusEvent::TunnelsListed(wid, list) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    srv.tunnels.busy = false;
+                    srv.tunnels.tunnels = list;
+                }
+                Task::none()
+            }
+            BusEvent::TunnelOpDone(wid, res) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    srv.tunnels.busy = false;
+                    match res {
+                        Ok(list) => {
+                            srv.tunnels.tunnels = list;
+                            srv.tunnels.bind_port.clear();
+                            srv.tunnels.target_port.clear();
+                            srv.tunnels.error = None;
+                        }
+                        Err(e) => srv.tunnels.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+
+            BusEvent::ContainersListed(wid, res) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    srv.containers.loading = false;
+                    srv.containers.loaded_once = true;
+                    match res {
+                        Ok(list) => {
+                            srv.containers.error = None;
+                            for c in &list {
+                                if let Some(det) = srv.containers.details.get_mut(&c.id) {
+                                    det.summary = c.clone();
+                                }
+                            }
+                            srv.containers.containers = list;
+                        }
+                        Err(e) => srv.containers.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+            BusEvent::ContainerActionDone(wid, res) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    match res {
+                        Ok(()) => {
+                            srv.containers.error = None;
+                            spawn_list_containers(wid, srv.session.clone());
+                        }
+                        Err(e) => srv.containers.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+            BusEvent::ContainerDetailLoaded {
+                window_id,
+                id,
+                logs,
+                inspect,
+            } => {
+                if let Some(srv) = self.server_windows.get_mut(&window_id) {
+                    if let Some(det) = srv.containers.details.get_mut(&id) {
+                        det.loading = false;
+                        match logs {
+                            Ok(txt) => det.logs = txt,
+                            Err(e) => det.logs = format!("Failed to fetch logs: {e}"),
+                        }
+                        match inspect {
+                            Ok(ins) => {
+                                if (det.restart_policy.is_empty()
+                                    || det.restart_policy == "unless-stopped")
+                                    && !ins.restart_policy.is_empty()
+                                    && ins.restart_policy != "—"
+                                {
+                                    det.restart_policy = ins.restart_policy.clone();
+                                }
+                                det.inspect = Some(ins);
+                            }
+                            Err(e) => srv.containers.error = Some(e),
+                        }
+                    }
+                }
+                Task::none()
+            }
+            BusEvent::ContainerUpdateDone(wid, id, res) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    if let Some(det) = srv.containers.details.get_mut(&id) {
+                        match res {
+                            Ok(msg) => {
+                                det.update_status = Some(if msg.trim().is_empty() {
+                                    "Container settings updated.".to_string()
+                                } else {
+                                    msg
+                                });
+                            }
+                            Err(e) => srv.containers.error = Some(e),
+                        }
+                    }
+                }
+                Task::none()
+            }
+            BusEvent::ComposeDone(wid, res) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    srv.containers.compose_busy = false;
+                    match res {
+                        Ok(out) => {
+                            srv.containers.compose_output = Some(out);
+                            srv.containers.error = None;
+                            spawn_list_containers(wid, srv.session.clone());
+                        }
+                        Err(e) => srv.containers.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+
+            BusEvent::VncConnected(wid, res) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    srv.vnc.connecting = false;
+                    match res {
+                        Ok(handle) => {
+                            srv.vnc.handle = Some(handle);
+                            srv.vnc.connected = true;
+                            srv.vnc.error = None;
+                        }
+                        Err(e) => {
+                            srv.vnc.connected = false;
+                            srv.vnc.error = Some(e);
+                        }
+                    }
+                }
+                Task::none()
+            }
+            BusEvent::VncEvent(wid, vev) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    match vev {
+                        VncEvent::Connected {
+                            desktop_name,
+                            width,
+                            height,
+                        } => {
+                            srv.vnc.desktop_name = desktop_name;
+                            srv.vnc.width = width;
+                            srv.vnc.height = height;
+                            srv.vnc.connected = true;
+                        }
+                        VncEvent::Frame(frame) => {
+                            srv.vnc.width = frame.width;
+                            srv.vnc.height = frame.height;
+                            srv.vnc.frame = Some(frame);
+                        }
+                        VncEvent::ServerClipboard(clip) => {
+                            srv.vnc.server_clipboard = Some(clip);
+                        }
+                        VncEvent::Disconnected(reason) => {
+                            srv.vnc.connected = false;
+                            srv.vnc.connecting = false;
+                            srv.vnc.handle = None;
+                            if srv.vnc.error.is_none() {
+                                srv.vnc.error = Some(reason);
+                            }
+                        }
+                        VncEvent::Error(err) => {
+                            srv.vnc.error = Some(err);
+                        }
+                    }
+                }
+                Task::none()
+            }
         }
     }
 
@@ -676,10 +1326,7 @@ impl GlyphApp {
                 self.disconnect_banner = None;
                 Task::none()
             }
-            ManagerMsg::OpenMobileModal => {
-                self.modal = Some(ManagerModal::Mobile);
-                Task::none()
-            }
+            ManagerMsg::OpenMobileModal => self.open_mobile_modal(),
             ManagerMsg::OpenSshKeysModal => {
                 self.modal = Some(ManagerModal::SshKeys(SshKeysModalState::default()));
                 Task::none()
@@ -693,10 +1340,15 @@ impl GlyphApp {
                 Task::none()
             }
             ManagerMsg::OpenSettingsModal => {
-                self.modal = Some(ManagerModal::Settings(SettingsModalState {
-                    encryption_available: self.vault.is_encryption_available(),
-                    data_dir: self.vault.data_dir().display().to_string(),
-                }));
+                let (enc, dir) = self.with_vault(|v| {
+                    (
+                        v.is_encryption_available(),
+                        v.data_dir().display().to_string(),
+                    )
+                });
+                self.modal = Some(ManagerModal::Settings(Box::new(SettingsModalState::new(
+                    enc, dir,
+                ))));
                 Task::none()
             }
             ManagerMsg::ToggleAddForm => {
@@ -836,11 +1488,13 @@ impl GlyphApp {
                 if let Some(f) = &mut self.form {
                     match f.to_input() {
                         Ok(input) => {
-                            let res = if let Some(id) = input.id.clone() {
-                                self.vault.edit_server(&id, input)
-                            } else {
-                                self.vault.add_server(input).map(|_| ())
-                            };
+                            let res = self.vault.lock().map_err(|_| anyhow::anyhow!("Vault busy")).and_then(|mut v| {
+                                if let Some(id) = input.id.clone() {
+                                    v.edit_server(&id, input)
+                                } else {
+                                    v.add_server(input).map(|_| ())
+                                }
+                            });
                             match res {
                                 Ok(()) => {
                                     self.form = None;
@@ -868,7 +1522,9 @@ impl GlyphApp {
             }
 
             ModalMsg::ConfirmDelete(server_id) => {
-                let _ = self.vault.delete_server(&server_id);
+                self.with_vault(|v| {
+                    let _ = v.delete_server(&server_id);
+                });
                 if matches!(&self.form, Some(f) if f.editing_id.as_deref() == Some(server_id.as_str()))
                 {
                     self.form = None;
@@ -927,7 +1583,12 @@ impl GlyphApp {
                 }
                 let ids: Vec<String> = st.selected_ids.iter().cloned().collect();
                 let pw = st.password.clone();
-                match self.vault.export_servers_encrypted(&pw, Some(&ids)) {
+                let enc_res = self
+                    .vault
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("Vault busy"))
+                    .and_then(|v| v.export_servers_encrypted(&pw, Some(&ids)));
+                match enc_res {
                     Ok(encrypted_payload) => {
                         st.busy = true;
                         st.error = None;
@@ -994,17 +1655,25 @@ impl GlyphApp {
                 let Some(ManagerModal::Import(st)) = &mut self.modal else {
                     return Task::none();
                 };
-                let Some(content) = &st.encrypted_content else {
+                let Some(content) = st.encrypted_content.clone() else {
                     st.error = Some("Choose a .glyph backup file first.".into());
                     return Task::none();
                 };
-                match self.vault.decode_import_servers(content, &st.password) {
+                let pw = st.password.clone();
+                let dec_res = self.with_vault(|v| v.decode_import_servers(&content, &pw));
+                match dec_res {
                     Ok(list) => {
-                        st.selected_indices = (0..list.len()).collect();
-                        st.step = ImportStep::SelectServers(list);
-                        st.error = None;
+                        if let Some(ManagerModal::Import(st)) = &mut self.modal {
+                            st.selected_indices = (0..list.len()).collect();
+                            st.step = ImportStep::SelectServers(list);
+                            st.error = None;
+                        }
                     }
-                    Err(e) => st.error = Some(e.to_string()),
+                    Err(e) => {
+                        if let Some(ManagerModal::Import(st)) = &mut self.modal {
+                            st.error = Some(e.to_string());
+                        }
+                    }
                 }
                 Task::none()
             }
@@ -1041,22 +1710,31 @@ impl GlyphApp {
                 Task::none()
             }
             ModalMsg::ImportConfirmSubmit => {
-                let Some(ManagerModal::Import(st)) = &mut self.modal else {
-                    return Task::none();
+                let chosen_opt = match &self.modal {
+                    Some(ManagerModal::Import(st)) => match &st.step {
+                        ImportStep::SelectServers(list) => Some(
+                            list.iter()
+                                .enumerate()
+                                .filter(|(i, _)| st.selected_indices.contains(i))
+                                .map(|(_, s)| s.clone())
+                                .collect::<Vec<ServerEntry>>(),
+                        ),
+                        _ => None,
+                    },
+                    _ => return Task::none(),
                 };
-                if let ImportStep::SelectServers(list) = &st.step {
-                    let chosen: Vec<ServerEntry> = list
-                        .iter()
-                        .enumerate()
-                        .filter(|(i, _)| st.selected_indices.contains(i))
-                        .map(|(_, s)| s.clone())
-                        .collect();
-                    match self.vault.import_servers(chosen) {
+                if let Some(chosen) = chosen_opt {
+                    let res = self.with_vault(|v| v.import_servers(chosen));
+                    match res {
                         Ok(_) => {
                             self.modal = None;
                             self.refresh_vault_cache();
                         }
-                        Err(e) => st.error = Some(e.to_string()),
+                        Err(e) => {
+                            if let Some(ManagerModal::Import(st)) = &mut self.modal {
+                                st.error = Some(e.to_string());
+                            }
+                        }
                     }
                 }
                 Task::none()
@@ -1110,19 +1788,25 @@ impl GlyphApp {
                 Task::none()
             }
             ModalMsg::SshKeyGenSubmit => {
-                if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
-                    let name = st.gen_name.trim();
-                    if name.is_empty() {
-                        st.error = Some("Enter a label for the new SSH key.".into());
-                        return Task::none();
+                let (name, algo, pass_str) = match &self.modal {
+                    Some(ManagerModal::SshKeys(st)) => {
+                        (st.gen_name.trim().to_string(), st.gen_algo, st.gen_passphrase.clone())
                     }
-                    let pass = if st.gen_passphrase.is_empty() {
-                        None
-                    } else {
-                        Some(st.gen_passphrase.as_str())
-                    };
-                    match self.vault.generate_ssh_key(name, st.gen_algo, pass) {
-                        Ok(created) => {
+                    _ => return Task::none(),
+                };
+                if name.is_empty() {
+                    if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
+                        st.error = Some("Enter a label for the new SSH key.".into());
+                    }
+                    return Task::none();
+                }
+                let res = self.with_vault(|v| {
+                    let pass = if pass_str.is_empty() { None } else { Some(pass_str.as_str()) };
+                    v.generate_ssh_key(&name, algo, pass)
+                });
+                match res {
+                    Ok(created) => {
+                        if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
                             st.gen_name.clear();
                             st.gen_passphrase.clear();
                             st.show_generate = false;
@@ -1131,9 +1815,13 @@ impl GlyphApp {
                                 "Generated {} key \"{}\".",
                                 created.algorithm, created.name
                             ));
-                            self.refresh_vault_cache();
                         }
-                        Err(e) => st.error = Some(e.to_string()),
+                        self.refresh_vault_cache();
+                    }
+                    Err(e) => {
+                        if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
+                            st.error = Some(e.to_string());
+                        }
                     }
                 }
                 Task::none()
@@ -1174,23 +1862,33 @@ impl GlyphApp {
                 Task::none()
             }
             ModalMsg::SshKeyImpSubmit => {
-                if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
-                    let name = st.imp_name.trim();
-                    if name.is_empty() {
+                let (name, pem_opt, pass_str) = match &self.modal {
+                    Some(ManagerModal::SshKeys(st)) => (
+                        st.imp_name.trim().to_string(),
+                        st.imp_pem.clone(),
+                        st.imp_passphrase.clone(),
+                    ),
+                    _ => return Task::none(),
+                };
+                if name.is_empty() {
+                    if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
                         st.error = Some("Enter a label for the imported SSH key.".into());
-                        return Task::none();
                     }
-                    let Some(pem) = &st.imp_pem else {
+                    return Task::none();
+                }
+                let Some(pem) = pem_opt else {
+                    if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
                         st.error = Some("Choose an OpenSSH private key file first.".into());
-                        return Task::none();
-                    };
-                    let pass = if st.imp_passphrase.is_empty() {
-                        None
-                    } else {
-                        Some(st.imp_passphrase.as_str())
-                    };
-                    match self.vault.import_ssh_key(name, pem, pass) {
-                        Ok(imported) => {
+                    }
+                    return Task::none();
+                };
+                let res = self.with_vault(|v| {
+                    let pass = if pass_str.is_empty() { None } else { Some(pass_str.as_str()) };
+                    v.import_ssh_key(&name, &pem, pass)
+                });
+                match res {
+                    Ok(imported) => {
+                        if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
                             st.imp_name.clear();
                             st.imp_path = None;
                             st.imp_pem = None;
@@ -1201,15 +1899,19 @@ impl GlyphApp {
                                 "Imported {} key \"{}\".",
                                 imported.algorithm, imported.name
                             ));
-                            self.refresh_vault_cache();
                         }
-                        Err(e) => st.error = Some(e.to_string()),
+                        self.refresh_vault_cache();
+                    }
+                    Err(e) => {
+                        if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
+                            st.error = Some(e.to_string());
+                        }
                     }
                 }
                 Task::none()
             }
             ModalMsg::SshKeyCopyPublic(kid) => {
-                if let Some(pub_key) = self.vault.get_ssh_key_public(&kid) {
+                if let Some(pub_key) = self.with_vault(|v| v.get_ssh_key_public(&kid)) {
                     clipboard_set(pub_key);
                     if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
                         st.copied_key_id = Some(kid);
@@ -1240,49 +1942,57 @@ impl GlyphApp {
                 Task::none()
             }
             ModalMsg::SshKeyDeploySubmit => {
-                let Some(ManagerModal::SshKeys(st)) = &mut self.modal else {
-                    return Task::none();
+                let (key_id, server_id) = match &self.modal {
+                    Some(ManagerModal::SshKeys(st)) => match (&st.deploy_key_id, &st.deploy_server_id) {
+                        (Some(k), Some(s)) => (k.clone(), s.clone()),
+                        _ => return Task::none(),
+                    },
+                    _ => return Task::none(),
                 };
-                let (Some(key_id), Some(server_id)) =
-                    (st.deploy_key_id.clone(), st.deploy_server_id.clone())
-                else {
-                    return Task::none();
-                };
-                let Some(pub_key) = self.vault.get_ssh_key_public(&key_id) else {
-                    st.error = Some("SSH key not found.".into());
-                    return Task::none();
-                };
-                let cfg = match self.vault.get_connection_config(&server_id) {
-                    Ok(c) => c,
+
+                let deploy_data = self.with_vault(|v| {
+                    let pub_key = v
+                        .get_ssh_key_public(&key_id)
+                        .ok_or_else(|| "SSH key not found.".to_string())?;
+                    let cfg = v.get_connection_config(&server_id).map_err(|e| e.to_string())?;
+                    let known_hosts = v.known_hosts_map();
+                    let label = v
+                        .get_server(&server_id)
+                        .map(|s| display_server_name(&s))
+                        .unwrap_or_else(|| format!("{}:{}", cfg.host, cfg.port));
+                    Ok::<_, String>((pub_key, cfg, known_hosts, label))
+                });
+
+                let (pub_key, cfg, known_hosts, server_label) = match deploy_data {
+                    Ok(d) => d,
                     Err(e) => {
-                        st.error = Some(e.to_string());
+                        if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
+                            st.error = Some(e);
+                        }
                         return Task::none();
                     }
                 };
-                let known_hosts = self.vault.known_hosts_map();
+
                 let host_port = format!("{}:{}", cfg.host, cfg.port);
                 if !known_hosts.contains_key(&host_port) {
-                    st.error = Some(format!(
-                        "Host key for {host_port} is not trusted yet. Connect to this server once first to verify TOFU host identity, then deploy."
-                    ));
+                    if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
+                        st.error = Some(format!(
+                            "Host key for {host_port} is not trusted yet. Connect to this server once first to verify TOFU host identity, then deploy."
+                        ));
+                    }
                     return Task::none();
                 }
 
-                let server_label = self
-                    .vault
-                    .get_server(&server_id)
-                    .map(|s| display_server_name(&s))
-                    .unwrap_or_else(|| host_port.clone());
-
-                st.busy = true;
-                st.error = None;
-                st.status = Some(format!("Connecting to {server_label} to authorize key..."));
+                if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
+                    st.busy = true;
+                    st.error = None;
+                    st.status = Some(format!("Connecting to {server_label} to authorize key..."));
+                }
 
                 let bus = app_bus_sender();
                 tokio::spawn(async move {
                     let (ev_tx, mut ev_rx) = mpsc::unbounded_channel();
                     let (hk_tx, mut hk_rx) = mpsc::unbounded_channel::<HostKeyPrompt>();
-                    // Known host is already trusted in known_hosts_map; reject unexpected mismatches
                     tokio::spawn(async move {
                         while let Some(p) = hk_rx.recv().await {
                             let _ = p.responder.send(false);
@@ -1313,7 +2023,9 @@ impl GlyphApp {
                 Task::none()
             }
             ModalMsg::SshKeyDelete(kid) => {
-                let _ = self.vault.delete_ssh_key(&kid);
+                self.with_vault(|v| {
+                    let _ = v.delete_ssh_key(&kid);
+                });
                 self.refresh_vault_cache();
                 if let Some(ManagerModal::SshKeys(st)) = &mut self.modal {
                     if st.deploy_key_id.as_deref() == Some(kid.as_str()) {
@@ -1349,8 +2061,182 @@ impl GlyphApp {
                 Task::none()
             }
 
+            ModalMsg::SelectSettingsTab(tab) => {
+                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
+                    st.active_tab = tab;
+                    st.mcp_status = None;
+                    st.mcp_error = None;
+                }
+                Task::none()
+            }
             ModalMsg::RemoveKnownHost(host_port) => {
-                let _ = self.vault.remove_known_host(&host_port);
+                self.with_vault(|v| {
+                    let _ = v.remove_known_host(&host_port);
+                });
+                self.refresh_vault_cache();
+                Task::none()
+            }
+            ModalMsg::RefreshMcpClients => {
+                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
+                    st.clients = scan_mcp_clients();
+                    st.mcp_error = None;
+                }
+                Task::none()
+            }
+            ModalMsg::AutoInstallMcp(client_id) => {
+                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
+                    let bin = PathBuf::from(&st.mcp_bin_path);
+                    match auto_install_mcp_client(client_id, &bin) {
+                        Ok(written) => {
+                            st.clients = scan_mcp_clients();
+                            st.mcp_error = None;
+                            st.mcp_status = Some(format!(
+                                "Configured {} ({})",
+                                client_id.display_name(),
+                                written.display()
+                            ));
+                        }
+                        Err(e) => {
+                            st.mcp_status = None;
+                            st.mcp_error = Some(e.to_string());
+                        }
+                    }
+                }
+                Task::none()
+            }
+            ModalMsg::ToggleMcpSnippet(cid) => {
+                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
+                    st.expanded_snippet = if st.expanded_snippet == Some(cid) {
+                        None
+                    } else {
+                        Some(cid)
+                    };
+                }
+                Task::none()
+            }
+            ModalMsg::CopyMcpSnippet(cid) => {
+                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
+                    if let Some(info) = st.clients.iter().find(|c| c.id == cid) {
+                        let snippet = build_config_snippet(
+                            info.format,
+                            None,
+                            Path::new(&st.mcp_bin_path),
+                        );
+                        clipboard_set(snippet);
+                        st.copied_snippet = Some(cid);
+                    }
+                }
+                Task::none()
+            }
+            ModalMsg::ToggleCustomMcp => {
+                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
+                    st.show_custom = !st.show_custom;
+                }
+                Task::none()
+            }
+            ModalMsg::CustomMcpPathChanged(p) => {
+                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
+                    st.custom_path = p;
+                }
+                Task::none()
+            }
+            ModalMsg::BrowseCustomMcpPath => Task::perform(
+                async {
+                    rfd::AsyncFileDialog::new()
+                        .set_title("Select AI Client JSON Config")
+                        .add_filter("JSON Config", &["json"])
+                        .pick_file()
+                        .await
+                        .map(|h| h.path().display().to_string())
+                },
+                Message::CustomMcpPathPicked,
+            ),
+            ModalMsg::CustomMcpFormatChanged(fmt) => {
+                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
+                    st.custom_format = fmt;
+                }
+                Task::none()
+            }
+            ModalMsg::CustomMcpKeyChanged(k) => {
+                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
+                    st.custom_key = k;
+                }
+                Task::none()
+            }
+            ModalMsg::WriteCustomMcp => {
+                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
+                    let target = st.custom_path.trim().to_string();
+                    if target.is_empty() {
+                        st.mcp_error = Some("Enter or browse a JSON config file path first.".into());
+                        return Task::none();
+                    }
+                    let bin = PathBuf::from(&st.mcp_bin_path);
+                    match write_mcp_config_at(
+                        Path::new(&target),
+                        st.custom_format,
+                        Some(&st.custom_key),
+                        &bin,
+                    ) {
+                        Ok(()) => {
+                            st.clients = scan_mcp_clients();
+                            st.mcp_error = None;
+                            st.mcp_status = Some(format!("Wrote glyph_mcp entry into {target}"));
+                        }
+                        Err(e) => {
+                            st.mcp_status = None;
+                            st.mcp_error = Some(e.to_string());
+                        }
+                    }
+                }
+                Task::none()
+            }
+            ModalMsg::OpenMobileFromSettings => self.open_mobile_modal(),
+            ModalMsg::CheckUpdates => {
+                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
+                    st.checking_update = true;
+                    st.update_error = None;
+                }
+                let suffix = if cfg!(target_os = "windows") {
+                    Some(".exe")
+                } else if cfg!(target_os = "macos") {
+                    Some(".dmg")
+                } else {
+                    Some(".AppImage")
+                };
+                Task::perform(
+                    async move {
+                        fetch_latest_release("TheLunatic1/Glyph", suffix)
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    Message::DesktopUpdateChecked,
+                )
+            }
+            ModalMsg::OpenUpdateReleaseUrl(url) => {
+                titlebar::open_url_in_browser(&url);
+                Task::none()
+            }
+
+            // Mobile APK QR Modal
+            ModalMsg::SelectMobileQrMode(mode) => {
+                if let Some(ManagerModal::Mobile(st)) = &mut self.modal {
+                    st.qr_mode = mode;
+                    st.copied = false;
+                    st.refresh_qr();
+                }
+                Task::none()
+            }
+            ModalMsg::CopyMobileUrl => {
+                if let Some(ManagerModal::Mobile(st)) = &mut self.modal {
+                    clipboard_set(st.active_url().to_string());
+                    st.copied = true;
+                }
+                Task::none()
+            }
+            ModalMsg::OpenMobileUrl => {
+                if let Some(ManagerModal::Mobile(st)) = &self.modal {
+                    titlebar::open_url_in_browser(st.active_url());
+                }
                 Task::none()
             }
         }
@@ -1361,17 +2247,26 @@ impl GlyphApp {
             SidebarMsg::SelectTab(tab) => {
                 if let Some(srv) = self.server_windows.get_mut(&wid) {
                     srv.active_tab = tab;
-                    if tab == ServerTab::Terminal {
-                        let active = srv.terminal.active_tab_id.clone();
-                        srv.terminal.focused_tab_id = active;
+                    match tab {
+                        ServerTab::Terminal => {
+                            let active = srv.terminal.active_tab_id.clone();
+                            srv.terminal.focused_tab_id = active;
+                        }
+                        ServerTab::Tunnels => {
+                            spawn_list_tunnels(wid, srv.session.clone());
+                        }
+                        ServerTab::Containers
+                            if !srv.containers.loaded_once && !srv.containers.loading =>
+                        {
+                            srv.containers.loading = true;
+                            spawn_list_containers(wid, srv.session.clone());
+                        }
+                        _ => {}
                     }
                 }
                 Task::none()
             }
-            SidebarMsg::OpenMobile => {
-                self.modal = Some(ManagerModal::Mobile);
-                self.show_manager_window()
-            }
+            SidebarMsg::OpenMobile => Task::batch([self.open_mobile_modal(), self.show_manager_window()]),
             SidebarMsg::Disconnect => self.handle_window_close(wid),
             SidebarMsg::OpenGithub => {
                 titlebar::open_url_in_browser("https://github.com/TheLunatic1");
@@ -1508,7 +2403,12 @@ impl GlyphApp {
             }
             TerminalPageMsg::InjectSecret(secret_id) => {
                 srv.terminal.show_secrets = false;
-                if let Ok(Some(val)) = self.vault.get_secret_value(&secret_id) {
+                let secret_val = self
+                    .vault
+                    .lock()
+                    .ok()
+                    .and_then(|v| v.get_secret_value(&secret_id).ok().flatten());
+                if let Some(val) = secret_val {
                     let target = srv.terminal.focused_tab_id.clone();
                     srv.terminal.send_input(&target, val.into_bytes());
                 }
@@ -1558,17 +2458,22 @@ impl GlyphApp {
     }
 
     fn start_connect(&mut self, server_id: String) {
-        let Some(summary) = self.vault.get_server(&server_id) else {
-            return;
-        };
-        let cfg = match self.vault.get_connection_config(&server_id) {
-            Ok(c) => c,
+        let info_res = self.with_vault(|v| {
+            let Some(summary) = v.get_server(&server_id) else {
+                return Ok(None);
+            };
+            let cfg = v.get_connection_config(&server_id).map_err(|e| e.to_string())?;
+            let known_hosts = v.known_hosts_map();
+            Ok::<_, String>(Some((summary, cfg, known_hosts)))
+        });
+        let (summary, cfg, known_hosts) = match info_res {
+            Ok(Some(d)) => d,
+            Ok(None) => return,
             Err(e) => {
-                self.disconnect_banner = Some(e.to_string());
+                self.disconnect_banner = Some(e);
                 return;
             }
         };
-        let known_hosts = self.vault.known_hosts_map();
 
         self.connect_started_at = Some(Instant::now());
         self.modal = Some(ManagerModal::Connecting(ConnectingModalState {
@@ -1676,13 +2581,8 @@ impl GlyphApp {
         .map(Message::Manager);
 
         let body: Element<'_, Message> = if let Some(modal) = &self.modal {
-            let overlay = modals::view(
-                modal,
-                &self.servers,
-                &self.ssh_keys,
-                self.vault.list_known_hosts(),
-            )
-            .map(Message::Modal);
+            let overlay = modals::view(modal, &self.servers, &self.ssh_keys, &self.known_hosts)
+                .map(Message::Modal);
             stack![base, overlay]
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -1710,6 +2610,11 @@ impl GlyphApp {
         );
         let title_el = titlebar::view(header_title, false).map(move |m| Message::TitleBar(wid, m));
         let sidebar_el = sidebar::view(srv.active_tab).map(move |m| Message::Sidebar(wid, m));
+        let enc_avail = self
+            .vault
+            .lock()
+            .map(|v| v.is_encryption_available())
+            .unwrap_or(true);
 
         let main_pane: Element<'a, Message> = match srv.active_tab {
             ServerTab::Dashboard => {
@@ -1719,7 +2624,18 @@ impl GlyphApp {
                 terminal_page::view(&srv.terminal, &srv.cached_commands, &srv.cached_secrets)
                     .map(move |m| Message::Terminal(wid, m))
             }
-            other => view_milestone2_placeholder(other, &srv.server),
+            ServerTab::Sftp => sftp_page::view(&srv.sftp).map(move |m| Message::Sftp(wid, m)),
+            ServerTab::Commands => commands_page::view(&srv.commands, &srv.cached_commands)
+                .map(move |m| Message::Commands(wid, m)),
+            ServerTab::Secrets => secrets_page::view(&srv.secrets, &srv.cached_secrets, enc_avail)
+                .map(move |m| Message::Secrets(wid, m)),
+            ServerTab::Tunnels => {
+                tunnels_page::view(&srv.tunnels).map(move |m| Message::Tunnels(wid, m))
+            }
+            ServerTab::Containers => {
+                containers_page::view(&srv.containers).map(move |m| Message::Containers(wid, m))
+            }
+            ServerTab::Vnc => vnc_page::view(&srv.vnc).map(move |m| Message::Vnc(wid, m)),
         };
 
         let content_row = row![
@@ -1737,101 +2653,945 @@ impl GlyphApp {
             .height(Length::Fill)
             .into()
     }
+
+    fn open_mobile_modal(&mut self) -> Task<Message> {
+        self.modal = Some(ManagerModal::Mobile(MobileModalState::default()));
+        Task::perform(
+            async {
+                fetch_latest_release("TheLunatic1/glyph-app", Some(".apk"))
+                    .await
+                    .map_err(|e| e.to_string())
+            },
+            Message::MobileReleaseFetched,
+        )
+    }
+
+    fn handle_api_ui_event(&mut self, ev: ApiUiEvent) -> Task<Message> {
+        match ev {
+            ApiUiEvent::SessionConnected {
+                server_id,
+                os,
+                session,
+                ..
+            } => {
+                if os.is_some() {
+                    self.with_vault(|v| {
+                        let _ = v.update_server_os(&server_id, os);
+                    });
+                    self.refresh_vault_cache();
+                }
+
+                if let Some((&existing_wid, _)) = self
+                    .server_windows
+                    .iter()
+                    .find(|(_, s)| s.server.id == server_id)
+                {
+                    return window::gain_focus(existing_wid);
+                }
+
+                let Some(server) = self.with_vault(|v| v.get_server(&server_id)) else {
+                    return Task::none();
+                };
+                let (cached_commands, cached_secrets) =
+                    self.with_vault(|v| (v.list_commands(&server.id), v.list_secrets(&server.id)));
+
+                let (new_wid, open_task) = window::open(server_window_settings());
+                let (ev_tx, mut ev_rx) = mpsc::unbounded_channel::<SessionEvent>();
+                let bus = app_bus_sender();
+                tokio::spawn(async move {
+                    while let Some(sev) = ev_rx.recv().await {
+                        let _ = bus.send(BusEvent::Session(new_wid, sev));
+                    }
+                });
+                session.start_stat_polling(ev_tx);
+                terminal_page::spawn_open_shell(
+                    session.clone(),
+                    "tab-main".to_string(),
+                    100,
+                    30,
+                    new_wid,
+                );
+
+                self.server_windows.insert(
+                    new_wid,
+                    ServerWindowState::new(server, session, cached_commands, cached_secrets),
+                );
+                Task::batch([open_task.discard(), window::gain_focus(new_wid)])
+            }
+            ApiUiEvent::SwitchTab { server_id, tab } => {
+                let ui_tab = match tab {
+                    ApiUiTab::Dashboard => ServerTab::Dashboard,
+                    ApiUiTab::Terminal => ServerTab::Terminal,
+                    ApiUiTab::Sftp => ServerTab::Sftp,
+                    ApiUiTab::Commands => ServerTab::Commands,
+                    ApiUiTab::Secrets => ServerTab::Secrets,
+                    ApiUiTab::Tunnels => ServerTab::Tunnels,
+                    ApiUiTab::Containers => ServerTab::Containers,
+                    ApiUiTab::Vnc => ServerTab::Vnc,
+                };
+                for (&wid, srv) in &mut self.server_windows {
+                    if srv.server.id == server_id {
+                        srv.active_tab = ui_tab;
+                        if ui_tab == ServerTab::Tunnels {
+                            spawn_list_tunnels(wid, srv.session.clone());
+                        }
+                    }
+                }
+                Task::none()
+            }
+            ApiUiEvent::SecretsChanged { server_id } => {
+                let updated = self.with_vault(|v| v.list_secrets(&server_id));
+                for srv in self.server_windows.values_mut() {
+                    if srv.server.id == server_id {
+                        srv.cached_secrets = updated.clone();
+                    }
+                }
+                Task::none()
+            }
+            ApiUiEvent::CommandsChanged { server_id } => {
+                let updated = self.with_vault(|v| v.list_commands(&server_id));
+                for srv in self.server_windows.values_mut() {
+                    if srv.server.id == server_id {
+                        srv.cached_commands = updated.clone();
+                    }
+                }
+                Task::none()
+            }
+            ApiUiEvent::TunnelsChanged { server_id } => {
+                for (&wid, srv) in &self.server_windows {
+                    if srv.server.id == server_id {
+                        spawn_list_tunnels(wid, srv.session.clone());
+                    }
+                }
+                Task::none()
+            }
+        }
+    }
+
+    fn handle_sftp_msg(&mut self, wid: window::Id, msg: SftpPageMsg) -> Task<Message> {
+        let Some(srv) = self.server_windows.get_mut(&wid) else {
+            return Task::none();
+        };
+        let sess = srv.session.clone();
+
+        match msg {
+            SftpPageMsg::OpenRoot => {
+                srv.sftp.loading = true;
+                srv.sftp.error = None;
+                spawn_sftp_readdir(wid, sess, "/".to_string());
+            }
+            SftpPageMsg::Navigate(path) => {
+                srv.sftp.loading = true;
+                srv.sftp.error = None;
+                srv.sftp.copied_path = false;
+                spawn_sftp_readdir(wid, sess, path);
+            }
+            SftpPageMsg::GoUp => {
+                let parent = remote_parent(&srv.sftp.current_path);
+                srv.sftp.loading = true;
+                srv.sftp.error = None;
+                spawn_sftp_readdir(wid, sess, parent);
+            }
+            SftpPageMsg::Refresh => {
+                srv.sftp.loading = true;
+                srv.sftp.error = None;
+                spawn_sftp_readdir(wid, sess, srv.sftp.current_path.clone());
+            }
+            SftpPageMsg::CopyCurrentPath => {
+                clipboard_set(srv.sftp.current_path.clone());
+                srv.sftp.copied_path = true;
+            }
+            SftpPageMsg::ToggleSort(col) => {
+                if srv.sftp.sort_col == col {
+                    srv.sftp.sort_asc = !srv.sftp.sort_asc;
+                } else {
+                    srv.sftp.sort_col = col;
+                    srv.sftp.sort_asc = true;
+                }
+            }
+            SftpPageMsg::OpenEntry(path, is_dir) => {
+                if is_dir {
+                    srv.sftp.loading = true;
+                    srv.sftp.error = None;
+                    spawn_sftp_readdir(wid, sess, path);
+                } else {
+                    tokio::spawn(async move {
+                        let res = sess.sftp_read_text(&path).await.map_err(|e| e.to_string());
+                        let _ = app_bus_sender().send(BusEvent::SftpFileRead(wid, path, res));
+                    });
+                }
+            }
+            SftpPageMsg::DownloadFile(remote_path, name) => {
+                return Task::perform(
+                    async move {
+                        let opt = rfd::AsyncFileDialog::new()
+                            .set_title("Save Remote File")
+                            .set_file_name(&name)
+                            .save_file()
+                            .await
+                            .map(|h| h.path().to_path_buf());
+                        (remote_path, opt)
+                    },
+                    move |(rp, opt)| Message::SftpDownloadSavePicked(wid, rp, opt),
+                );
+            }
+            SftpPageMsg::UploadPickFiles => {
+                return Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .set_title("Select Files to Upload via SFTP")
+                            .pick_files()
+                            .await
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|h| h.path().to_path_buf())
+                            .collect()
+                    },
+                    move |paths| Message::SftpUploadPicked(wid, paths),
+                );
+            }
+            SftpPageMsg::CopyItem(entry) => {
+                srv.sftp.clipboard = Some(sftp_page::SftpClipboard {
+                    path: entry.path,
+                    name: entry.filename.clone(),
+                    is_copy: true,
+                });
+                srv.sftp.status = Some(format!("Copied \"{}\" to SFTP clipboard", entry.filename));
+            }
+            SftpPageMsg::CutItem(entry) => {
+                srv.sftp.clipboard = Some(sftp_page::SftpClipboard {
+                    path: entry.path,
+                    name: entry.filename.clone(),
+                    is_copy: false,
+                });
+                srv.sftp.status = Some(format!("Cut \"{}\" — navigate & click Paste", entry.filename));
+            }
+            SftpPageMsg::PasteClipboard => {
+                if let Some(clip) = srv.sftp.clipboard.take() {
+                    let dst = join_remote_path(&srv.sftp.current_path, &clip.name);
+                    if clip.is_copy {
+                        srv.sftp.clipboard = Some(clip.clone());
+                        tokio::spawn(async move {
+                            let res = sess
+                                .sftp_copy(&clip.path, &dst)
+                                .await
+                                .map(|()| format!("Copied \"{}\" to {dst}", clip.name))
+                                .map_err(|e| e.to_string());
+                            let _ = app_bus_sender().send(BusEvent::SftpActionDone(wid, res));
+                        });
+                    } else {
+                        tokio::spawn(async move {
+                            let res = sess
+                                .sftp_rename(&clip.path, &dst)
+                                .await
+                                .map(|()| format!("Moved \"{}\" to {dst}", clip.name))
+                                .map_err(|e| e.to_string());
+                            let _ = app_bus_sender().send(BusEvent::SftpActionDone(wid, res));
+                        });
+                    }
+                }
+            }
+            SftpPageMsg::OpenNewFolderPrompt => {
+                srv.sftp.prompt = Some(SftpPrompt::NewFolder);
+                srv.sftp.prompt_input.clear();
+            }
+            SftpPageMsg::OpenNewFilePrompt => {
+                srv.sftp.prompt = Some(SftpPrompt::NewFile);
+                srv.sftp.prompt_input.clear();
+            }
+            SftpPageMsg::OpenRenamePrompt(path, name) => {
+                srv.sftp.prompt = Some(SftpPrompt::Rename { old_path: path });
+                srv.sftp.prompt_input = name;
+            }
+            SftpPageMsg::OpenChmodPrompt(path, perms) => {
+                srv.sftp.prompt = Some(SftpPrompt::Chmod { path });
+                srv.sftp.prompt_input = format!("{:03o}", perms & 0o777);
+            }
+            SftpPageMsg::OpenDeletePrompt(path, name, is_dir) => {
+                srv.sftp.prompt = Some(SftpPrompt::ConfirmDelete { path, name, is_dir });
+                srv.sftp.prompt_input.clear();
+            }
+            SftpPageMsg::PromptInputChanged(v) => srv.sftp.prompt_input = v,
+            SftpPageMsg::PromptCancel => {
+                srv.sftp.prompt = None;
+                srv.sftp.prompt_input.clear();
+            }
+            SftpPageMsg::PromptSubmit => {
+                let Some(prompt) = srv.sftp.prompt.take() else {
+                    return Task::none();
+                };
+                let val = srv.sftp.prompt_input.trim().to_string();
+                let dir = srv.sftp.current_path.clone();
+                srv.sftp.prompt_input.clear();
+                match prompt {
+                    SftpPrompt::NewFolder => {
+                        if !val.is_empty() {
+                            let target = join_remote_path(&dir, &val);
+                            tokio::spawn(async move {
+                                let res = sess
+                                    .sftp_mkdir(&target)
+                                    .await
+                                    .map(|()| format!("Created folder {val}"))
+                                    .map_err(|e| e.to_string());
+                                let _ = app_bus_sender().send(BusEvent::SftpActionDone(wid, res));
+                            });
+                        }
+                    }
+                    SftpPrompt::NewFile => {
+                        if !val.is_empty() {
+                            let target = join_remote_path(&dir, &val);
+                            tokio::spawn(async move {
+                                let res = sess
+                                    .sftp_create_empty_file(&target)
+                                    .await
+                                    .map(|()| format!("Created file {val}"))
+                                    .map_err(|e| e.to_string());
+                                let _ = app_bus_sender().send(BusEvent::SftpActionDone(wid, res));
+                            });
+                        }
+                    }
+                    SftpPrompt::Rename { old_path } => {
+                        if !val.is_empty() {
+                            let new_path = join_remote_path(&remote_parent(&old_path), &val);
+                            tokio::spawn(async move {
+                                let res = sess
+                                    .sftp_rename(&old_path, &new_path)
+                                    .await
+                                    .map(|()| format!("Renamed to {val}"))
+                                    .map_err(|e| e.to_string());
+                                let _ = app_bus_sender().send(BusEvent::SftpActionDone(wid, res));
+                            });
+                        }
+                    }
+                    SftpPrompt::Chmod { path } => {
+                        if let Ok(mode) = u32::from_str_radix(&val, 8) {
+                            tokio::spawn(async move {
+                                let res = sess
+                                    .sftp_chmod(&path, mode)
+                                    .await
+                                    .map(|()| format!("Updated permissions on {path} to {mode:o}"))
+                                    .map_err(|e| e.to_string());
+                                let _ = app_bus_sender().send(BusEvent::SftpActionDone(wid, res));
+                            });
+                        } else {
+                            srv.sftp.error = Some(format!("Invalid octal mode \"{val}\" (use e.g. 755 or 644)"));
+                        }
+                    }
+                    SftpPrompt::ConfirmDelete { path, name, is_dir } => {
+                        tokio::spawn(async move {
+                            let res = sess
+                                .sftp_delete(&path, is_dir)
+                                .await
+                                .map(|()| format!("Deleted {name}"))
+                                .map_err(|e| e.to_string());
+                            let _ = app_bus_sender().send(BusEvent::SftpActionDone(wid, res));
+                        });
+                    }
+                }
+            }
+            SftpPageMsg::EditorAction(action) => {
+                if let Some(ed) = &mut srv.sftp.editor {
+                    let is_edit = matches!(action, text_editor::Action::Edit(_));
+                    ed.content.perform(action);
+                    if is_edit {
+                        ed.dirty = true;
+                    }
+                }
+            }
+            SftpPageMsg::EditorSave => {
+                if let Some(ed) = &mut srv.sftp.editor {
+                    ed.saving = true;
+                    let path = ed.path.clone();
+                    let text_body = ed.content.text();
+                    tokio::spawn(async move {
+                        let res = sess
+                            .sftp_write_text(&path, &text_body)
+                            .await
+                            .map_err(|e| e.to_string());
+                        let _ = app_bus_sender().send(BusEvent::SftpFileSaved(wid, path, res));
+                    });
+                }
+            }
+            SftpPageMsg::EditorClose => {
+                srv.sftp.editor = None;
+                srv.sftp.status = None;
+            }
+            SftpPageMsg::DismissTransfer => {
+                srv.sftp.transfer = None;
+            }
+        }
+        Task::none()
+    }
+
+    fn handle_commands_msg(&mut self, wid: window::Id, msg: CommandsPageMsg) -> Task<Message> {
+        let Some(srv) = self.server_windows.get_mut(&wid) else {
+            return Task::none();
+        };
+        let sid = srv.server.id.clone();
+
+        match msg {
+            CommandsPageMsg::NameInput(v) => srv.commands.new_name = v,
+            CommandsPageMsg::CmdInput(v) => srv.commands.new_cmd = v,
+            CommandsPageMsg::AddSubmit => {
+                let name = srv.commands.new_name.trim().to_string();
+                let cmd = srv.commands.new_cmd.trim().to_string();
+                if name.is_empty() || cmd.is_empty() {
+                    srv.commands.error = Some("Enter both a Snippet Name and Shell Command.".into());
+                    return Task::none();
+                }
+                let res = self.vault.lock().map_err(|_| anyhow::anyhow!("Vault busy")).and_then(|mut v| {
+                    v.add_command(&sid, &name, &cmd)?;
+                    Ok(v.list_commands(&sid))
+                });
+                match res {
+                    Ok(list) => {
+                        srv.cached_commands = list;
+                        srv.commands.new_name.clear();
+                        srv.commands.new_cmd.clear();
+                        srv.commands.error = None;
+                    }
+                    Err(e) => srv.commands.error = Some(e.to_string()),
+                }
+            }
+            CommandsPageMsg::Run(id, cmd) => {
+                if let Ok(mut v) = self.vault.lock() {
+                    let _ = v.increment_command_use(&sid, id);
+                    srv.cached_commands = v.list_commands(&sid);
+                }
+                let target = srv.terminal.focused_tab_id.clone();
+                let mut payload = cmd.into_bytes();
+                payload.push(b'\r');
+                srv.terminal.send_input(&target, payload);
+                srv.active_tab = ServerTab::Terminal;
+            }
+            CommandsPageMsg::Delete(id) => {
+                if let Ok(mut v) = self.vault.lock() {
+                    let _ = v.remove_command(&sid, id);
+                    srv.cached_commands = v.list_commands(&sid);
+                }
+            }
+        }
+        Task::none()
+    }
+
+    fn handle_secrets_msg(&mut self, wid: window::Id, msg: SecretsPageMsg) -> Task<Message> {
+        let Some(srv) = self.server_windows.get_mut(&wid) else {
+            return Task::none();
+        };
+        let sid = srv.server.id.clone();
+
+        match msg {
+            SecretsPageMsg::NameInput(v) => srv.secrets.new_name = v,
+            SecretsPageMsg::ValueInput(v) => srv.secrets.new_value = v,
+            SecretsPageMsg::ToggleShowValue => srv.secrets.show_value = !srv.secrets.show_value,
+            SecretsPageMsg::AddSubmit => {
+                let name = srv.secrets.new_name.trim().to_string();
+                let val = srv.secrets.new_value.clone();
+                if name.is_empty() || val.is_empty() {
+                    srv.secrets.error = Some("Both Secret Alias and Secret Value are required.".into());
+                    return Task::none();
+                }
+                let res = self.vault.lock().map_err(|_| anyhow::anyhow!("Vault busy")).and_then(|mut v| {
+                    v.add_secret(&sid, &name, &val)?;
+                    Ok(v.list_secrets(&sid))
+                });
+                match res {
+                    Ok(list) => {
+                        srv.cached_secrets = list;
+                        srv.secrets.new_name.clear();
+                        srv.secrets.new_value.clear();
+                        srv.secrets.error = None;
+                        srv.secrets.status = Some(format!("Stored encrypted secret \"{name}\"."));
+                    }
+                    Err(e) => srv.secrets.error = Some(e.to_string()),
+                }
+            }
+            SecretsPageMsg::CopyValue(secret_id) => {
+                if let Ok(Ok(Some(plain))) = self.vault.lock().map(|v| v.get_secret_value(&secret_id)) {
+                    clipboard_set(plain);
+                    srv.secrets.copied_id = Some(secret_id);
+                    srv.secrets.status = Some("Decrypted secret copied to clipboard.".into());
+                }
+            }
+            SecretsPageMsg::Delete(secret_id) => {
+                if let Ok(mut v) = self.vault.lock() {
+                    let _ = v.delete_secret(&secret_id);
+                    srv.cached_secrets = v.list_secrets(&sid);
+                }
+            }
+            SecretsPageMsg::OpenExportModal => {
+                srv.secrets.bundle_modal = Some(SecretsBundleMode::Export);
+                srv.secrets.bundle_password.clear();
+                srv.secrets.error = None;
+            }
+            SecretsPageMsg::OpenImportModal => {
+                srv.secrets.bundle_modal = Some(SecretsBundleMode::Import);
+                srv.secrets.bundle_password.clear();
+                srv.secrets.error = None;
+            }
+            SecretsPageMsg::CloseBundleModal => {
+                srv.secrets.bundle_modal = None;
+                srv.secrets.bundle_password.clear();
+            }
+            SecretsPageMsg::BundlePasswordInput(pw) => srv.secrets.bundle_password = pw,
+            SecretsPageMsg::ToggleBundlePassword => {
+                srv.secrets.show_bundle_password = !srv.secrets.show_bundle_password;
+            }
+            SecretsPageMsg::BundleSubmit => {
+                let Some(mode) = srv.secrets.bundle_modal else {
+                    return Task::none();
+                };
+                let pw = srv.secrets.bundle_password.clone();
+                if pw.is_empty() {
+                    srv.secrets.error = Some("Master password is required.".into());
+                    return Task::none();
+                }
+                match mode {
+                    SecretsBundleMode::Export => {
+                        let enc_res = self
+                            .vault
+                            .lock()
+                            .map_err(|_| anyhow::anyhow!("Vault busy"))
+                            .and_then(|v| v.export_secrets_encrypted(&sid, &pw));
+                        match enc_res {
+                            Ok(payload) => {
+                                return Task::perform(
+                                    async move {
+                                        let Some(h) = rfd::AsyncFileDialog::new()
+                                            .set_title("Export Encrypted Secrets")
+                                            .add_filter("Glyph Secrets", &["glyph"])
+                                            .set_file_name("glyph-secrets.glyph")
+                                            .save_file()
+                                            .await
+                                        else {
+                                            return Ok(None);
+                                        };
+                                        let p = h.path().to_path_buf();
+                                        tokio::fs::write(&p, payload.as_bytes())
+                                            .await
+                                            .map_err(|e| format!("Write failed: {e}"))?;
+                                        Ok(Some(p.display().to_string()))
+                                    },
+                                    move |r| Message::SecretsExportDone(wid, r),
+                                );
+                            }
+                            Err(e) => srv.secrets.error = Some(e.to_string()),
+                        }
+                    }
+                    SecretsBundleMode::Import => {
+                        return Task::perform(
+                            async move {
+                                let Some(h) = rfd::AsyncFileDialog::new()
+                                    .set_title("Import Encrypted Secrets (.glyph)")
+                                    .add_filter("Glyph Secrets", &["glyph"])
+                                    .pick_file()
+                                    .await
+                                else {
+                                    return Ok(None);
+                                };
+                                let txt = tokio::fs::read_to_string(h.path())
+                                    .await
+                                    .map_err(|e| format!("Read failed: {e}"))?;
+                                Ok(Some(txt))
+                            },
+                            move |r| Message::SecretsImportLoaded(wid, r),
+                        );
+                    }
+                }
+            }
+        }
+        Task::none()
+    }
+
+    fn handle_tunnels_msg(&mut self, wid: window::Id, msg: TunnelsPageMsg) -> Task<Message> {
+        let Some(srv) = self.server_windows.get_mut(&wid) else {
+            return Task::none();
+        };
+        let sess = srv.session.clone();
+
+        match msg {
+            TunnelsPageMsg::SelectDirection(d) => srv.tunnels.direction = d,
+            TunnelsPageMsg::BindPortChanged(v) => srv.tunnels.bind_port = v,
+            TunnelsPageMsg::TargetHostChanged(v) => srv.tunnels.target_host = v,
+            TunnelsPageMsg::TargetPortChanged(v) => srv.tunnels.target_port = v,
+            TunnelsPageMsg::ProtocolSelected(p) => srv.tunnels.protocol = p,
+            TunnelsPageMsg::ToggleScheme(tid) => {
+                let entry = srv.tunnels.schemes.entry(tid).or_insert(false);
+                *entry = !*entry;
+            }
+            TunnelsPageMsg::OpenUrl(url) => titlebar::open_url_in_browser(&url),
+            TunnelsPageMsg::Refresh => spawn_list_tunnels(wid, sess),
+            TunnelsPageMsg::StopTunnel(tid) => {
+                srv.tunnels.busy = true;
+                tokio::spawn(async move {
+                    let res = match sess.stop_tunnel_by_id(&tid).await {
+                        Ok(()) => Ok(sess.list_tunnels().await),
+                        Err(e) => Err(e.to_string()),
+                    };
+                    let _ = app_bus_sender().send(BusEvent::TunnelOpDone(wid, res));
+                });
+            }
+            TunnelsPageMsg::BindSubmit => {
+                let bind_port: u16 = match srv.tunnels.bind_port.trim().parse() {
+                    Ok(p) => p,
+                    Err(_) => {
+                        srv.tunnels.error = Some("Enter a valid numeric bind port (0-65535).".into());
+                        return Task::none();
+                    }
+                };
+                let target_port: u16 = match srv.tunnels.target_port.trim().parse() {
+                    Ok(p) if p > 0 => p,
+                    _ => {
+                        srv.tunnels.error = Some("Enter a valid non-zero destination port.".into());
+                        return Task::none();
+                    }
+                };
+                let target_host = srv.tunnels.target_host.trim().to_string();
+                let proto = srv.tunnels.protocol.clone();
+                let dir = srv.tunnels.direction;
+                srv.tunnels.busy = true;
+                srv.tunnels.error = None;
+
+                tokio::spawn(async move {
+                    let op = match dir {
+                        UiTunnelDirection::Local => sess
+                            .start_local_tunnel(bind_port, target_host, target_port, proto)
+                            .await
+                            .map(|_| ()),
+                        UiTunnelDirection::Remote => sess
+                            .start_remote_tunnel(
+                                "0.0.0.0".to_string(),
+                                bind_port,
+                                target_host,
+                                target_port,
+                            )
+                            .await
+                            .map(|_| ()),
+                    };
+                    let res = match op {
+                        Ok(()) => Ok(sess.list_tunnels().await),
+                        Err(e) => Err(e.to_string()),
+                    };
+                    let _ = app_bus_sender().send(BusEvent::TunnelOpDone(wid, res));
+                });
+            }
+        }
+        Task::none()
+    }
+
+    fn handle_containers_msg(&mut self, wid: window::Id, msg: ContainersPageMsg) -> Task<Message> {
+        let Some(srv) = self.server_windows.get_mut(&wid) else {
+            return Task::none();
+        };
+        let sess = srv.session.clone();
+
+        match msg {
+            ContainersPageMsg::SelectListTab => srv.containers.active_tab = None,
+            ContainersPageMsg::SwitchContainerTab(cid) => {
+                srv.containers.active_tab = Some(cid.clone());
+                if let Some(det) = srv.containers.details.get(&cid) {
+                    let running = det.summary.state.eq_ignore_ascii_case("running");
+                    spawn_load_container_detail(wid, sess, cid, running);
+                }
+            }
+            ContainersPageMsg::CloseContainerTab(cid) => {
+                srv.containers.open_tabs.retain(|t| t != &cid);
+                srv.containers.details.remove(&cid);
+                if srv.containers.active_tab.as_deref() == Some(cid.as_str()) {
+                    srv.containers.active_tab = srv.containers.open_tabs.last().cloned();
+                }
+            }
+            ContainersPageMsg::OpenContainerTab(summary) => {
+                let cid = summary.id.clone();
+                let running = summary.state.eq_ignore_ascii_case("running");
+                if !srv.containers.open_tabs.contains(&cid) {
+                    srv.containers.open_tabs.push(cid.clone());
+                }
+                srv.containers
+                    .details
+                    .entry(cid.clone())
+                    .or_insert_with(|| ContainerTabDetail::new(summary));
+                srv.containers.active_tab = Some(cid.clone());
+                srv.last_container_poll = Instant::now();
+                spawn_load_container_detail(wid, sess, cid, running);
+            }
+            ContainersPageMsg::Refresh => {
+                srv.containers.loading = true;
+                spawn_list_containers(wid, sess);
+            }
+            ContainersPageMsg::SearchChanged(q) => srv.containers.search = q,
+            ContainersPageMsg::ToggleCompose => {
+                srv.containers.show_compose = !srv.containers.show_compose;
+            }
+            ContainersPageMsg::ComposePathChanged(p) => srv.containers.compose_path = p,
+            ContainersPageMsg::ComposeUp => {
+                let dir = srv.containers.compose_path.clone();
+                srv.containers.compose_busy = true;
+                tokio::spawn(async move {
+                    let res = sess.compose_action(&dir, true).await.map_err(|e| e.to_string());
+                    let _ = app_bus_sender().send(BusEvent::ComposeDone(wid, res));
+                });
+            }
+            ContainersPageMsg::ComposeDown => {
+                let dir = srv.containers.compose_path.clone();
+                srv.containers.compose_busy = true;
+                tokio::spawn(async move {
+                    let res = sess.compose_action(&dir, false).await.map_err(|e| e.to_string());
+                    let _ = app_bus_sender().send(BusEvent::ComposeDone(wid, res));
+                });
+            }
+            ContainersPageMsg::Action(cid, action) => {
+                tokio::spawn(async move {
+                    let res = sess
+                        .container_action(&cid, action)
+                        .await
+                        .map_err(|e| e.to_string());
+                    let _ = app_bus_sender().send(BusEvent::ContainerActionDone(wid, res));
+                });
+            }
+            ContainersPageMsg::SelectSubTab(cid, subtab) => {
+                if let Some(det) = srv.containers.details.get_mut(&cid) {
+                    det.subtab = subtab;
+                    let running = det.summary.state.eq_ignore_ascii_case("running");
+                    spawn_load_container_detail(wid, sess, cid, running);
+                }
+            }
+            ContainersPageMsg::RefreshDetail(cid) => {
+                if let Some(det) = srv.containers.details.get(&cid) {
+                    let running = det.summary.state.eq_ignore_ascii_case("running");
+                    spawn_load_container_detail(wid, sess, cid, running);
+                }
+            }
+            ContainersPageMsg::RestartPolicyChanged(cid, val) => {
+                if let Some(det) = srv.containers.details.get_mut(&cid) {
+                    det.restart_policy = val;
+                }
+            }
+            ContainersPageMsg::MemLimitChanged(cid, val) => {
+                if let Some(det) = srv.containers.details.get_mut(&cid) {
+                    det.mem_limit = val;
+                }
+            }
+            ContainersPageMsg::CpuLimitChanged(cid, val) => {
+                if let Some(det) = srv.containers.details.get_mut(&cid) {
+                    det.cpu_limit = val;
+                }
+            }
+            ContainersPageMsg::ApplyUpdate(cid) => {
+                if let Some(det) = srv.containers.details.get(&cid) {
+                    let r = Some(det.restart_policy.clone()).filter(|s| !s.trim().is_empty());
+                    let m = Some(det.mem_limit.clone()).filter(|s| !s.trim().is_empty());
+                    let c = Some(det.cpu_limit.clone()).filter(|s| !s.trim().is_empty());
+                    let cid_c = cid.clone();
+                    tokio::spawn(async move {
+                        let res = sess
+                            .container_update(&cid_c, r.as_deref(), m.as_deref(), c.as_deref())
+                            .await
+                            .map_err(|e| e.to_string());
+                        let _ = app_bus_sender().send(BusEvent::ContainerUpdateDone(wid, cid_c, res));
+                    });
+                }
+            }
+        }
+        Task::none()
+    }
+
+    fn handle_vnc_msg(&mut self, wid: window::Id, msg: VncPageMsg) -> Task<Message> {
+        let Some(srv) = self.server_windows.get_mut(&wid) else {
+            return Task::none();
+        };
+
+        match msg {
+            VncPageMsg::HostChanged(h) => srv.vnc.host = h,
+            VncPageMsg::PortChanged(p) => srv.vnc.port = p,
+            VncPageMsg::PasswordChanged(pw) => srv.vnc.password = pw,
+            VncPageMsg::ToggleShowPassword => srv.vnc.show_password = !srv.vnc.show_password,
+            VncPageMsg::Connect => {
+                let port: u16 = match srv.vnc.port.trim().parse() {
+                    Ok(p) if p > 0 => p,
+                    _ => {
+                        srv.vnc.error = Some("Enter a valid VNC port (e.g. 5900).".into());
+                        return Task::none();
+                    }
+                };
+                let host = if srv.vnc.host.trim().is_empty() {
+                    "127.0.0.1".to_string()
+                } else {
+                    srv.vnc.host.trim().to_string()
+                };
+                let pw = if srv.vnc.password.is_empty() {
+                    None
+                } else {
+                    Some(srv.vnc.password.clone())
+                };
+                srv.vnc.connecting = true;
+                srv.vnc.error = None;
+                spawn_vnc_connect(wid, srv.session.clone(), host, port, pw);
+            }
+            VncPageMsg::Disconnect => {
+                if let Some(vh) = srv.vnc.handle.take() {
+                    vh.disconnect();
+                }
+                srv.vnc.connected = false;
+                srv.vnc.connecting = false;
+                srv.vnc.frame = None;
+            }
+            VncPageMsg::ToggleFit => srv.vnc.fit_to_window = !srv.vnc.fit_to_window,
+            VncPageMsg::SendCtrlAltDel => {
+                if let Some(vh) = &srv.vnc.handle {
+                    vh.send_ctrl_alt_del();
+                }
+            }
+            VncPageMsg::SendLocalClipboard => {
+                if let (Some(vh), Some(txt)) = (&srv.vnc.handle, clipboard_get()) {
+                    vh.send_clipboard(txt);
+                }
+            }
+            VncPageMsg::CopyRemoteClipboard => {
+                if let Some(txt) = &srv.vnc.server_clipboard {
+                    clipboard_set(txt.clone());
+                }
+            }
+            VncPageMsg::RefreshFrame => {
+                if let Some(vh) = &srv.vnc.handle {
+                    vh.request_refresh(false);
+                }
+            }
+            VncPageMsg::Viewport(ev) => match ev {
+                VncUiEvent::Pointer { x, y, mask } => {
+                    if let Some(vh) = &srv.vnc.handle {
+                        vh.send_pointer(x, y, mask);
+                    }
+                }
+                VncUiEvent::Key { keysym, down } => {
+                    if let Some(vh) = &srv.vnc.handle {
+                        vh.send_key(keysym, down);
+                    }
+                }
+                VncUiEvent::Focused => srv.vnc.focused = true,
+            },
+        }
+        Task::none()
+    }
 }
 
-fn view_milestone2_placeholder<'a>(
-    tab: ServerTab,
-    server: &'a ServerSummary,
-) -> Element<'a, Message> {
-    let (title, summary, icon_el): (&'static str, &'static str, Element<'a, Message>) = match tab
-    {
-        ServerTab::Sftp => (
-            "SFTP File Explorer",
-            "Dual-pane directory browser, drag-and-drop upload/download, inline permission editor, and remote text viewer via pure-Rust russh-sftp.",
-            icons::folder_open(44.0, BRAND_400).into(),
-        ),
-        ServerTab::Commands => (
-            "Saved Commands Manager",
-            "Create, organize, and trigger frequently used remote shell scripts. Note: Your saved Snippets dropdown is already live in the Terminal toolbar!",
-            icons::code(44.0, BRAND_400).into(),
-        ),
-        ServerTab::Secrets => (
-            "Per-Server Secrets Vault",
-            "Store encrypted API tokens and credentials per server and export/import .glyph secret bundles. Quick Secrets injection is already active in Terminal!",
-            icons::lock(44.0, BRAND_400).into(),
-        ),
-        ServerTab::Tunnels => (
-            "SSH Port Forwarding & Tunnels",
-            "Managed Local (-L), Remote (-R), and Dynamic SOCKS5 (-D) tunnels over your encrypted SSH session.",
-            icons::network(44.0, BRAND_400).into(),
-        ),
-        ServerTab::Containers => (
-            "Docker & Podman Containers",
-            "Live container table with start, stop, restart, log tailing, and instant exec shell launch.",
-            icons::cube(44.0, BRAND_400).into(),
-        ),
-        ServerTab::Vnc => (
-            "VNC Remote Desktop over SSH",
-            "Pure-Rust RFB viewer tunneled natively over SSH direct-tcpip with zero plaintext exposure.",
-            icons::monitor(44.0, BRAND_400).into(),
-        ),
-        ServerTab::Dashboard | ServerTab::Terminal => unreachable!(),
-    };
+fn remote_parent(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    if trimmed.is_empty() || trimmed == "/" {
+        return "/".to_string();
+    }
+    match trimmed.rfind('/') {
+        Some(0) | None => "/".to_string(),
+        Some(pos) => trimmed[..pos].to_string(),
+    }
+}
 
-    let card = container(
-        column![
-            icon_el,
-            container(
-                text("MILESTONE 2 MODULE")
-                    .size(10)
-                    .font(FONT_MONO_BOLD)
-                    .color(BRAND_300)
-            )
-            .padding([3, 10])
-            .style(pill_badge(
-                rgba(BRAND_500, 0.16),
-                rgba(BRAND_500, 0.35),
-                BRAND_300,
-            )),
-            text(title)
-                .size(22)
-                .font(FONT_MONO_BOLD)
-                .color(TEXT_PRIMARY),
-            text(format!(
-                "Target: {} ({}@{}:{})",
-                display_server_name(server),
-                server.username,
-                server.host,
-                server.port
-            ))
-            .size(12)
-            .font(FONT_MONO)
-            .color(TEXT_MUTED),
-            container(text(summary).size(13).color(TEXT_SECONDARY))
-                .max_width(480)
-                .padding([4, 0]),
-        ]
-        .spacing(12)
-        .align_x(alignment::Horizontal::Center),
-    )
-    .padding(36)
-    .style(|_| {
-        let mut st = dark_card(&glyph_theme());
-        st.border = Border {
-            color: DARK_700,
-            width: 1.0,
-            radius: 16.0.into(),
-        };
-        st
+fn spawn_sftp_readdir(wid: window::Id, sess: SshSession, path: String) {
+    tokio::spawn(async move {
+        let res = sess.sftp_readdir(&path).await.map_err(|e| e.to_string());
+        let _ = app_bus_sender().send(BusEvent::SftpListed(wid, path, res));
     });
+}
 
-    container(card)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_x(Length::Fill)
-        .center_y(Length::Fill)
-        .style(dark_900_bg)
-        .into()
+fn spawn_sftp_upload(wid: window::Id, sess: SshSession, remote_dir: String, files: Vec<PathBuf>) {
+    tokio::spawn(async move {
+        let bus = app_bus_sender();
+        let (ptx, mut prx) = mpsc::unbounded_channel();
+        let bus_p = bus.clone();
+        tokio::spawn(async move {
+            while let Some(p) = prx.recv().await {
+                let _ = bus_p.send(BusEvent::SftpProgress(wid, p));
+            }
+        });
+
+        let mut uploaded = 0usize;
+        for local_path in files {
+            let Some(name) = local_path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let target = join_remote_path(&remote_dir, name);
+            if let Err(e) = sess
+                .sftp_upload_file(&local_path, &target, Some(ptx.clone()))
+                .await
+            {
+                let _ = bus.send(BusEvent::SftpActionDone(wid, Err(e.to_string())));
+                return;
+            }
+            uploaded += 1;
+        }
+        let _ = bus.send(BusEvent::SftpActionDone(
+            wid,
+            Ok(format!("Uploaded {uploaded} file(s) to {remote_dir}")),
+        ));
+    });
+}
+
+fn spawn_list_tunnels(wid: window::Id, sess: SshSession) {
+    tokio::spawn(async move {
+        let list = sess.list_tunnels().await;
+        let _ = app_bus_sender().send(BusEvent::TunnelsListed(wid, list));
+    });
+}
+
+fn spawn_list_containers(wid: window::Id, sess: SshSession) {
+    tokio::spawn(async move {
+        let res = sess
+            .list_containers()
+            .await
+            .map(|(_, list)| list)
+            .map_err(|e| e.to_string());
+        let _ = app_bus_sender().send(BusEvent::ContainersListed(wid, res));
+    });
+}
+
+fn spawn_load_container_detail(
+    wid: window::Id,
+    sess: SshSession,
+    id: String,
+    is_running: bool,
+) {
+    tokio::spawn(async move {
+        let (logs_res, inspect_res) = tokio::join!(
+            sess.container_logs(&id, 250),
+            sess.container_inspect(&id, is_running)
+        );
+        let _ = app_bus_sender().send(BusEvent::ContainerDetailLoaded {
+            window_id: wid,
+            id,
+            logs: logs_res.map_err(|e| e.to_string()),
+            inspect: inspect_res.map_err(|e| e.to_string()),
+        });
+    });
+}
+
+fn spawn_vnc_connect(
+    wid: window::Id,
+    sess: SshSession,
+    host: String,
+    port: u16,
+    password: Option<String>,
+) {
+    let bus = app_bus_sender();
+    tokio::spawn(async move {
+        match sess.open_direct_tcpip(&host, port).await {
+            Ok(stream) => {
+                let (ev_tx, mut ev_rx) = mpsc::unbounded_channel::<VncEvent>();
+                let bus_ev = bus.clone();
+                tokio::spawn(async move {
+                    while let Some(vev) = ev_rx.recv().await {
+                        let _ = bus_ev.send(BusEvent::VncEvent(wid, vev));
+                    }
+                });
+                let res = connect_vnc_stream(stream, password, ev_tx)
+                    .await
+                    .map_err(|e| e.to_string());
+                let _ = bus.send(BusEvent::VncConnected(wid, res));
+            }
+            Err(e) => {
+                let _ = bus.send(BusEvent::VncConnected(wid, Err(e.to_string())));
+            }
+        }
+    });
 }
 
 fn display_server_name(srv: &ServerSummary) -> String {
