@@ -543,7 +543,6 @@ pub fn scissors<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     )
 }
 
-#[allow(dead_code)]
 pub fn folder_tree<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     icon_svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2A1 1 0 0 0 15 3h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M20 21a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-2.9a1 1 0 0 1-.88-.55l-.42-.85a1 1 0 0 0-.9-.6H13a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M3 5a2 2 0 0 0 2 2h3"/><path d="M3 3v13a2 2 0 0 0 2 2h3"/></svg>"#,
@@ -552,7 +551,6 @@ pub fn folder_tree<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     )
 }
 
-#[allow(dead_code)]
 pub fn users<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     icon_svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>"#,
@@ -561,7 +559,6 @@ pub fn users<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     )
 }
 
-#[allow(dead_code)]
 pub fn radio<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     icon_svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/><path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/><path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/></svg>"#,
@@ -570,7 +567,6 @@ pub fn radio<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     )
 }
 
-#[allow(dead_code)]
 pub fn circle_dot<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     icon_svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>"#,
@@ -579,7 +575,6 @@ pub fn circle_dot<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     )
 }
 
-#[allow(dead_code)]
 pub fn command<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     icon_svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></svg>"#,
@@ -588,7 +583,6 @@ pub fn command<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     )
 }
 
-#[allow(dead_code)]
 pub fn cloud_download<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     icon_svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13v8l-4-4"/><path d="m12 21 4-4"/><path d="M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284"/></svg>"#,
@@ -597,7 +591,6 @@ pub fn cloud_download<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     )
 }
 
-#[allow(dead_code)]
 pub fn cable<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     icon_svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1"/><path d="M19 15V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V9"/><path d="M21 21v-2h-4"/><path d="M3 5h4V3"/><path d="M7 5a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1V3"/></svg>"#,
@@ -606,7 +599,6 @@ pub fn cable<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     )
 }
 
-#[allow(dead_code)]
 pub fn globe<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     icon_svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>"#,
@@ -615,7 +607,6 @@ pub fn globe<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     )
 }
 
-#[allow(dead_code)]
 pub fn lock_open<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     icon_svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>"#,
@@ -624,7 +615,6 @@ pub fn lock_open<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     )
 }
 
-#[allow(dead_code)]
 pub fn arrow_right_left<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     icon_svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>"#,
@@ -633,7 +623,6 @@ pub fn arrow_right_left<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     )
 }
 
-#[allow(dead_code)]
 pub fn highlighter<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     icon_svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>"#,
@@ -642,7 +631,6 @@ pub fn highlighter<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     )
 }
 
-#[allow(dead_code)]
 pub fn tag<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     icon_svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>"#,
@@ -651,7 +639,6 @@ pub fn tag<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     )
 }
 
-#[allow(dead_code)]
 pub fn file_down<'a>(size: f32, color: Color) -> svg::Svg<'a> {
     icon_svg(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>"#,

@@ -1,13 +1,14 @@
 use crate::theme::{
     brand_button, danger_ghost_button, dark_card, dark_input, dark_pick_list, dark_scrollable,
-    glass_panel, pill_badge, rgba, secondary_button, BRAND_300, BRAND_400, BRAND_500, DARK_700,
-    DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, GREEN_500, RED_400, TEXT_LIGHT,
-    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, BLUE_400,
+    glass_panel, pill_badge, rgba, secondary_button, BLUE_400, BRAND_300, BRAND_400, BRAND_500,
+    DARK_700, DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, GREEN_500, RED_400,
+    TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400,
 };
 use crate::ui::icons;
+use glyph_core::models::SavedTunnelRule;
 use glyph_core::tunnels::{TunnelDirection, TunnelInfo};
 use iced::widget::{
-    button, column, container, pick_list, row, scrollable, space, text, text_input,
+    button, checkbox, column, container, pick_list, row, scrollable, space, text, text_input,
 };
 use iced::{alignment, Background, Border, Color, Element, Length};
 use std::collections::HashMap;
@@ -16,6 +17,7 @@ use std::collections::HashMap;
 pub enum UiTunnelDirection {
     Local,
     Remote,
+    Dynamic,
 }
 
 #[derive(Debug, Clone)]
@@ -25,6 +27,9 @@ pub struct TunnelsPageState {
     pub target_host: String,
     pub target_port: String,
     pub protocol: String,
+    pub save_as_profile: bool,
+    pub profile_name: String,
+    pub profile_auto_start: bool,
     pub tunnels: Vec<TunnelInfo>,
     pub schemes: HashMap<String, bool>, // true = https, false = http
     pub busy: bool,
@@ -39,6 +44,9 @@ impl Default for TunnelsPageState {
             target_host: "127.0.0.1".to_string(),
             target_port: String::new(),
             protocol: "TCP".to_string(),
+            save_as_profile: false,
+            profile_name: String::new(),
+            profile_auto_start: false,
             tunnels: Vec::new(),
             schemes: HashMap::new(),
             busy: false,
@@ -54,14 +62,23 @@ pub enum TunnelsPageMsg {
     TargetHostChanged(String),
     TargetPortChanged(String),
     ProtocolSelected(String),
+    ToggleSaveProfile(bool),
+    ProfileNameChanged(String),
+    ToggleProfileAutoStart(bool),
     BindSubmit,
+    StartSavedProfile(String),
+    ToggleSavedAutoStart(String),
+    DeleteSavedProfile(String),
     ToggleScheme(String),
     OpenUrl(String),
     StopTunnel(String),
     Refresh,
 }
 
-pub fn view<'a>(st: &'a TunnelsPageState) -> Element<'a, TunnelsPageMsg> {
+pub fn view<'a>(
+    st: &'a TunnelsPageState,
+    saved_tunnels: &'a [SavedTunnelRule],
+) -> Element<'a, TunnelsPageMsg> {
     let header = row![
         container(icons::network(20.0, BRAND_400))
             .padding(10)
@@ -80,7 +97,7 @@ pub fn view<'a>(st: &'a TunnelsPageState) -> Element<'a, TunnelsPageMsg> {
                 .size(20)
                 .font(FONT_MONO_BOLD)
                 .color(TEXT_PRIMARY),
-            text("Encrypted Local (-L) and Remote (-R) SSH tunnels")
+            text("Encrypted Local (-L), Remote (-R), Dynamic SOCKS5 (-D), and Saved Profiles")
                 .size(12)
                 .color(TEXT_SECONDARY),
         ]
@@ -101,114 +118,171 @@ pub fn view<'a>(st: &'a TunnelsPageState) -> Element<'a, TunnelsPageMsg> {
     .spacing(12)
     .align_y(alignment::Vertical::Center);
 
-    let is_local = st.direction == UiTunnelDirection::Local;
+    let dir_pill = |label: &'static str, dir: UiTunnelDirection| {
+        let active = st.direction == dir;
+        button(
+            text(label)
+                .size(12)
+                .font(FONT_MONO_BOLD)
+                .color(if active { Color::WHITE } else { TEXT_SECONDARY }),
+        )
+        .padding([6, 12])
+        .style(move |theme, status| {
+            if active {
+                brand_button(theme, status)
+            } else {
+                secondary_button(theme, status)
+            }
+        })
+        .on_press(TunnelsPageMsg::SelectDirection(dir))
+    };
+
     let dir_pills = row![
-        button(
-            text("Local Forward (-L)")
-                .size(12)
-                .font(FONT_MONO_BOLD)
-                .color(if is_local { Color::WHITE } else { TEXT_SECONDARY }),
-        )
-        .padding([6, 12])
-        .style(move |_, _| {
-            if is_local {
-                brand_button(&crate::theme::glyph_theme(), button::Status::Active)
-            } else {
-                secondary_button(&crate::theme::glyph_theme(), button::Status::Active)
-            }
-        })
-        .on_press(TunnelsPageMsg::SelectDirection(UiTunnelDirection::Local)),
-        button(
-            text("Remote Forward (-R)")
-                .size(12)
-                .font(FONT_MONO_BOLD)
-                .color(if !is_local { Color::WHITE } else { TEXT_SECONDARY }),
-        )
-        .padding([6, 12])
-        .style(move |_, _| {
-            if !is_local {
-                brand_button(&crate::theme::glyph_theme(), button::Status::Active)
-            } else {
-                secondary_button(&crate::theme::glyph_theme(), button::Status::Active)
-            }
-        })
-        .on_press(TunnelsPageMsg::SelectDirection(UiTunnelDirection::Remote)),
+        dir_pill("Local Forward (-L)", UiTunnelDirection::Local),
+        dir_pill("Remote Forward (-R)", UiTunnelDirection::Remote),
+        dir_pill("Dynamic SOCKS5 (-D)", UiTunnelDirection::Dynamic),
     ]
     .spacing(8);
 
-    let bind_placeholder = if is_local {
-        "Local Port (e.g. 8080, 0=auto)"
-    } else {
-        "Remote Listen Port (e.g. 9000)"
-    };
-    let host_placeholder = if is_local {
-        "Remote Host (127.0.0.1)"
-    } else {
-        "Local Host (127.0.0.1)"
-    };
-    let target_placeholder = if is_local {
-        "Remote Port (e.g. 80)"
-    } else {
-        "Local Port (e.g. 3000)"
-    };
+    let form_row: Element<'a, TunnelsPageMsg> = if st.direction == UiTunnelDirection::Dynamic {
+        let port_hint = if st.bind_port.trim().is_empty() {
+            "1080"
+        } else {
+            st.bind_port.trim()
+        };
+        let mut r = row![
+            text_input("Local SOCKS5 Port (e.g. 1080)", &st.bind_port)
+                .on_input(TunnelsPageMsg::BindPortChanged)
+                .on_submit(TunnelsPageMsg::BindSubmit)
+                .padding([9, 10])
+                .size(13)
+                .font(FONT_MONO)
+                .width(Length::Fixed(220.0))
+                .style(dark_input),
+            text(format!("socks5h://127.0.0.1:{port_hint}"))
+                .size(12)
+                .font(FONT_MONO)
+                .color(GREEN_400)
+                .width(Length::Fill),
+        ]
+        .spacing(10)
+        .align_y(alignment::Vertical::Center);
 
-    let protocols = vec!["TCP".to_string(), "UDP".to_string()];
+        let bind_btn = button(
+            row![
+                icons::plug(14.0, Color::WHITE),
+                text(if st.busy { "Binding..." } else { "Bind SOCKS5 (-D)" })
+                    .size(12)
+                    .font(FONT_MONO_BOLD)
+                    .color(Color::WHITE),
+            ]
+            .spacing(6)
+            .align_y(alignment::Vertical::Center),
+        )
+        .padding([9, 14])
+        .style(brand_button)
+        .on_press_maybe((!st.busy).then_some(TunnelsPageMsg::BindSubmit));
+        r = r.push(bind_btn);
+        r.into()
+    } else {
+        let is_local = st.direction == UiTunnelDirection::Local;
+        let bind_placeholder = if is_local {
+            "Local Port (e.g. 8080, 0=auto)"
+        } else {
+            "Remote Listen Port (e.g. 9000)"
+        };
+        let host_placeholder = if is_local {
+            "Remote Host (127.0.0.1)"
+        } else {
+            "Local Host (127.0.0.1)"
+        };
+        let target_placeholder = if is_local {
+            "Remote Port (e.g. 80)"
+        } else {
+            "Local Port (e.g. 3000)"
+        };
+        let protocols = vec!["TCP".to_string(), "UDP".to_string()];
 
-    let mut form_row = row![
-        text_input(bind_placeholder, &st.bind_port)
-            .on_input(TunnelsPageMsg::BindPortChanged)
-            .padding([9, 10])
-            .size(13)
-            .font(FONT_MONO)
-            .width(Length::FillPortion(2))
-            .style(dark_input),
-        text("->").size(13).font(FONT_MONO_BOLD).color(TEXT_MUTED),
-        text_input(host_placeholder, &st.target_host)
-            .on_input(TunnelsPageMsg::TargetHostChanged)
-            .padding([9, 10])
-            .size(13)
-            .font(FONT_MONO)
-            .width(Length::FillPortion(2))
-            .style(dark_input),
-        text(":").size(13).font(FONT_MONO_BOLD).color(TEXT_MUTED),
-        text_input(target_placeholder, &st.target_port)
-            .on_input(TunnelsPageMsg::TargetPortChanged)
-            .on_submit(TunnelsPageMsg::BindSubmit)
-            .padding([9, 10])
-            .size(13)
-            .font(FONT_MONO)
-            .width(Length::FillPortion(2))
-            .style(dark_input),
-        pick_list(protocols, Some(st.protocol.clone()), TunnelsPageMsg::ProtocolSelected)
+        let bind_btn = button(
+            row![
+                icons::plug(14.0, Color::WHITE),
+                text(if st.busy { "Binding..." } else { "Bind Tunnel" })
+                    .size(12)
+                    .font(FONT_MONO_BOLD)
+                    .color(Color::WHITE),
+            ]
+            .spacing(6)
+            .align_y(alignment::Vertical::Center),
+        )
+        .padding([9, 14])
+        .style(brand_button)
+        .on_press_maybe((!st.busy).then_some(TunnelsPageMsg::BindSubmit));
+
+        row![
+            text_input(bind_placeholder, &st.bind_port)
+                .on_input(TunnelsPageMsg::BindPortChanged)
+                .padding([9, 10])
+                .size(13)
+                .font(FONT_MONO)
+                .width(Length::FillPortion(2))
+                .style(dark_input),
+            text("->").size(13).font(FONT_MONO_BOLD).color(TEXT_MUTED),
+            text_input(host_placeholder, &st.target_host)
+                .on_input(TunnelsPageMsg::TargetHostChanged)
+                .padding([9, 10])
+                .size(13)
+                .font(FONT_MONO)
+                .width(Length::FillPortion(2))
+                .style(dark_input),
+            text(":").size(13).font(FONT_MONO_BOLD).color(TEXT_MUTED),
+            text_input(target_placeholder, &st.target_port)
+                .on_input(TunnelsPageMsg::TargetPortChanged)
+                .on_submit(TunnelsPageMsg::BindSubmit)
+                .padding([9, 10])
+                .size(13)
+                .font(FONT_MONO)
+                .width(Length::FillPortion(2))
+                .style(dark_input),
+            pick_list(
+                protocols,
+                Some(st.protocol.clone()),
+                TunnelsPageMsg::ProtocolSelected
+            )
             .padding([8, 12])
             .text_size(12)
             .width(Length::Fixed(86.0))
             .style(dark_pick_list),
+            bind_btn,
+        ]
+        .spacing(8)
+        .align_y(alignment::Vertical::Center)
+        .into()
+    };
+
+    let mut save_row = row![
+        checkbox(st.save_as_profile).on_toggle(TunnelsPageMsg::ToggleSaveProfile),
+        text("Save rule to server profile")
+            .size(12)
+            .color(TEXT_SECONDARY),
     ]
     .spacing(8)
     .align_y(alignment::Vertical::Center);
 
-    let bind_btn = button(
-        row![
-            icons::plug(14.0, Color::WHITE),
-            text(if st.busy { "Binding..." } else { "Bind Tunnel" })
-                .size(12)
-                .font(FONT_MONO_BOLD)
-                .color(Color::WHITE),
-        ]
-        .spacing(6)
-        .align_y(alignment::Vertical::Center),
-    )
-    .padding([9, 14])
-    .style(brand_button);
-    let bind_btn = if st.busy {
-        bind_btn
-    } else {
-        bind_btn.on_press(TunnelsPageMsg::BindSubmit)
-    };
-    form_row = form_row.push(bind_btn);
+    if st.save_as_profile {
+        save_row = save_row
+            .push(
+                text_input("Profile Name (optional)", &st.profile_name)
+                    .on_input(TunnelsPageMsg::ProfileNameChanged)
+                    .padding([6, 10])
+                    .size(12)
+                    .width(Length::Fixed(190.0))
+                    .style(dark_input),
+            )
+            .push(checkbox(st.profile_auto_start).on_toggle(TunnelsPageMsg::ToggleProfileAutoStart))
+            .push(text("Auto-start on connect").size(12).color(TEXT_LIGHT));
+    }
 
-    let form_card = container(column![dir_pills, form_row].spacing(12))
+    let form_card = container(column![dir_pills, form_row, save_row].spacing(10))
         .width(Length::Fill)
         .padding(16)
         .style(glass_panel);
@@ -438,6 +512,112 @@ pub fn view<'a>(st: &'a TunnelsPageState) -> Element<'a, TunnelsPageMsg> {
         ..Default::default()
     });
 
-    body = body.push(table_card);
+    body = body.push(
+        container(table_card)
+            .width(Length::Fill)
+            .height(Length::FillPortion(3)),
+    );
+
+    let mut saved_col = column![].spacing(6);
+    if saved_tunnels.is_empty() {
+        saved_col = saved_col.push(
+            text("No saved tunnel profiles yet. Check \"Save rule to server profile\" above when binding a tunnel.")
+                .size(12)
+                .color(TEXT_MUTED),
+        );
+    } else {
+        for rule in saved_tunnels {
+            let desc = match rule.direction {
+                TunnelDirection::Local => format!(
+                    "-L {}:{} -> {}:{} ({})",
+                    rule.local_port, rule.protocol, rule.remote_host, rule.remote_port, rule.protocol
+                ),
+                TunnelDirection::Remote => format!(
+                    "-R {} -> {}:{} ({})",
+                    rule.remote_port, rule.remote_host, rule.local_port, rule.protocol
+                ),
+                TunnelDirection::Dynamic => format!("-D SOCKS5 127.0.0.1:{}", rule.local_port),
+            };
+            let rid = rule.id.clone();
+            saved_col = saved_col.push(
+                container(
+                    row![
+                        column![
+                            text(&rule.name)
+                                .size(13)
+                                .font(FONT_MONO_BOLD)
+                                .color(TEXT_PRIMARY),
+                            text(desc).size(11).font(FONT_MONO).color(TEXT_SECONDARY),
+                        ]
+                        .spacing(2)
+                        .width(Length::Fill),
+                        button(
+                            text(if rule.auto_start {
+                                "Auto-Start: ON"
+                            } else {
+                                "Auto-Start: OFF"
+                            })
+                            .size(11)
+                            .color(if rule.auto_start {
+                                YELLOW_400
+                            } else {
+                                TEXT_MUTED
+                            }),
+                        )
+                        .padding([5, 9])
+                        .style(secondary_button)
+                        .on_press(TunnelsPageMsg::ToggleSavedAutoStart(rid.clone())),
+                        button(
+                            row![
+                                icons::play(11.0, Color::WHITE),
+                                text("Start").size(11).color(Color::WHITE),
+                            ]
+                            .spacing(5)
+                            .align_y(alignment::Vertical::Center),
+                        )
+                        .padding([5, 10])
+                        .style(brand_button)
+                        .on_press(TunnelsPageMsg::StartSavedProfile(rid.clone())),
+                        button(icons::trash(13.0, RED_400))
+                            .padding([5, 8])
+                            .style(danger_ghost_button)
+                            .on_press(TunnelsPageMsg::DeleteSavedProfile(rid)),
+                    ]
+                    .spacing(8)
+                    .align_y(alignment::Vertical::Center),
+                )
+                .width(Length::Fill)
+                .padding([8, 12])
+                .style(dark_card),
+            );
+        }
+    }
+
+    let saved_card = container(
+        column![
+            row![
+                text("Saved Tunnel Profiles")
+                    .size(14)
+                    .font(FONT_MONO_BOLD)
+                    .color(TEXT_PRIMARY),
+                space().width(Length::Fill),
+                text(format!("{} profiles", saved_tunnels.len()))
+                    .size(11)
+                    .font(FONT_MONO)
+                    .color(TEXT_MUTED),
+            ]
+            .align_y(alignment::Vertical::Center),
+            scrollable(saved_col)
+                .height(Length::Fill)
+                .style(dark_scrollable),
+        ]
+        .spacing(8),
+    )
+    .width(Length::Fill)
+    .height(Length::FillPortion(2))
+    .padding(14)
+    .style(glass_panel);
+
+    body = body.push(saved_card);
     body.width(Length::Fill).height(Length::Fill).into()
 }

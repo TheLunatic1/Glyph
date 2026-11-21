@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 const MAX_EDIT_FILE_BYTES: usize = 5 * 1024 * 1024;
@@ -26,6 +27,7 @@ pub struct SftpEntry {
 pub enum TransferKind {
     Upload,
     Download,
+    RemoteCopy,
 }
 
 #[derive(Debug, Clone)]
@@ -175,6 +177,24 @@ impl SshSession {
         remote_path: &str,
         progress_tx: Option<mpsc::UnboundedSender<SftpProgress>>,
     ) -> Result<u64> {
+        self.sftp_upload_file_with_cancel(
+            local_path,
+            remote_path,
+            Uuid::new_v4().to_string(),
+            progress_tx,
+            None,
+        )
+        .await
+    }
+
+    pub async fn sftp_upload_file_with_cancel(
+        &self,
+        local_path: &Path,
+        remote_path: &str,
+        transfer_id: String,
+        progress_tx: Option<mpsc::UnboundedSender<SftpProgress>>,
+        cancel: Option<CancellationToken>,
+    ) -> Result<u64> {
         let meta = tokio::fs::metadata(local_path)
             .await
             .with_context(|| format!("Cannot stat local file {}", local_path.display()))?;
@@ -184,7 +204,6 @@ impl SshSession {
             .and_then(|n| n.to_str())
             .unwrap_or("upload")
             .to_string();
-        let transfer_id = Uuid::new_v4().to_string();
 
         let sftp = self.sftp_session().await?;
         let mut local = tokio::fs::File::open(local_path).await?;
@@ -193,38 +212,31 @@ impl SshSession {
             .await
             .with_context(|| format!("Failed to create remote file {remote_path}"))?;
 
-        let mut buf = vec![0u8; TRANSFER_CHUNK_BYTES];
-        let mut transferred = 0u64;
-        loop {
-            let n = local.read(&mut buf).await?;
-            if n == 0 {
-                break;
-            }
-            remote.write_all(&buf[..n]).await?;
-            transferred += n as u64;
-            if let Some(tx) = &progress_tx {
-                let _ = tx.send(SftpProgress {
-                    transfer_id: transfer_id.clone(),
-                    kind: TransferKind::Upload,
-                    filename: filename.clone(),
-                    transferred,
-                    total: total.max(1),
-                });
-            }
-        }
-        remote.flush().await?;
-        remote.close().await?;
+        let copied = stream_copy_with_progress(
+            &mut local,
+            &mut remote,
+            TransferKind::Upload,
+            &transfer_id,
+            &filename,
+            total,
+            progress_tx.as_ref(),
+            cancel.as_ref(),
+        )
+        .await;
 
-        if let Some(tx) = &progress_tx {
-            let _ = tx.send(SftpProgress {
-                transfer_id,
-                kind: TransferKind::Upload,
-                filename,
-                transferred: total,
-                total,
-            });
+        match copied {
+            Ok(transferred) => {
+                remote.flush().await?;
+                remote.close().await?;
+                emit_done(progress_tx.as_ref(), transfer_id, TransferKind::Upload, filename, transferred, total);
+                Ok(transferred)
+            }
+            Err(err) => {
+                let _ = remote.close().await;
+                let _ = sftp.remove_file(remote_path).await;
+                Err(err)
+            }
         }
-        Ok(transferred)
     }
 
     pub async fn sftp_download_file(
@@ -232,6 +244,24 @@ impl SshSession {
         remote_path: &str,
         local_path: &Path,
         progress_tx: Option<mpsc::UnboundedSender<SftpProgress>>,
+    ) -> Result<u64> {
+        self.sftp_download_file_with_cancel(
+            remote_path,
+            local_path,
+            Uuid::new_v4().to_string(),
+            progress_tx,
+            None,
+        )
+        .await
+    }
+
+    pub async fn sftp_download_file_with_cancel(
+        &self,
+        remote_path: &str,
+        local_path: &Path,
+        transfer_id: String,
+        progress_tx: Option<mpsc::UnboundedSender<SftpProgress>>,
+        cancel: Option<CancellationToken>,
     ) -> Result<u64> {
         let sftp = self.sftp_session().await?;
         let total = sftp
@@ -245,7 +275,6 @@ impl SshSession {
             .and_then(|n| n.to_str())
             .unwrap_or("download")
             .to_string();
-        let transfer_id = Uuid::new_v4().to_string();
 
         let mut remote = sftp
             .open(remote_path)
@@ -255,38 +284,38 @@ impl SshSession {
             .await
             .with_context(|| format!("Failed to create local file {}", local_path.display()))?;
 
-        let mut buf = vec![0u8; TRANSFER_CHUNK_BYTES];
-        let mut transferred = 0u64;
-        loop {
-            let n = remote.read(&mut buf).await?;
-            if n == 0 {
-                break;
-            }
-            local.write_all(&buf[..n]).await?;
-            transferred += n as u64;
-            if let Some(tx) = &progress_tx {
-                let _ = tx.send(SftpProgress {
-                    transfer_id: transfer_id.clone(),
-                    kind: TransferKind::Download,
-                    filename: filename.clone(),
-                    transferred,
-                    total: total.max(transferred).max(1),
-                });
-            }
-        }
-        local.flush().await?;
-        let _ = remote.close().await;
+        let copied = stream_copy_with_progress(
+            &mut remote,
+            &mut local,
+            TransferKind::Download,
+            &transfer_id,
+            &filename,
+            total,
+            progress_tx.as_ref(),
+            cancel.as_ref(),
+        )
+        .await;
 
-        if let Some(tx) = &progress_tx {
-            let _ = tx.send(SftpProgress {
-                transfer_id,
-                kind: TransferKind::Download,
-                filename,
-                transferred,
-                total: transferred.max(total),
-            });
+        let _ = remote.close().await;
+        match copied {
+            Ok(transferred) => {
+                local.flush().await?;
+                emit_done(
+                    progress_tx.as_ref(),
+                    transfer_id,
+                    TransferKind::Download,
+                    filename,
+                    transferred,
+                    transferred.max(total),
+                );
+                Ok(transferred)
+            }
+            Err(err) => {
+                drop(local);
+                let _ = tokio::fs::remove_file(local_path).await;
+                Err(err)
+            }
         }
-        Ok(transferred)
     }
 
     pub async fn sftp_mkdir(&self, path: &str) -> Result<()> {
@@ -347,5 +376,133 @@ impl SshSession {
         let cmd = format!("cp -r {} {}", posix_quote(src), posix_quote(dst));
         self.exec(&cmd).await?;
         Ok(())
+    }
+}
+
+/// Stream a file directly between two independent SSH/SFTP sessions without
+/// buffering the entire payload on disk locally.
+pub async fn sftp_transfer_between_sessions(
+    src: &SshSession,
+    src_path: &str,
+    dst: &SshSession,
+    dst_path: &str,
+    transfer_id: String,
+    progress_tx: Option<mpsc::UnboundedSender<SftpProgress>>,
+    cancel: Option<CancellationToken>,
+) -> Result<u64> {
+    let src_sftp = src.sftp_session().await?;
+    let dst_sftp = dst.sftp_session().await?;
+    let total = src_sftp
+        .metadata(src_path)
+        .await
+        .ok()
+        .and_then(|m| m.size)
+        .unwrap_or(0);
+    let filename = Path::new(src_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("remote_copy")
+        .to_string();
+
+    let mut src_file = src_sftp
+        .open(src_path)
+        .await
+        .with_context(|| format!("Failed to open source remote file {src_path}"))?;
+    let mut dst_file = dst_sftp
+        .create(dst_path)
+        .await
+        .with_context(|| format!("Failed to create destination remote file {dst_path}"))?;
+
+    let copied = stream_copy_with_progress(
+        &mut src_file,
+        &mut dst_file,
+        TransferKind::RemoteCopy,
+        &transfer_id,
+        &filename,
+        total,
+        progress_tx.as_ref(),
+        cancel.as_ref(),
+    )
+    .await;
+
+    let _ = src_file.close().await;
+    match copied {
+        Ok(transferred) => {
+            dst_file.flush().await?;
+            dst_file.close().await?;
+            emit_done(
+                progress_tx.as_ref(),
+                transfer_id,
+                TransferKind::RemoteCopy,
+                filename,
+                transferred,
+                transferred.max(total),
+            );
+            Ok(transferred)
+        }
+        Err(err) => {
+            let _ = dst_file.close().await;
+            let _ = dst_sftp.remove_file(dst_path).await;
+            Err(err)
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn stream_copy_with_progress<R, W>(
+    reader: &mut R,
+    writer: &mut W,
+    kind: TransferKind,
+    transfer_id: &str,
+    filename: &str,
+    expected_total: u64,
+    progress_tx: Option<&mpsc::UnboundedSender<SftpProgress>>,
+    cancel: Option<&CancellationToken>,
+) -> Result<u64>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    let mut buf = vec![0u8; TRANSFER_CHUNK_BYTES];
+    let mut transferred = 0u64;
+    loop {
+        if cancel.is_some_and(CancellationToken::is_cancelled) {
+            return Err(anyhow!("Transfer cancelled"));
+        }
+        let n = reader.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        writer.write_all(&buf[..n]).await?;
+        transferred += n as u64;
+        if let Some(tx) = progress_tx {
+            let _ = tx.send(SftpProgress {
+                transfer_id: transfer_id.to_string(),
+                kind,
+                filename: filename.to_string(),
+                transferred,
+                total: expected_total.max(transferred).max(1),
+            });
+        }
+    }
+    Ok(transferred)
+}
+
+fn emit_done(
+    progress_tx: Option<&mpsc::UnboundedSender<SftpProgress>>,
+    transfer_id: String,
+    kind: TransferKind,
+    filename: String,
+    transferred: u64,
+    total: u64,
+) {
+    if let Some(tx) = progress_tx {
+        let _ = tx.send(SftpProgress {
+            transfer_id,
+            kind,
+            filename,
+            transferred,
+            total,
+        });
     }
 }

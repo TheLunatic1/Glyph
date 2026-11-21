@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod termius_handlers;
 mod theme;
 mod tray;
 mod ui;

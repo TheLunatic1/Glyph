@@ -11,16 +11,16 @@ use crate::ui::dashboard::{self, DashboardMsg, DashboardState};
 use crate::ui::manager::{self, ManagerMsg, ServerFormState};
 use crate::ui::modals::{
     self, ConnectingModalState, DeleteConfirmState, ExportModalState, HostKeyPromptUi,
-    ImportModalState, ImportStep, ManagerModal, MobileModalState, ModalMsg, SettingsModalState,
-    SshKeysModalState,
+    ImportModalState, ImportStep, ManagerModal, MobileModalState, ModalMsg, SshKeysModalState,
 };
+use crate::ui::quick_terminal::{QuickProtocol, QuickTransport};
 use crate::ui::secrets_page::{self, SecretsBundleMode, SecretsPageMsg, SecretsPageState};
 use crate::ui::sftp_page::{self, SftpEditorState, SftpPageMsg, SftpPageState, SftpPrompt};
 use crate::ui::sidebar::{self, ServerTab, SidebarMsg};
 use crate::ui::splash;
 use crate::ui::terminal_page::{self, TerminalPageMsg, TerminalPageState};
 use crate::ui::titlebar::{self, TitleBarMsg};
-use crate::ui::tunnels_page::{self, TunnelsPageMsg, TunnelsPageState, UiTunnelDirection};
+use crate::ui::tunnels_page::{self, TunnelsPageMsg, TunnelsPageState};
 use crate::ui::vnc_page::{self, VncPageMsg, VncPageState};
 use glyph_api::{
     default_mcp_token_path, ensure_mcp_token, start_local_api, ApiHostKeyPolicy, ApiUiEvent,
@@ -103,6 +103,15 @@ pub enum BusEvent {
     SftpFileSaved(window::Id, String, Result<(), String>),
     SftpActionDone(window::Id, Result<String, String>),
     SftpProgress(window::Id, SftpProgress),
+    SftpPeerListed(window::Id, String, Result<Vec<SftpEntry>, String>),
+    SftpTransferFinished(window::Id, String, Result<String, String>),
+    QuickTerminalData(window::Id, Vec<u8>),
+    QuickTerminalClosed(window::Id, Option<String>),
+    QuickTelnetConnected(window::Id, Result<glyph_core::telnet::TelnetHandle, String>),
+    GroupRunHostDone {
+        server_id: String,
+        result: Result<String, String>,
+    },
     TunnelsListed(window::Id, Vec<TunnelInfo>),
     TunnelOpDone(window::Id, Result<Vec<TunnelInfo>, String>),
     ContainersListed(window::Id, Result<Vec<ContainerSummary>, String>),
@@ -186,6 +195,25 @@ impl fmt::Debug for BusEvent {
             Self::SftpProgress(wid, p) => {
                 f.debug_tuple("SftpProgress").field(wid).field(&p.filename).finish()
             }
+            Self::SftpPeerListed(wid, path, _) => {
+                f.debug_tuple("SftpPeerListed").field(wid).field(path).finish()
+            }
+            Self::SftpTransferFinished(wid, tid, _) => {
+                f.debug_tuple("SftpTransferFinished").field(wid).field(tid).finish()
+            }
+            Self::QuickTerminalData(wid, b) => {
+                f.debug_tuple("QuickTerminalData").field(wid).field(&b.len()).finish()
+            }
+            Self::QuickTerminalClosed(wid, _) => {
+                f.debug_tuple("QuickTerminalClosed").field(wid).finish()
+            }
+            Self::QuickTelnetConnected(wid, _) => {
+                f.debug_tuple("QuickTelnetConnected").field(wid).finish()
+            }
+            Self::GroupRunHostDone { server_id, .. } => f
+                .debug_struct("GroupRunHostDone")
+                .field("server_id", server_id)
+                .finish(),
             Self::TunnelsListed(wid, list) => {
                 f.debug_tuple("TunnelsListed").field(wid).field(&list.len()).finish()
             }
@@ -338,6 +366,22 @@ pub enum Message {
     FileDropped(window::Id, PathBuf),
     FilesHoveredLeft(window::Id),
 
+    UserActivity,
+    LockScreen(crate::ui::lock_screen::LockScreenMsg),
+    TogglePalette,
+    GlobalEscape,
+    PaletteKeyNav(bool),
+    Palette(crate::ui::palette::PaletteMsg),
+    TermiusModalAction(crate::ui::termius_modals::TermiusModalMsg),
+    QuickTerminal(window::Id, crate::ui::quick_terminal::QuickTerminalMsg),
+    IdentityKeyFilePicked(Option<String>),
+    ImportHostsSshFilePicked(Option<String>),
+    ExportSshConfigDone(Result<Option<String>, String>),
+    ImportPuttyFileLoaded(Result<Option<(String, String)>, String>),
+    CloudHostsFetched(Result<Vec<glyph_core::models::ServerConfigInput>, String>),
+    SyncFolderPicked(Option<String>),
+    SyncFinished(Result<String, String>),
+
     FormPrivateKeyPicked(Option<String>),
     ExportFinished(Result<Option<String>, String>),
     ImportFileLoaded(Result<Option<(String, String)>, String>),
@@ -351,23 +395,23 @@ pub enum Message {
     SecretsImportLoaded(window::Id, Result<Option<String>, String>),
 }
 
-struct ServerWindowState {
-    server: ServerSummary,
-    session: SshSession,
-    active_tab: ServerTab,
-    dashboard: DashboardState,
-    terminal: TerminalPageState,
-    sftp: SftpPageState,
-    commands: CommandsPageState,
-    secrets: SecretsPageState,
-    tunnels: TunnelsPageState,
-    containers: ContainersPageState,
-    vnc: VncPageState,
-    last_container_poll: Instant,
-    cached_commands: Vec<CommandSnippet>,
-    cached_secrets: Vec<SecretSummary>,
-    window_size: Size,
-    closing: bool,
+pub(crate) struct ServerWindowState {
+    pub(crate) server: ServerSummary,
+    pub(crate) session: SshSession,
+    pub(crate) active_tab: ServerTab,
+    pub(crate) dashboard: DashboardState,
+    pub(crate) terminal: TerminalPageState,
+    pub(crate) sftp: SftpPageState,
+    pub(crate) commands: CommandsPageState,
+    pub(crate) secrets: SecretsPageState,
+    pub(crate) tunnels: TunnelsPageState,
+    pub(crate) containers: ContainersPageState,
+    pub(crate) vnc: VncPageState,
+    pub(crate) last_container_poll: Instant,
+    pub(crate) cached_commands: Vec<CommandSnippet>,
+    pub(crate) cached_secrets: Vec<SecretSummary>,
+    pub(crate) window_size: Size,
+    pub(crate) closing: bool,
 }
 
 impl ServerWindowState {
@@ -399,27 +443,45 @@ impl ServerWindowState {
 }
 
 pub struct GlyphApp {
-    vault: Arc<Mutex<VaultManager>>,
-    api_sessions: Arc<AsyncMutex<HashMap<String, SshSession>>>,
-    servers: Vec<ServerSummary>,
-    ssh_keys: Vec<SshKeySummary>,
-    known_hosts: Vec<KnownHostEntry>,
-    tray: Option<TrayManager>,
+    pub(crate) vault: Arc<Mutex<VaultManager>>,
+    pub(crate) api_sessions: Arc<AsyncMutex<HashMap<String, SshSession>>>,
+    pub(crate) servers: Vec<ServerSummary>,
+    pub(crate) ssh_keys: Vec<SshKeySummary>,
+    pub(crate) known_hosts: Vec<KnownHostEntry>,
+    pub(crate) tray: Option<TrayManager>,
 
-    manager_window: Option<window::Id>,
-    manager_size: Size,
-    manager_visible: bool,
-    show_splash: bool,
-    splash_started_at: Option<Instant>,
-    splash_alpha: f32,
-    boot_tick_count: u8,
-    disconnect_banner: Option<String>,
-    form: Option<ServerFormState>,
-    modal: Option<ManagerModal>,
-    connect_started_at: Option<Instant>,
+    pub(crate) groups: Vec<glyph_core::models::HostGroup>,
+    pub(crate) identities: Vec<glyph_core::models::IdentitySummary>,
+    pub(crate) snippet_packages: Vec<glyph_core::models::SnippetPackage>,
+    pub(crate) highlight_rules: Vec<glyph_core::models::HighlightRule>,
+    pub(crate) compiled_highlights: Vec<glyph_terminal::CompiledHighlightRule>,
+    pub(crate) app_lock_cfg: glyph_core::models::AppLockConfig,
 
-    server_windows: BTreeMap<window::Id, ServerWindowState>,
-    is_quitting: bool,
+    pub(crate) manager_window: Option<window::Id>,
+    pub(crate) manager_size: Size,
+    pub(crate) manager_visible: bool,
+    pub(crate) manager_search: String,
+    pub(crate) selected_group_filter: Option<String>,
+    pub(crate) selected_tag_filter: Option<String>,
+    pub(crate) show_splash: bool,
+    pub(crate) splash_started_at: Option<Instant>,
+    pub(crate) splash_alpha: f32,
+    pub(crate) boot_tick_count: u8,
+    pub(crate) disconnect_banner: Option<String>,
+    pub(crate) form: Option<ServerFormState>,
+    pub(crate) modal: Option<ManagerModal>,
+    pub(crate) termius_modal: Option<crate::ui::termius_modals::TermiusModal>,
+    pub(crate) termius_modal_window: Option<window::Id>,
+    pub(crate) palette: crate::ui::palette::CommandPaletteState,
+    pub(crate) locked: bool,
+    pub(crate) lock_screen: crate::ui::lock_screen::LockScreenState,
+    pub(crate) last_activity: Instant,
+    pub(crate) connect_started_at: Option<Instant>,
+
+    pub(crate) server_windows: BTreeMap<window::Id, ServerWindowState>,
+    pub(crate) quick_windows: BTreeMap<window::Id, crate::ui::quick_terminal::QuickTerminalState>,
+    pub(crate) transfer_cancels: HashMap<String, tokio_util::sync::CancellationToken>,
+    pub(crate) is_quitting: bool,
 }
 
 pub fn run() -> iced::Result {
@@ -449,16 +511,25 @@ impl GlyphApp {
         let (manager_id, open_task) = window::open(manager_window_settings());
         let api_task = start_local_api_task(Arc::clone(&vault), Arc::clone(&api_sessions));
 
-        let app = Self {
+        let mut app = Self {
             vault,
             api_sessions,
             servers,
             ssh_keys,
             known_hosts,
             tray,
+            groups: Vec::new(),
+            identities: Vec::new(),
+            snippet_packages: Vec::new(),
+            highlight_rules: Vec::new(),
+            compiled_highlights: Vec::new(),
+            app_lock_cfg: glyph_core::models::AppLockConfig::default(),
             manager_window: Some(manager_id),
             manager_size: Size::new(1200.0, 800.0),
             manager_visible: true,
+            manager_search: String::new(),
+            selected_group_filter: None,
+            selected_tag_filter: None,
             show_splash: true,
             splash_started_at: None,
             splash_alpha: 1.0,
@@ -466,15 +537,25 @@ impl GlyphApp {
             disconnect_banner: None,
             form: None,
             modal: None,
+            termius_modal: None,
+            termius_modal_window: None,
+            palette: crate::ui::palette::CommandPaletteState::default(),
+            locked: false,
+            lock_screen: crate::ui::lock_screen::LockScreenState::default(),
+            last_activity: Instant::now(),
             connect_started_at: None,
             server_windows: BTreeMap::new(),
+            quick_windows: BTreeMap::new(),
+            transfer_cancels: HashMap::new(),
             is_quitting: false,
         };
+        app.reload_termius_caches();
+        app.locked = app.app_lock_cfg.enabled;
 
         (app, Task::batch([open_task.discard(), api_task]))
     }
 
-    fn with_vault<R>(&self, f: impl FnOnce(&mut VaultManager) -> R) -> R {
+    pub(crate) fn with_vault<R>(&self, f: impl FnOnce(&mut VaultManager) -> R) -> R {
         let mut guard = self.vault.lock().expect("Vault mutex poisoned");
         f(&mut guard)
     }
@@ -486,6 +567,8 @@ impl GlyphApp {
                 "Glyph — {label} ({}@{})",
                 srv.server.username, srv.server.host
             )
+        } else if let Some(qt) = self.quick_windows.get(&id) {
+            qt.title()
         } else {
             "Glyph".to_string()
         }
@@ -517,12 +600,38 @@ impl GlyphApp {
                 iced::Event::Window(window::Event::FilesHoveredLeft) => {
                     Some(Message::FilesHoveredLeft(wid))
                 }
+                iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_)) => {
+                    Some(Message::UserActivity)
+                }
+                iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                    key, modifiers, ..
+                }) => {
+                    if modifiers.command() {
+                        if let iced::keyboard::Key::Character(c) = &key {
+                            if c.eq_ignore_ascii_case("k") {
+                                return Some(Message::TogglePalette);
+                            }
+                        }
+                    }
+                    match key {
+                        iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) => {
+                            Some(Message::GlobalEscape)
+                        }
+                        iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowUp) => {
+                            Some(Message::PaletteKeyNav(false))
+                        }
+                        iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowDown) => {
+                            Some(Message::PaletteKeyNav(true))
+                        }
+                        _ => None,
+                    }
+                }
                 _ => None,
             }),
         ])
     }
 
-    fn refresh_vault_cache(&mut self) {
+    pub(crate) fn refresh_vault_cache(&mut self) {
         let (servers, ssh_keys, known_hosts) = self.with_vault(|v| {
             (
                 v.list_servers(),
@@ -536,9 +645,10 @@ impl GlyphApp {
         if let Some(tray) = &mut self.tray {
             tray.update_servers(&self.servers);
         }
+        self.reload_termius_caches();
     }
 
-    fn show_manager_window(&mut self) -> Task<Message> {
+    pub(crate) fn show_manager_window(&mut self) -> Task<Message> {
         if let Some(mid) = self.manager_window {
             self.manager_visible = true;
             Task::batch([
@@ -565,6 +675,10 @@ impl GlyphApp {
                 vh.disconnect();
             }
         }
+        for qt in self.quick_windows.values() {
+            qt.transport.close();
+        }
+        self.quick_windows.clear();
         self.server_windows.clear();
         let api_handle = api_handle_cell().lock().ok().and_then(|mut g| g.take());
         let api_sessions = Arc::clone(&self.api_sessions);
@@ -581,7 +695,140 @@ impl GlyphApp {
     }
 
     fn update(&mut self, msg: Message) -> Task<Message> {
+        if !matches!(msg, Message::Tick | Message::Bus(_)) {
+            self.last_activity = Instant::now();
+        }
         match msg {
+            Message::UserActivity => Task::none(),
+            Message::LockScreen(lmsg) => self.handle_lock_screen_msg(lmsg),
+            Message::TogglePalette => {
+                if self.locked {
+                    return Task::none();
+                }
+                self.palette.open = !self.palette.open;
+                self.palette.query.clear();
+                self.palette.selected_idx = 0;
+                if self.palette.open {
+                    self.rebuild_palette();
+                }
+                Task::none()
+            }
+            Message::GlobalEscape => {
+                if self.palette.open {
+                    self.palette.open = false;
+                    self.palette.query.clear();
+                } else if self.termius_modal.is_some() {
+                    self.termius_modal = None;
+                    self.termius_modal_window = None;
+                } else if self.modal.is_some() {
+                    self.modal = None;
+                }
+                Task::none()
+            }
+            Message::PaletteKeyNav(down) => {
+                self.handle_palette_nav(down);
+                Task::none()
+            }
+            Message::Palette(pmsg) => self.handle_palette_msg(pmsg),
+            Message::TermiusModalAction(tmsg) => self.handle_termius_modal_msg(tmsg),
+            Message::QuickTerminal(wid, qmsg) => self.handle_quick_terminal_msg(wid, qmsg),
+            Message::IdentityKeyFilePicked(opt) => {
+                if let (Some(path), Some(crate::ui::termius_modals::TermiusModal::Identities(st))) =
+                    (opt, &mut self.termius_modal)
+                {
+                    st.private_key_path = path;
+                }
+                Task::none()
+            }
+            Message::ImportHostsSshFilePicked(opt) => {
+                if let (
+                    Some(path),
+                    Some(crate::ui::termius_modals::TermiusModal::ImportHosts(st)),
+                ) = (opt, &mut self.termius_modal)
+                {
+                    st.ssh_config_path = path;
+                }
+                Task::none()
+            }
+            Message::ExportSshConfigDone(res) => {
+                if let Some(crate::ui::termius_modals::TermiusModal::ImportHosts(st)) =
+                    &mut self.termius_modal
+                {
+                    match res {
+                        Ok(Some(p)) => {
+                            st.error = None;
+                            st.status = Some(format!("Exported OpenSSH config -> {p}"));
+                        }
+                        Ok(None) => {}
+                        Err(e) => st.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+            Message::ImportPuttyFileLoaded(res) => {
+                if let Some(crate::ui::termius_modals::TermiusModal::ImportHosts(st)) =
+                    &mut self.termius_modal
+                {
+                    match res {
+                        Ok(Some((path, body))) => {
+                            st.putty_csv_path = path;
+                            st.putty_text = body.clone();
+                            let parsed = if body.contains("\\Sessions\\")
+                                || body.starts_with("Windows Registry Editor")
+                            {
+                                glyph_core::importers::parse_putty_reg(&body)
+                            } else {
+                                glyph_core::importers::parse_hosts_csv(&body)
+                            };
+                            st.selected = vec![true; parsed.len()];
+                            st.status = Some(format!("Loaded {} host(s) from file.", parsed.len()));
+                            st.error = None;
+                            st.preview = parsed;
+                        }
+                        Ok(None) => {}
+                        Err(e) => st.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+            Message::CloudHostsFetched(res) => {
+                if let Some(crate::ui::termius_modals::TermiusModal::ImportHosts(st)) =
+                    &mut self.termius_modal
+                {
+                    st.loading = false;
+                    match res {
+                        Ok(list) => {
+                            st.selected = vec![true; list.len()];
+                            st.status =
+                                Some(format!("Fetched {} cloud instance(s).", list.len()));
+                            st.error = None;
+                            st.preview = list;
+                        }
+                        Err(e) => st.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+            Message::SyncFolderPicked(opt) => {
+                if let (Some(path), Some(ManagerModal::Settings(st))) = (opt, &mut self.modal) {
+                    st.sync_folder_path = path;
+                }
+                Task::none()
+            }
+            Message::SyncFinished(res) => {
+                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
+                    st.sync_busy = false;
+                    match res {
+                        Ok(msg) => {
+                            st.sync_error = None;
+                            st.sync_status = Some(msg);
+                        }
+                        Err(e) => st.sync_error = Some(e),
+                    }
+                }
+                self.refresh_vault_cache();
+                Task::none()
+            }
             Message::Tick => self.handle_tick(),
             Message::LocalApiStarted(res) => {
                 if let Err(e) = res {
@@ -647,11 +894,13 @@ impl GlyphApp {
                 Task::none()
             }
             Message::FileDropped(wid, path) => {
-                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                let target_dir = self.server_windows.get_mut(&wid).and_then(|srv| {
                     srv.sftp.drag_hover = false;
-                    if srv.active_tab == ServerTab::Sftp && srv.sftp.opened && path.is_file() {
-                        spawn_sftp_upload(wid, srv.session.clone(), srv.sftp.current_path.clone(), vec![path]);
-                    }
+                    (srv.active_tab == ServerTab::Sftp && srv.sftp.opened && path.is_file())
+                        .then(|| srv.sftp.current_path.clone())
+                });
+                if let Some(dir) = target_dir {
+                    self.enqueue_upload_files(wid, dir, vec![path]);
                 }
                 Task::none()
             }
@@ -756,38 +1005,15 @@ impl GlyphApp {
             }
             Message::SftpUploadPicked(wid, paths) => {
                 if !paths.is_empty() {
-                    if let Some(srv) = self.server_windows.get(&wid) {
-                        spawn_sftp_upload(
-                            wid,
-                            srv.session.clone(),
-                            srv.sftp.current_path.clone(),
-                            paths,
-                        );
+                    if let Some(dir) = self.server_windows.get(&wid).map(|s| s.sftp.current_path.clone()) {
+                        self.enqueue_upload_files(wid, dir, paths);
                     }
                 }
                 Task::none()
             }
             Message::SftpDownloadSavePicked(wid, remote_path, save_opt) => {
                 if let Some(local_path) = save_opt {
-                    if let Some(srv) = self.server_windows.get(&wid) {
-                        let sess = srv.session.clone();
-                        tokio::spawn(async move {
-                            let bus = app_bus_sender();
-                            let (ptx, mut prx) = mpsc::unbounded_channel();
-                            let bus_p = bus.clone();
-                            tokio::spawn(async move {
-                                while let Some(p) = prx.recv().await {
-                                    let _ = bus_p.send(BusEvent::SftpProgress(wid, p));
-                                }
-                            });
-                            let res = sess
-                                .sftp_download_file(&remote_path, &local_path, Some(ptx))
-                                .await
-                                .map(|n| format!("Downloaded {n} bytes to {}", local_path.display()))
-                                .map_err(|e| e.to_string());
-                            let _ = bus.send(BusEvent::SftpActionDone(wid, res));
-                        });
-                    }
+                    self.enqueue_download_file(wid, remote_path, local_path);
                 }
                 Task::none()
             }
@@ -859,6 +1085,17 @@ impl GlyphApp {
             }
         }
 
+        if !self.locked && self.app_lock_cfg.enabled && self.app_lock_cfg.idle_timeout_mins > 0 {
+            let limit_secs = u64::from(self.app_lock_cfg.idle_timeout_mins) * 60;
+            if self.last_activity.elapsed().as_secs() >= limit_secs {
+                self.locked = true;
+                self.lock_screen = crate::ui::lock_screen::LockScreenState {
+                    idle_locked: true,
+                    ..Default::default()
+                };
+            }
+        }
+
         if let Some(ManagerModal::Connecting(st)) = &mut self.modal {
             if st.error.is_none() && st.host_key_prompt.is_none() {
                 if let Some(started) = self.connect_started_at {
@@ -923,13 +1160,18 @@ impl GlyphApp {
         }
     }
 
-    fn handle_window_close(&mut self, wid: window::Id) -> Task<Message> {
+    pub(crate) fn handle_window_close(&mut self, wid: window::Id) -> Task<Message> {
         if Some(wid) == self.manager_window {
             if self.tray.is_some() && !self.is_quitting {
                 self.manager_visible = false;
                 return window::set_mode(wid, window::Mode::Hidden);
             }
             return self.quit_all();
+        }
+
+        if let Some(qt) = self.quick_windows.remove(&wid) {
+            qt.transport.close();
+            return window::close(wid);
         }
 
         if let Some(mut srv) = self.server_windows.remove(&wid) {
@@ -944,6 +1186,7 @@ impl GlyphApp {
                 api_sessions.lock().await.remove(&sid);
                 sess.disconnect().await;
             });
+            self.rebuild_palette();
             return Task::batch([window::close(wid), self.show_manager_window()]);
         }
 
@@ -1049,6 +1292,8 @@ impl GlyphApp {
                     new_wid,
                     ServerWindowState::new(server, session, cached_commands, cached_secrets),
                 );
+                self.init_server_termius_hooks(new_wid);
+                self.rebuild_palette();
 
                 Task::batch([open_task.discard(), window::gain_focus(new_wid)])
             }
@@ -1068,8 +1313,23 @@ impl GlyphApp {
                 tab_id,
                 handle,
             } => {
+                let mut auto_cmd: Option<String> = None;
                 if let Some(srv) = self.server_windows.get_mut(&window_id) {
                     srv.terminal.set_shell(&tab_id, handle);
+                    if tab_id == "tab-main" && !srv.terminal.startup_sent {
+                        srv.terminal.startup_sent = true;
+                        let cmd = srv.server.startup_command.trim();
+                        if !cmd.is_empty() {
+                            auto_cmd = Some(cmd.to_string());
+                        }
+                    }
+                }
+                if let Some(cmd) = auto_cmd {
+                    let mut payload = cmd.into_bytes();
+                    payload.push(b'\r');
+                    if let Some(srv) = self.server_windows.get(&window_id) {
+                        srv.terminal.send_input(&tab_id, payload);
+                    }
                 }
                 Task::none()
             }
@@ -1082,6 +1342,9 @@ impl GlyphApp {
                             srv.dashboard.stats = snap;
                         }
                         SessionEvent::Shell(ShellEvent::Data { tab_id, bytes }) => {
+                            if let Some(rec) = srv.terminal.recorders.get_mut(&tab_id) {
+                                rec.record_output(&bytes);
+                            }
                             srv.terminal.feed_output(&tab_id, &bytes);
                         }
                         SessionEvent::Shell(ShellEvent::Closed { tab_id }) => {
@@ -1209,7 +1472,139 @@ impl GlyphApp {
             }
             BusEvent::SftpProgress(wid, p) => {
                 if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    if let Some(q) = srv
+                        .sftp
+                        .transfer_queue
+                        .iter_mut()
+                        .find(|q| q.id == p.transfer_id)
+                    {
+                        q.transferred = p.transferred;
+                        q.total = p.total;
+                    }
                     srv.sftp.transfer = Some(p);
+                }
+                Task::none()
+            }
+            BusEvent::SftpPeerListed(wid, path, res) => {
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    srv.sftp.remote_peer_loading = false;
+                    match res {
+                        Ok(entries) => {
+                            srv.sftp.remote_peer_path = path;
+                            srv.sftp.remote_peer_entries = entries;
+                        }
+                        Err(e) => srv.sftp.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+            BusEvent::SftpTransferFinished(wid, tid, res) => {
+                self.transfer_cancels.remove(&tid);
+                let mut refresh_peer = None;
+                if let Some(srv) = self.server_windows.get_mut(&wid) {
+                    srv.sftp.transfer = None;
+                    if let Some(q) = srv.sftp.transfer_queue.iter_mut().find(|q| q.id == tid) {
+                        match &res {
+                            Ok(_) => {
+                                q.transferred = q.total;
+                                q.status = crate::ui::sftp_page::TransferStatus::Done;
+                            }
+                            Err(e) if e.contains("cancelled") => {
+                                q.status = crate::ui::sftp_page::TransferStatus::Cancelled;
+                            }
+                            Err(e) => {
+                                q.status = crate::ui::sftp_page::TransferStatus::Failed(e.clone());
+                            }
+                        }
+                    }
+                    match res {
+                        Ok(msg) => {
+                            srv.sftp.error = None;
+                            srv.sftp.status = Some(msg);
+                            spawn_sftp_readdir(wid, srv.session.clone(), srv.sftp.current_path.clone());
+                            if srv.sftp.dual_pane == crate::ui::sftp_page::DualPaneMode::LocalFs {
+                                let lp = srv.sftp.local_path.clone();
+                                if let Ok((p, list)) = crate::ui::sftp_page::list_local_dir(&lp) {
+                                    srv.sftp.local_path = p;
+                                    srv.sftp.local_entries = list;
+                                }
+                            } else if let crate::ui::sftp_page::DualPaneMode::RemoteServer(pwid) =
+                                srv.sftp.dual_pane
+                            {
+                                refresh_peer = Some((pwid, srv.sftp.remote_peer_path.clone()));
+                            }
+                        }
+                        Err(e) => srv.sftp.error = Some(e),
+                    }
+                }
+                if let Some((pwid, peer_path)) = refresh_peer {
+                    if let Some(psess) = self.server_windows.get(&pwid).map(|s| s.session.clone()) {
+                        spawn_sftp_readdir_peer(wid, psess, peer_path);
+                    }
+                }
+                Task::none()
+            }
+            BusEvent::QuickTerminalData(wid, bytes) => {
+                if let Some(qt) = self.quick_windows.get_mut(&wid) {
+                    let has_dsr = bytes.windows(4).any(|w| w == b"\x1b[6n");
+                    qt.emulator.feed_bytes(&bytes);
+                    if has_dsr && qt.protocol == QuickProtocol::LocalShell {
+                        let (r, c) = qt.emulator.cursor_position_1based();
+                        qt.transport.write(format!("\x1b[{r};{c}R").into_bytes());
+                    }
+                    if let Some(rec) = &mut qt.recorder {
+                        rec.record_output(&bytes);
+                    }
+                }
+                Task::none()
+            }
+            BusEvent::QuickTerminalClosed(wid, reason) => {
+                if let Some(qt) = self.quick_windows.get_mut(&wid) {
+                    qt.transport = QuickTransport::Disconnected;
+                    if let Some(r) = reason {
+                        qt.emulator.feed_bytes(format!("\r\n\x1b[33m[{r}]\x1b[0m\r\n").as_bytes());
+                        qt.status = Some(r);
+                    }
+                }
+                Task::none()
+            }
+            BusEvent::QuickTelnetConnected(wid, res) => {
+                if let Some(qt) = self.quick_windows.get_mut(&wid) {
+                    match res {
+                        Ok(handle) => {
+                            qt.transport = QuickTransport::Telnet(handle);
+                            qt.error = None;
+                            qt.status = Some("Telnet connected".to_string());
+                        }
+                        Err(e) => {
+                            qt.transport = QuickTransport::Disconnected;
+                            qt.error = Some(e);
+                        }
+                    }
+                }
+                Task::none()
+            }
+            BusEvent::GroupRunHostDone { server_id, result } => {
+                if let Some(crate::ui::termius_modals::TermiusModal::GroupRun(st)) =
+                    &mut self.termius_modal
+                {
+                    if let Some(row) = st.results.iter_mut().find(|r| r.server_id == server_id) {
+                        match result {
+                            Ok(out) => {
+                                row.status = "Success".to_string();
+                                row.output = if out.trim().is_empty() {
+                                    "(no output)".to_string()
+                                } else {
+                                    out
+                                };
+                            }
+                            Err(err) => {
+                                row.status = "Failed".to_string();
+                                row.output = err;
+                            }
+                        }
+                    }
+                    st.running = st.results.iter().any(|r| r.status == "Running");
                 }
                 Task::none()
             }
@@ -1386,16 +1781,91 @@ impl GlyphApp {
         }
     }
 
-    fn handle_manager_msg(&mut self, msg: ManagerMsg) -> Task<Message> {
+    pub(crate) fn handle_manager_msg(&mut self, msg: ManagerMsg) -> Task<Message> {
         match msg {
             ManagerMsg::DismissDisconnectBanner => {
                 self.disconnect_banner = None;
+                Task::none()
+            }
+            ManagerMsg::SearchChanged(q) => {
+                self.manager_search = q;
+                Task::none()
+            }
+            ManagerMsg::OpenPalette => {
+                self.palette.open = true;
+                self.palette.query.clear();
+                self.palette.selected_idx = 0;
+                self.rebuild_palette();
+                Task::none()
+            }
+            ManagerMsg::LockVaultNow => {
+                self.locked = true;
+                self.lock_screen = crate::ui::lock_screen::LockScreenState::default();
                 Task::none()
             }
             ManagerMsg::OpenMobileModal => self.open_mobile_modal(),
             ManagerMsg::OpenSshKeysModal => {
                 self.modal = Some(ManagerModal::SshKeys(SshKeysModalState::default()));
                 Task::none()
+            }
+            ManagerMsg::OpenIdentitiesModal => {
+                self.termius_modal_window = self.manager_window;
+                self.termius_modal = Some(crate::ui::termius_modals::TermiusModal::Identities(
+                    crate::ui::termius_modals::IdentitiesModalState::default(),
+                ));
+                Task::none()
+            }
+            ManagerMsg::OpenImportHostsModal => {
+                self.termius_modal_window = self.manager_window;
+                self.termius_modal = Some(crate::ui::termius_modals::TermiusModal::ImportHosts(
+                    crate::ui::termius_modals::HostImportModalState::default(),
+                ));
+                Task::none()
+            }
+            ManagerMsg::SelectGroupFilter(gid) => {
+                self.selected_group_filter = gid;
+                Task::none()
+            }
+            ManagerMsg::SelectTagFilter(tag) => {
+                self.selected_tag_filter = tag;
+                Task::none()
+            }
+            ManagerMsg::OpenNewGroupModal => {
+                self.termius_modal_window = self.manager_window;
+                self.termius_modal = Some(crate::ui::termius_modals::TermiusModal::Group(
+                    crate::ui::termius_modals::GroupModalState {
+                        parent_id: self.selected_group_filter.clone(),
+                        ..Default::default()
+                    },
+                ));
+                Task::none()
+            }
+            ManagerMsg::OpenEditGroupModal(gid) => {
+                if let Some(grp) = self.groups.iter().find(|g| g.id == gid).cloned() {
+                    self.termius_modal_window = self.manager_window;
+                    self.termius_modal = Some(crate::ui::termius_modals::TermiusModal::Group(
+                        crate::ui::termius_modals::GroupModalState {
+                            editing_id: Some(grp.id),
+                            name: grp.name,
+                            parent_id: grp.parent_id,
+                            identity_id: grp.identity_id,
+                            proxy_jump_id: grp.proxy_jump_id,
+                            default_port: grp.default_port.unwrap_or(22).to_string(),
+                            tags: grp.tags.join(", "),
+                            error: None,
+                        },
+                    ));
+                }
+                Task::none()
+            }
+            ManagerMsg::OpenLocalTerminal => {
+                self.open_quick_terminal(crate::ui::quick_terminal::QuickProtocol::LocalShell)
+            }
+            ManagerMsg::OpenSerialConsole => {
+                self.open_quick_terminal(crate::ui::quick_terminal::QuickProtocol::Serial)
+            }
+            ManagerMsg::OpenTelnetConsole => {
+                self.open_quick_terminal(crate::ui::quick_terminal::QuickProtocol::Telnet)
             }
             ManagerMsg::OpenImportModal => {
                 self.modal = Some(ManagerModal::Import(ImportModalState::default()));
@@ -1406,22 +1876,17 @@ impl GlyphApp {
                 Task::none()
             }
             ManagerMsg::OpenSettingsModal => {
-                let (enc, dir) = self.with_vault(|v| {
-                    (
-                        v.is_encryption_available(),
-                        v.data_dir().display().to_string(),
-                    )
-                });
-                self.modal = Some(ManagerModal::Settings(Box::new(SettingsModalState::new(
-                    enc, dir,
-                ))));
+                self.open_settings_modal_tab(crate::ui::modals::SettingsTab::AiAgents);
                 Task::none()
             }
             ManagerMsg::ToggleAddForm => {
                 if matches!(&self.form, Some(f) if f.editing_id.is_none()) {
                     self.form = None;
                 } else {
-                    self.form = Some(ServerFormState::default());
+                    self.form = Some(ServerFormState {
+                        group_id: self.selected_group_filter.clone(),
+                        ..Default::default()
+                    });
                 }
                 Task::none()
             }
@@ -1550,6 +2015,60 @@ impl GlyphApp {
                 }
                 Task::none()
             }
+            ManagerMsg::FormSelectGroup(pick) => {
+                if let Some(f) = &mut self.form {
+                    f.group_id = pick.id;
+                }
+                Task::none()
+            }
+            ManagerMsg::FormSelectIdentity(pick) => {
+                if let Some(f) = &mut self.form {
+                    f.identity_id = pick.id;
+                }
+                Task::none()
+            }
+            ManagerMsg::FormTagsChanged(v) => {
+                if let Some(f) = &mut self.form {
+                    f.tags = v;
+                }
+                Task::none()
+            }
+            ManagerMsg::FormForwardAgentToggled(v) => {
+                if let Some(f) = &mut self.form {
+                    f.forward_agent = v;
+                }
+                Task::none()
+            }
+            ManagerMsg::FormAutoLogToggled(v) => {
+                if let Some(f) = &mut self.form {
+                    f.auto_log = v;
+                }
+                Task::none()
+            }
+            ManagerMsg::FormKeepaliveChanged(v) => {
+                if let Some(f) = &mut self.form {
+                    f.keepalive_secs = v;
+                }
+                Task::none()
+            }
+            ManagerMsg::FormStartupCommandChanged(v) => {
+                if let Some(f) = &mut self.form {
+                    f.startup_command = v;
+                }
+                Task::none()
+            }
+            ManagerMsg::FormEnvVarsChanged(v) => {
+                if let Some(f) = &mut self.form {
+                    f.env_vars = v;
+                }
+                Task::none()
+            }
+            ManagerMsg::FormPortKnockChanged(v) => {
+                if let Some(f) = &mut self.form {
+                    f.port_knock = v;
+                }
+                Task::none()
+            }
             ManagerMsg::SubmitForm => {
                 if let Some(f) = &mut self.form {
                     match f.to_input() {
@@ -1578,6 +2097,9 @@ impl GlyphApp {
     }
 
     fn handle_modal_msg(&mut self, msg: ModalMsg) -> Task<Message> {
+        if let Some(task) = self.handle_settings_termius_msg(msg.clone()) {
+            return task;
+        }
         match msg {
             ModalMsg::Noop => Task::none(),
 
@@ -2305,6 +2827,7 @@ impl GlyphApp {
                 }
                 Task::none()
             }
+            _ => Task::none(),
         }
     }
 
@@ -2460,12 +2983,58 @@ impl GlyphApp {
                     srv.terminal.show_snippets = false;
                 }
             }
+            TerminalPageMsg::CycleBroadcast => {
+                srv.terminal.broadcast_mode = srv.terminal.broadcast_mode.next();
+            }
+            TerminalPageMsg::ToggleHighlights => {
+                srv.terminal.highlights_enabled = !srv.terminal.highlights_enabled;
+            }
+            TerminalPageMsg::ToggleRecording => {
+                let active_id = srv.terminal.active_tab_id.clone();
+                if let Some(rec) = srv.terminal.recorders.remove(&active_id) {
+                    srv.terminal.notice = Some(format!(
+                        "Saved .cast recording -> {}",
+                        rec.path().display()
+                    ));
+                } else {
+                    let label = format!("{}-{}", display_server_name(&srv.server), active_id);
+                    let (cols, rows) = srv
+                        .terminal
+                        .tabs
+                        .iter()
+                        .find(|t| t.id == active_id)
+                        .map(|t| (t.emulator.cols() as u16, t.emulator.rows() as u16))
+                        .unwrap_or((100, 30));
+                    match glyph_terminal::SessionRecorder::start(&label, u32::from(cols), u32::from(rows)) {
+                        Ok(rec) => {
+                            srv.terminal.notice = Some(format!(
+                                "Recording .cast -> {}",
+                                rec.path().display()
+                            ));
+                            srv.terminal.recorders.insert(active_id, rec);
+                        }
+                        Err(e) => srv.terminal.notice = Some(format!("Record error: {e}")),
+                    }
+                }
+            }
+            TerminalPageMsg::ExportPlainLog => {
+                let active_id = srv.terminal.active_tab_id.clone();
+                let label = format!("{}-{}", display_server_name(&srv.server), active_id);
+                if let Some(tab) = srv.terminal.tabs.iter().find(|t| t.id == active_id) {
+                    let body = tab.emulator.all_text();
+                    match glyph_terminal::export_plain_log(&label, &body) {
+                        Ok(p) => {
+                            srv.terminal.notice =
+                                Some(format!("Exported plain log -> {}", p.display()));
+                        }
+                        Err(e) => srv.terminal.notice = Some(format!("Log export error: {e}")),
+                    }
+                }
+            }
             TerminalPageMsg::RunSnippet(cmd) => {
                 srv.terminal.show_snippets = false;
-                let target = srv.terminal.focused_tab_id.clone();
-                let mut payload = cmd.into_bytes();
-                payload.push(b'\r');
-                srv.terminal.send_input(&target, payload);
+                self.trigger_snippet_or_prompt(wid, None, "Quick Snippet".to_string(), cmd);
+                return Task::none();
             }
             TerminalPageMsg::InjectSecret(secret_id) => {
                 srv.terminal.show_secrets = false;
@@ -2481,7 +3050,8 @@ impl GlyphApp {
             }
             TerminalPageMsg::CanvasAction(tid, ev) => match ev {
                 TerminalEvent::Input(bytes) => {
-                    srv.terminal.send_input(&tid, bytes);
+                    self.send_terminal_payload(wid, &tid, bytes);
+                    return Task::none();
                 }
                 TerminalEvent::Resized { cols, rows } => {
                     srv.terminal.resize_pane(&tid, cols, rows);
@@ -2492,7 +3062,8 @@ impl GlyphApp {
                 TerminalEvent::PasteRequested => {
                     if let Some(txt) = clipboard_get() {
                         let normalized = txt.replace("\r\n", "\r").replace('\n', "\r");
-                        srv.terminal.send_input(&tid, normalized.into_bytes());
+                        self.send_terminal_payload(wid, &tid, normalized.into_bytes());
+                        return Task::none();
                     }
                 }
                 TerminalEvent::ToggleSearch => {
@@ -2523,7 +3094,7 @@ impl GlyphApp {
         Task::none()
     }
 
-    fn start_connect(&mut self, server_id: String) {
+    pub(crate) fn start_connect(&mut self, server_id: String) {
         let info_res = self.with_vault(|v| {
             let Some(summary) = v.get_server(&server_id) else {
                 return Ok(None);
@@ -2626,6 +3197,24 @@ impl GlyphApp {
     }
 
     fn view(&self, wid: window::Id) -> Element<'_, Message> {
+        if self.locked {
+            return crate::ui::lock_screen::view(&self.lock_screen).map(Message::LockScreen);
+        }
+        if let Some(qt) = self.quick_windows.get(&wid) {
+            let base = crate::ui::quick_terminal::view(qt, &self.compiled_highlights)
+                .map(move |m| Message::QuickTerminal(wid, m));
+            return if self.palette.open {
+                stack![
+                    base,
+                    crate::ui::palette::view(&self.palette).map(Message::Palette),
+                ]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+            } else {
+                base
+            };
+        }
         if let Some(srv) = self.server_windows.get(&wid) {
             return self.view_server_window(wid, srv);
         }
@@ -2633,18 +3222,41 @@ impl GlyphApp {
         let title_el = titlebar::view("Glyph", true).map(move |m| Message::TitleBar(wid, m));
         let base = manager::view(
             &self.servers,
+            &self.groups,
+            &self.identities,
             &self.ssh_keys,
             self.form.as_ref(),
+            &self.manager_search,
+            self.selected_group_filter.as_deref(),
+            self.selected_tag_filter.as_deref(),
+            self.app_lock_cfg.enabled,
             self.disconnect_banner.as_deref(),
             self.manager_size.width,
         )
         .map(Message::Manager);
 
         let mut layers: Vec<Element<'_, Message>> = vec![base];
+        if let Some(tmodal) = &self.termius_modal {
+            if self.termius_modal_window.is_none() || self.termius_modal_window == Some(wid) {
+                layers.push(
+                    crate::ui::termius_modals::view(
+                        tmodal,
+                        &self.identities,
+                        &self.groups,
+                        &self.servers,
+                        &self.ssh_keys,
+                    )
+                    .map(Message::TermiusModalAction),
+                );
+            }
+        }
         if let Some(modal) = &self.modal {
             let overlay = modals::view(modal, &self.servers, &self.ssh_keys, &self.known_hosts)
                 .map(Message::Modal);
             layers.push(overlay);
+        }
+        if self.palette.open {
+            layers.push(crate::ui::palette::view(&self.palette).map(Message::Palette));
         }
 
         if self.show_splash {
@@ -2684,20 +3296,37 @@ impl GlyphApp {
             .map(|v| v.is_encryption_available())
             .unwrap_or(true);
 
+        let peer_servers: Vec<(window::Id, String)> = self
+            .server_windows
+            .iter()
+            .filter(|(&other_id, _)| other_id != wid)
+            .map(|(&other_id, other)| (other_id, display_server_name(&other.server)))
+            .collect();
+
         let main_pane: Element<'a, Message> = match srv.active_tab {
             ServerTab::Dashboard => dashboard::view(&srv.dashboard, &srv.server, srv.window_size.width)
                 .map(move |m| Message::Dashboard(wid, m)),
-            ServerTab::Terminal => {
-                terminal_page::view(&srv.terminal, &srv.cached_commands, &srv.cached_secrets)
-                    .map(move |m| Message::Terminal(wid, m))
+            ServerTab::Terminal => terminal_page::view(
+                &srv.terminal,
+                &srv.cached_commands,
+                &srv.cached_secrets,
+                &self.compiled_highlights,
+            )
+            .map(move |m| Message::Terminal(wid, m)),
+            ServerTab::Sftp => {
+                sftp_page::view(&srv.sftp, peer_servers).map(move |m| Message::Sftp(wid, m))
             }
-            ServerTab::Sftp => sftp_page::view(&srv.sftp).map(move |m| Message::Sftp(wid, m)),
-            ServerTab::Commands => commands_page::view(&srv.commands, &srv.cached_commands)
-                .map(move |m| Message::Commands(wid, m)),
+            ServerTab::Commands => commands_page::view(
+                &srv.commands,
+                &srv.cached_commands,
+                &self.snippet_packages,
+            )
+            .map(move |m| Message::Commands(wid, m)),
             ServerTab::Secrets => secrets_page::view(&srv.secrets, &srv.cached_secrets, enc_avail)
                 .map(move |m| Message::Secrets(wid, m)),
             ServerTab::Tunnels => {
-                tunnels_page::view(&srv.tunnels).map(move |m| Message::Tunnels(wid, m))
+                tunnels_page::view(&srv.tunnels, &srv.server.saved_tunnels)
+                    .map(move |m| Message::Tunnels(wid, m))
             }
             ServerTab::Containers => {
                 containers_page::view(&srv.containers).map(move |m| Message::Containers(wid, m))
@@ -2715,10 +3344,34 @@ impl GlyphApp {
         .width(Length::Fill)
         .height(Length::Fill);
 
-        column![title_el, content_row]
+        let base_window: Element<'a, Message> = column![title_el, content_row]
             .width(Length::Fill)
             .height(Length::Fill)
-            .into()
+            .into();
+
+        let mut layers: Vec<Element<'a, Message>> = vec![base_window];
+        if let Some(tmodal) = &self.termius_modal {
+            if self.termius_modal_window == Some(wid) {
+                layers.push(
+                    crate::ui::termius_modals::view(
+                        tmodal,
+                        &self.identities,
+                        &self.groups,
+                        &self.servers,
+                        &self.ssh_keys,
+                    )
+                    .map(Message::TermiusModalAction),
+                );
+            }
+        }
+        if self.palette.open {
+            layers.push(crate::ui::palette::view(&self.palette).map(Message::Palette));
+        }
+        if layers.len() == 1 {
+            layers.pop().expect("non-empty")
+        } else {
+            stack(layers).width(Length::Fill).height(Length::Fill).into()
+        }
     }
 
     fn open_mobile_modal(&mut self) -> Task<Message> {
@@ -2779,10 +3432,12 @@ impl GlyphApp {
                     new_wid,
                 );
 
-                self.server_windows.insert(
+        self.server_windows.insert(
                     new_wid,
                     ServerWindowState::new(server, session, cached_commands, cached_secrets),
                 );
+                self.init_server_termius_hooks(new_wid);
+                self.rebuild_palette();
                 Task::batch([open_task.discard(), window::gain_focus(new_wid)])
             }
             ApiUiEvent::SwitchTab { server_id, tab } => {
@@ -2836,6 +3491,9 @@ impl GlyphApp {
     }
 
     fn handle_sftp_msg(&mut self, wid: window::Id, msg: SftpPageMsg) -> Task<Message> {
+        if self.handle_sftp_termius_msg(wid, msg.clone()) {
+            return Task::none();
+        }
         let Some(srv) = self.server_windows.get_mut(&wid) else {
             return Task::none();
         };
@@ -3086,11 +3744,15 @@ impl GlyphApp {
             SftpPageMsg::DismissTransfer => {
                 srv.sftp.transfer = None;
             }
+            _ => {}
         }
         Task::none()
     }
 
     fn handle_commands_msg(&mut self, wid: window::Id, msg: CommandsPageMsg) -> Task<Message> {
+        if self.handle_commands_termius_msg(wid, msg.clone()) {
+            return Task::none();
+        }
         let Some(srv) = self.server_windows.get_mut(&wid) else {
             return Task::none();
         };
@@ -3120,23 +3782,13 @@ impl GlyphApp {
                     Err(e) => srv.commands.error = Some(e.to_string()),
                 }
             }
-            CommandsPageMsg::Run(id, cmd) => {
-                if let Ok(mut v) = self.vault.lock() {
-                    let _ = v.increment_command_use(&sid, id);
-                    srv.cached_commands = v.list_commands(&sid);
-                }
-                let target = srv.terminal.focused_tab_id.clone();
-                let mut payload = cmd.into_bytes();
-                payload.push(b'\r');
-                srv.terminal.send_input(&target, payload);
-                srv.active_tab = ServerTab::Terminal;
-            }
             CommandsPageMsg::Delete(id) => {
                 if let Ok(mut v) = self.vault.lock() {
                     let _ = v.remove_command(&sid, id);
                     srv.cached_commands = v.list_commands(&sid);
                 }
             }
+            _ => {}
         }
         Task::none()
     }
@@ -3271,6 +3923,9 @@ impl GlyphApp {
     }
 
     fn handle_tunnels_msg(&mut self, wid: window::Id, msg: TunnelsPageMsg) -> Task<Message> {
+        if self.handle_tunnels_termius_msg(wid, msg.clone()) {
+            return Task::none();
+        }
         let Some(srv) = self.server_windows.get_mut(&wid) else {
             return Task::none();
         };
@@ -3298,50 +3953,7 @@ impl GlyphApp {
                     let _ = app_bus_sender().send(BusEvent::TunnelOpDone(wid, res));
                 });
             }
-            TunnelsPageMsg::BindSubmit => {
-                let bind_port: u16 = match srv.tunnels.bind_port.trim().parse() {
-                    Ok(p) => p,
-                    Err(_) => {
-                        srv.tunnels.error = Some("Enter a valid numeric bind port (0-65535).".into());
-                        return Task::none();
-                    }
-                };
-                let target_port: u16 = match srv.tunnels.target_port.trim().parse() {
-                    Ok(p) if p > 0 => p,
-                    _ => {
-                        srv.tunnels.error = Some("Enter a valid non-zero destination port.".into());
-                        return Task::none();
-                    }
-                };
-                let target_host = srv.tunnels.target_host.trim().to_string();
-                let proto = srv.tunnels.protocol.clone();
-                let dir = srv.tunnels.direction;
-                srv.tunnels.busy = true;
-                srv.tunnels.error = None;
-
-                tokio::spawn(async move {
-                    let op = match dir {
-                        UiTunnelDirection::Local => sess
-                            .start_local_tunnel(bind_port, target_host, target_port, proto)
-                            .await
-                            .map(|_| ()),
-                        UiTunnelDirection::Remote => sess
-                            .start_remote_tunnel(
-                                "0.0.0.0".to_string(),
-                                bind_port,
-                                target_host,
-                                target_port,
-                            )
-                            .await
-                            .map(|_| ()),
-                    };
-                    let res = match op {
-                        Ok(()) => Ok(sess.list_tunnels().await),
-                        Err(e) => Err(e.to_string()),
-                    };
-                    let _ = app_bus_sender().send(BusEvent::TunnelOpDone(wid, res));
-                });
-            }
+            _ => {}
         }
         Task::none()
     }
@@ -3542,7 +4154,7 @@ impl GlyphApp {
     }
 }
 
-fn remote_parent(path: &str) -> String {
+pub(crate) fn remote_parent(path: &str) -> String {
     let trimmed = path.trim_end_matches('/');
     if trimmed.is_empty() || trimmed == "/" {
         return "/".to_string();
@@ -3553,43 +4165,17 @@ fn remote_parent(path: &str) -> String {
     }
 }
 
-fn spawn_sftp_readdir(wid: window::Id, sess: SshSession, path: String) {
+pub(crate) fn spawn_sftp_readdir(wid: window::Id, sess: SshSession, path: String) {
     tokio::spawn(async move {
         let res = sess.sftp_readdir(&path).await.map_err(|e| e.to_string());
         let _ = app_bus_sender().send(BusEvent::SftpListed(wid, path, res));
     });
 }
 
-fn spawn_sftp_upload(wid: window::Id, sess: SshSession, remote_dir: String, files: Vec<PathBuf>) {
+pub(crate) fn spawn_sftp_readdir_peer(wid: window::Id, sess: SshSession, path: String) {
     tokio::spawn(async move {
-        let bus = app_bus_sender();
-        let (ptx, mut prx) = mpsc::unbounded_channel();
-        let bus_p = bus.clone();
-        tokio::spawn(async move {
-            while let Some(p) = prx.recv().await {
-                let _ = bus_p.send(BusEvent::SftpProgress(wid, p));
-            }
-        });
-
-        let mut uploaded = 0usize;
-        for local_path in files {
-            let Some(name) = local_path.file_name().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            let target = join_remote_path(&remote_dir, name);
-            if let Err(e) = sess
-                .sftp_upload_file(&local_path, &target, Some(ptx.clone()))
-                .await
-            {
-                let _ = bus.send(BusEvent::SftpActionDone(wid, Err(e.to_string())));
-                return;
-            }
-            uploaded += 1;
-        }
-        let _ = bus.send(BusEvent::SftpActionDone(
-            wid,
-            Ok(format!("Uploaded {uploaded} file(s) to {remote_dir}")),
-        ));
+        let res = sess.sftp_readdir(&path).await.map_err(|e| e.to_string());
+        let _ = app_bus_sender().send(BusEvent::SftpPeerListed(wid, path, res));
     });
 }
 
@@ -3661,7 +4247,7 @@ fn spawn_vnc_connect(
     });
 }
 
-fn display_server_name(srv: &ServerSummary) -> String {
+pub(crate) fn display_server_name(srv: &ServerSummary) -> String {
     if srv.name.trim().is_empty() {
         srv.host.clone()
     } else {
@@ -3689,7 +4275,7 @@ fn manager_window_settings() -> window::Settings {
     }
 }
 
-fn server_window_settings() -> window::Settings {
+pub(crate) fn server_window_settings() -> window::Settings {
     window::Settings {
         size: Size::new(1280.0, 820.0),
         min_size: Some(Size::new(960.0, 640.0)),
@@ -3700,12 +4286,12 @@ fn server_window_settings() -> window::Settings {
     }
 }
 
-fn clipboard_set(txt: String) {
+pub(crate) fn clipboard_set(txt: String) {
     if let Ok(mut cb) = arboard::Clipboard::new() {
         let _ = cb.set_text(txt);
     }
 }
 
-fn clipboard_get() -> Option<String> {
+pub(crate) fn clipboard_get() -> Option<String> {
     arboard::Clipboard::new().ok().and_then(|mut cb| cb.get_text().ok())
 }

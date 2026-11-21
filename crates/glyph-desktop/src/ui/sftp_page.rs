@@ -1,17 +1,21 @@
 use crate::theme::{
-    brand_button, danger_button, danger_ghost_button, dark_card, dark_input, dark_scrollable,
-    dark_text_editor, ghost_icon_button, glass_panel, modal_card, pill_badge, rgba,
-    secondary_button, truncate_ellipsis, BRAND_300, BRAND_400, BRAND_500, DARK_600, DARK_700,
-    DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, GREEN_500, RED_400, RED_500,
-    TEXT_DIM, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400,
+    brand_button, danger_button, danger_ghost_button, dark_card, dark_input, dark_pick_list,
+    dark_scrollable, dark_text_editor, ghost_icon_button, glass_panel, modal_card, pill_badge,
+    rgba, secondary_button, truncate_ellipsis, BRAND_300, BRAND_400, BRAND_500, DARK_600,
+    DARK_700, DARK_800, DARK_900, FONT_MONO, FONT_MONO_BOLD, GREEN_400, GREEN_500, RED_400,
+    RED_500, TEXT_DIM, TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400,
 };
 use crate::ui::icons;
-use glyph_core::sftp::{format_permissions_octal, join_remote_path, SftpEntry, SftpProgress, TransferKind};
-use iced::widget::{
-    button, column, container, mouse_area, row, scrollable, space, stack, text, text_editor,
-    text_input,
+use directories::BaseDirs;
+use glyph_core::sftp::{
+    format_permissions_octal, join_remote_path, SftpEntry, SftpProgress, TransferKind,
 };
-use iced::{alignment, Background, Border, Color, Element, Length};
+use iced::widget::{
+    button, column, container, mouse_area, pick_list, row, scrollable, space, stack, text,
+    text_editor, text_input,
+};
+use iced::{alignment, window, Background, Border, Color, Element, Length};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SftpSortCol {
@@ -43,6 +47,131 @@ pub struct SftpEditorState {
     pub saving: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DualPaneMode {
+    #[default]
+    Off,
+    LocalFs,
+    RemoteServer(window::Id),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemotePaneOption {
+    pub window_id: Option<window::Id>,
+    pub label: String,
+}
+
+impl std::fmt::Display for RemotePaneOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalFsEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TransferStatus {
+    Active,
+    Done,
+    Cancelled,
+    Failed(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct QueuedTransfer {
+    pub id: String,
+    pub kind: TransferKind,
+    pub filename: String,
+    pub subtitle: String,
+    pub transferred: u64,
+    pub total: u64,
+    pub status: TransferStatus,
+}
+
+pub fn list_local_dir(raw_path: &str) -> Result<(String, Vec<LocalFsEntry>), String> {
+    #[cfg(target_os = "windows")]
+    if raw_path == "__DRIVES__" {
+        let mut drives = Vec::new();
+        for ch in b'A'..=b'Z' {
+            let letter = ch as char;
+            let root = format!("{letter}:\\");
+            if std::path::Path::new(&root).exists() {
+                drives.push(LocalFsEntry {
+                    name: format!("{letter}:"),
+                    path: root,
+                    is_dir: true,
+                    size: 0,
+                });
+            }
+        }
+        return Ok(("Drives".to_string(), drives));
+    }
+
+    let resolved: PathBuf = if raw_path.trim().is_empty() {
+        BaseDirs::new()
+            .map(|b| b.home_dir().to_path_buf())
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| PathBuf::from("/"))
+    } else {
+        PathBuf::from(raw_path)
+    };
+
+    let rd = std::fs::read_dir(&resolved)
+        .map_err(|e| format!("Cannot open {}: {e}", resolved.display()))?;
+    let mut entries = Vec::new();
+    for item in rd.flatten() {
+        let name = item.file_name().to_string_lossy().to_string();
+        let meta = item.metadata().ok();
+        let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+        let size = if is_dir {
+            0
+        } else {
+            meta.map(|m| m.len()).unwrap_or(0)
+        };
+        entries.push(LocalFsEntry {
+            name,
+            path: item.path().display().to_string(),
+            is_dir,
+            size,
+        });
+    }
+    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a
+            .name
+            .to_ascii_lowercase()
+            .cmp(&b.name.to_ascii_lowercase()),
+    });
+    Ok((resolved.display().to_string(), entries))
+}
+
+pub fn local_parent_path(current: &str) -> String {
+    if current == "Drives" || current == "__DRIVES__" {
+        return "__DRIVES__".to_string();
+    }
+    let p = std::path::Path::new(current);
+    match p.parent() {
+        Some(par) if !par.as_os_str().is_empty() => par.display().to_string(),
+        _ => {
+            #[cfg(target_os = "windows")]
+            {
+                "__DRIVES__".to_string()
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                "/".to_string()
+            }
+        }
+    }
+}
+
 pub struct SftpPageState {
     pub opened: bool,
     pub current_path: String,
@@ -57,12 +186,25 @@ pub struct SftpPageState {
     pub prompt_input: String,
     pub editor: Option<SftpEditorState>,
     pub transfer: Option<SftpProgress>,
+    pub dual_pane: DualPaneMode,
+    pub local_path: String,
+    pub local_entries: Vec<LocalFsEntry>,
+    pub local_error: Option<String>,
+    pub remote_peer_path: String,
+    pub remote_peer_entries: Vec<SftpEntry>,
+    pub remote_peer_loading: bool,
+    pub transfer_queue: Vec<QueuedTransfer>,
+    pub show_queue: bool,
     pub status: Option<String>,
     pub error: Option<String>,
 }
 
 impl Default for SftpPageState {
     fn default() -> Self {
+        let (local_path, local_entries, local_error) = match list_local_dir("") {
+            Ok((p, list)) => (p, list, None),
+            Err(e) => (String::new(), Vec::new(), Some(e)),
+        };
         Self {
             opened: false,
             current_path: "/".to_string(),
@@ -77,6 +219,15 @@ impl Default for SftpPageState {
             prompt_input: String::new(),
             editor: None,
             transfer: None,
+            dual_pane: DualPaneMode::Off,
+            local_path,
+            local_entries,
+            local_error,
+            remote_peer_path: "/".to_string(),
+            remote_peer_entries: Vec::new(),
+            remote_peer_loading: false,
+            transfer_queue: Vec::new(),
+            show_queue: false,
             status: None,
             error: None,
         }
@@ -95,6 +246,22 @@ pub enum SftpPageMsg {
     OpenEntry(String, bool),
     DownloadFile(String, String),
     UploadPickFiles,
+
+    ToggleDualPane,
+    SelectRightPane(RemotePaneOption),
+    LocalGoUp,
+    LocalNavigate(String),
+    LocalRefresh,
+    LocalUploadFile(PathBuf),
+    DownloadToLocalPane(String, String),
+    PeerGoUp,
+    PeerNavigate(String),
+    PeerRefresh,
+    CopyLeftToPeer(String, String),
+    CopyPeerToLeft(String, String),
+    ToggleQueueDrawer,
+    CancelTransfer(String),
+    ClearCompletedTransfers,
 
     CopyItem(SftpEntry),
     CutItem(SftpEntry),
@@ -115,7 +282,10 @@ pub enum SftpPageMsg {
     DismissTransfer,
 }
 
-pub fn view<'a>(st: &'a SftpPageState) -> Element<'a, SftpPageMsg> {
+pub fn view<'a>(
+    st: &'a SftpPageState,
+    peer_servers: Vec<(window::Id, String)>,
+) -> Element<'a, SftpPageMsg> {
     if !st.opened {
         return view_landing(st.loading, st.error.as_deref());
     }
@@ -148,7 +318,52 @@ pub fn view<'a>(st: &'a SftpPageState) -> Element<'a, SftpPageMsg> {
         );
     }
 
+    let dual_active = st.dual_pane != DualPaneMode::Off;
+    let active_transfers = st
+        .transfer_queue
+        .iter()
+        .filter(|q| matches!(q.status, TransferStatus::Active))
+        .count();
+    let queue_label = if active_transfers > 0 {
+        format!("Queue ({active_transfers} active)")
+    } else {
+        format!("Queue ({})", st.transfer_queue.len())
+    };
+
     actions = actions
+        .push(
+            button(
+                row![
+                    icons::arrow_right_left(14.0, if dual_active { Color::WHITE } else { BRAND_300 }),
+                    text("Dual Pane")
+                        .size(12)
+                        .color(if dual_active { Color::WHITE } else { BRAND_300 }),
+                ]
+                .spacing(5)
+                .align_y(alignment::Vertical::Center),
+            )
+            .padding([7, 10])
+            .style(if dual_active {
+                brand_button
+            } else {
+                secondary_button
+            })
+            .on_press(SftpPageMsg::ToggleDualPane),
+        )
+        .push(
+            button(text(queue_label).size(12).color(if st.show_queue {
+                Color::WHITE
+            } else {
+                TEXT_LIGHT
+            }))
+            .padding([7, 10])
+            .style(if st.show_queue {
+                brand_button
+            } else {
+                secondary_button
+            })
+            .on_press(SftpPageMsg::ToggleQueueDrawer),
+        )
         .push(
             button(
                 row![
@@ -323,7 +538,7 @@ pub fn view<'a>(st: &'a SftpPageState) -> Element<'a, SftpPageMsg> {
         );
     } else {
         for entry in sorted {
-            list_col = list_col.push(view_entry_row(entry));
+            list_col = list_col.push(view_entry_row(entry, st.dual_pane));
         }
     }
 
@@ -350,9 +565,21 @@ pub fn view<'a>(st: &'a SftpPageState) -> Element<'a, SftpPageMsg> {
         ..Default::default()
     });
 
-    content = content.push(table_box);
+    if st.dual_pane != DualPaneMode::Off {
+        let right_box = view_right_pane(st, &peer_servers);
+        content = content.push(
+            row![table_box, right_box]
+                .spacing(12)
+                .width(Length::Fill)
+                .height(Length::Fill),
+        );
+    } else {
+        content = content.push(table_box);
+    }
 
-    if let Some(tr) = &st.transfer {
+    if st.show_queue && !st.transfer_queue.is_empty() {
+        content = content.push(view_transfer_queue(&st.transfer_queue));
+    } else if let Some(tr) = &st.transfer {
         content = content.push(view_transfer_toast(tr));
     }
 
@@ -626,7 +853,7 @@ fn sort_header_btn<'a>(
         .into()
 }
 
-fn view_entry_row<'a>(entry: &'a SftpEntry) -> Element<'a, SftpPageMsg> {
+fn view_entry_row<'a>(entry: &'a SftpEntry, dual_pane: DualPaneMode) -> Element<'a, SftpPageMsg> {
     let path = entry.path.clone();
     let name = entry.filename.clone();
     let is_dir = entry.is_dir;
@@ -719,8 +946,27 @@ fn view_entry_row<'a>(entry: &'a SftpEntry) -> Element<'a, SftpPageMsg> {
         format_bytes(entry.size)
     };
 
-    let mut act_row = row![].spacing(4).width(Length::Fixed(190.0));
+    let mut act_row = row![].spacing(4).width(Length::Fixed(if dual_pane == DualPaneMode::Off {
+        190.0
+    } else {
+        220.0
+    }));
     if !is_dir {
+        if dual_pane == DualPaneMode::LocalFs {
+            act_row = act_row.push(
+                button(text("-> Local").size(10).color(BRAND_300))
+                    .padding([4, 6])
+                    .style(secondary_button)
+                    .on_press(SftpPageMsg::DownloadToLocalPane(path.clone(), name.clone())),
+            );
+        } else if matches!(dual_pane, DualPaneMode::RemoteServer(_)) {
+            act_row = act_row.push(
+                button(text("-> Peer").size(10).color(BRAND_300))
+                    .padding([4, 6])
+                    .style(secondary_button)
+                    .on_press(SftpPageMsg::CopyLeftToPeer(path.clone(), name.clone())),
+            );
+        }
         act_row = act_row
             .push(
                 button(icons::edit(13.0, BRAND_400))
@@ -896,6 +1142,327 @@ fn view_editor<'a>(
     col.width(Length::Fill).height(Length::Fill).into()
 }
 
+fn view_right_pane<'a>(
+    st: &'a SftpPageState,
+    peer_servers: &[(window::Id, String)],
+) -> Element<'a, SftpPageMsg> {
+    let mut pane_choices = vec![RemotePaneOption {
+        window_id: None,
+        label: "Local Computer".to_string(),
+    }];
+    for (wid, label) in peer_servers {
+        pane_choices.push(RemotePaneOption {
+            window_id: Some(*wid),
+            label: format!("Server: {label}"),
+        });
+    }
+    let selected_opt = match st.dual_pane {
+        DualPaneMode::RemoteServer(wid) => pane_choices
+            .iter()
+            .find(|o| o.window_id == Some(wid))
+            .cloned()
+            .or_else(|| pane_choices.first().cloned()),
+        _ => pane_choices.first().cloned(),
+    };
+
+    let is_peer = matches!(st.dual_pane, DualPaneMode::RemoteServer(_));
+    let up_msg = if is_peer {
+        SftpPageMsg::PeerGoUp
+    } else {
+        SftpPageMsg::LocalGoUp
+    };
+    let refresh_msg = if is_peer {
+        SftpPageMsg::PeerRefresh
+    } else {
+        SftpPageMsg::LocalRefresh
+    };
+
+    let header = row![
+        pick_list(pane_choices, selected_opt, SftpPageMsg::SelectRightPane)
+            .text_size(12)
+            .padding([5, 10])
+            .style(dark_pick_list),
+        button(icons::arrow_up(14.0, TEXT_LIGHT))
+            .padding([6, 8])
+            .style(secondary_button)
+            .on_press(up_msg),
+        button(icons::refresh_cw(14.0, TEXT_LIGHT))
+            .padding([6, 8])
+            .style(secondary_button)
+            .on_press(refresh_msg),
+    ]
+    .spacing(6)
+    .align_y(alignment::Vertical::Center);
+
+    let path_label = if is_peer {
+        st.remote_peer_path.as_str()
+    } else if st.local_path == "__DRIVES__" {
+        "Drives"
+    } else {
+        st.local_path.as_str()
+    };
+
+    let mut list_col = column![].spacing(4);
+    if is_peer {
+        if st.remote_peer_loading {
+            list_col = list_col.push(
+                container(text("Loading peer server files...").size(12).color(TEXT_MUTED))
+                    .padding(20)
+                    .width(Length::Fill)
+                    .align_x(alignment::Horizontal::Center),
+            );
+        } else if st.remote_peer_entries.is_empty() {
+            list_col = list_col.push(
+                container(text("Empty directory").size(12).color(TEXT_SECONDARY))
+                    .padding(20)
+                    .width(Length::Fill)
+                    .align_x(alignment::Horizontal::Center),
+            );
+        } else {
+            for entry in &st.remote_peer_entries {
+                let p = entry.path.clone();
+                let n = entry.filename.clone();
+                let is_dir = entry.is_dir;
+                let mut r = row![
+                    button(
+                        row![
+                            if is_dir {
+                                icons::folder(14.0, BRAND_400)
+                            } else {
+                                icons::file_text(14.0, TEXT_SECONDARY)
+                            },
+                            text(truncate_ellipsis(&entry.filename, 30))
+                                .size(12)
+                                .font(FONT_MONO)
+                                .color(if is_dir { TEXT_PRIMARY } else { TEXT_LIGHT })
+                                .wrapping(text::Wrapping::None),
+                        ]
+                        .spacing(7)
+                        .align_y(alignment::Vertical::Center),
+                    )
+                    .padding([4, 6])
+                    .width(Length::Fill)
+                    .style(|_, _| button::Style {
+                        background: None,
+                        snap: true,
+                        ..Default::default()
+                    })
+                    .on_press_maybe(is_dir.then(|| SftpPageMsg::PeerNavigate(p.clone()))),
+                    text(if is_dir {
+                        "--".to_string()
+                    } else {
+                        format_bytes(entry.size)
+                    })
+                    .size(11)
+                    .font(FONT_MONO)
+                    .color(TEXT_MUTED)
+                    .width(Length::Fixed(72.0)),
+                ]
+                .spacing(6)
+                .align_y(alignment::Vertical::Center);
+
+                if !is_dir {
+                    r = r.push(
+                        button(text("<- Copy").size(10).color(GREEN_400))
+                            .padding([4, 7])
+                            .style(secondary_button)
+                            .on_press(SftpPageMsg::CopyPeerToLeft(p, n)),
+                    );
+                }
+
+                list_col = list_col.push(
+                    container(r)
+                        .width(Length::Fill)
+                        .padding([6, 10])
+                        .style(|_| container::Style {
+                            background: Some(Background::Color(DARK_900)),
+                            border: Border {
+                                color: DARK_700,
+                                width: 1.0,
+                                radius: 8.0.into(),
+                            },
+                            snap: true,
+                            ..Default::default()
+                        }),
+                );
+            }
+        }
+    } else if let Some(err) = &st.local_error {
+        list_col = list_col.push(text(err).size(12).color(RED_400));
+    } else {
+        for entry in &st.local_entries {
+            let p = entry.path.clone();
+            let is_dir = entry.is_dir;
+            let mut r = row![
+                button(
+                    row![
+                        if is_dir {
+                            icons::folder(14.0, BRAND_400)
+                        } else {
+                            icons::file_text(14.0, TEXT_SECONDARY)
+                        },
+                        text(truncate_ellipsis(&entry.name, 30))
+                            .size(12)
+                            .font(FONT_MONO)
+                            .color(if is_dir { TEXT_PRIMARY } else { TEXT_LIGHT })
+                            .wrapping(text::Wrapping::None),
+                    ]
+                    .spacing(7)
+                    .align_y(alignment::Vertical::Center),
+                )
+                .padding([4, 6])
+                .width(Length::Fill)
+                .style(|_, _| button::Style {
+                    background: None,
+                    snap: true,
+                    ..Default::default()
+                })
+                .on_press_maybe(is_dir.then(|| SftpPageMsg::LocalNavigate(p.clone()))),
+                text(if is_dir {
+                    "--".to_string()
+                } else {
+                    format_bytes(entry.size)
+                })
+                .size(11)
+                .font(FONT_MONO)
+                .color(TEXT_MUTED)
+                .width(Length::Fixed(72.0)),
+            ]
+            .spacing(6)
+            .align_y(alignment::Vertical::Center);
+
+            if !is_dir {
+                r = r.push(
+                    button(text("<- Upload").size(10).color(GREEN_400))
+                        .padding([4, 7])
+                        .style(secondary_button)
+                        .on_press(SftpPageMsg::LocalUploadFile(PathBuf::from(p))),
+                );
+            }
+
+            list_col = list_col.push(
+                container(r)
+                    .width(Length::Fill)
+                    .padding([6, 10])
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(DARK_900)),
+                        border: Border {
+                            color: DARK_700,
+                            width: 1.0,
+                            radius: 8.0.into(),
+                        },
+                        snap: true,
+                        ..Default::default()
+                    }),
+            );
+        }
+    }
+
+    container(
+        column![
+            header,
+            text(truncate_ellipsis(path_label, 52))
+                .size(11)
+                .font(FONT_MONO)
+                .color(TEXT_SECONDARY),
+            scrollable(list_col)
+                .height(Length::Fill)
+                .style(dark_scrollable),
+        ]
+        .spacing(8),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .padding(12)
+    .style(|_| container::Style {
+        background: Some(Background::Color(DARK_800)),
+        border: Border {
+            color: DARK_700,
+            width: 1.0,
+            radius: 12.0.into(),
+        },
+        snap: true,
+        ..Default::default()
+    })
+    .into()
+}
+
+fn view_transfer_queue<'a>(queue: &'a [QueuedTransfer]) -> Element<'a, SftpPageMsg> {
+    let mut list = column![].spacing(6);
+    for q in queue.iter().rev().take(6) {
+        let kind_lbl = match q.kind {
+            TransferKind::Upload => "Upload",
+            TransferKind::Download => "Download",
+            TransferKind::RemoteCopy => "Peer Copy",
+        };
+        let (status_lbl, status_color) = match &q.status {
+            TransferStatus::Active => {
+                let pct = if q.total > 0 {
+                    ((q.transferred as f64 / q.total as f64) * 100.0).min(100.0) as u16
+                } else {
+                    0
+                };
+                (format!("{pct}%"), BRAND_300)
+            }
+            TransferStatus::Done => ("Done".to_string(), GREEN_400),
+            TransferStatus::Cancelled => ("Cancelled".to_string(), YELLOW_400),
+            TransferStatus::Failed(err) => (truncate_ellipsis(err, 28), RED_400),
+        };
+        let mut r = row![
+            text(format!(
+                "[{kind_lbl}] {} ({})",
+                truncate_ellipsis(&q.filename, 24),
+                q.subtitle
+            ))
+            .size(11)
+            .font(FONT_MONO)
+            .color(TEXT_LIGHT)
+            .width(Length::Fill),
+            text(status_lbl).size(11).font(FONT_MONO).color(status_color),
+        ]
+        .spacing(8)
+        .align_y(alignment::Vertical::Center);
+
+        if q.status == TransferStatus::Active {
+            r = r.push(
+                button(text("Cancel").size(10).color(RED_400))
+                    .padding([3, 7])
+                    .style(danger_ghost_button)
+                    .on_press(SftpPageMsg::CancelTransfer(q.id.clone())),
+            );
+        }
+        list = list.push(r);
+    }
+
+    container(
+        column![
+            row![
+                text("SFTP Transfer Queue")
+                    .size(12)
+                    .font(FONT_MONO_BOLD)
+                    .color(TEXT_PRIMARY)
+                    .width(Length::Fill),
+                button(text("Clear Finished").size(11).color(TEXT_LIGHT))
+                    .padding([4, 8])
+                    .style(secondary_button)
+                    .on_press(SftpPageMsg::ClearCompletedTransfers),
+                button(icons::x_close(12.0, TEXT_MUTED))
+                    .padding(3)
+                    .style(ghost_icon_button)
+                    .on_press(SftpPageMsg::ToggleQueueDrawer),
+            ]
+            .spacing(8)
+            .align_y(alignment::Vertical::Center),
+            list,
+        ]
+        .spacing(8),
+    )
+    .width(Length::Fill)
+    .padding(12)
+    .style(modal_card)
+    .into()
+}
+
 fn view_transfer_toast<'a>(tr: &'a SftpProgress) -> Element<'a, SftpPageMsg> {
     let pct = tr
         .transferred
@@ -906,6 +1473,7 @@ fn view_transfer_toast<'a>(tr: &'a SftpProgress) -> Element<'a, SftpPageMsg> {
     let label = match tr.kind {
         TransferKind::Upload => "Uploading",
         TransferKind::Download => "Downloading",
+        TransferKind::RemoteCopy => "Copying",
     };
 
     let fill_p = pct.max(1);

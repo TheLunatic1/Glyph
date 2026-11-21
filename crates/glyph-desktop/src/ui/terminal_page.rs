@@ -6,11 +6,40 @@ use crate::theme::{
 use crate::ui::icons;
 use glyph_core::models::{CommandSnippet, SecretSummary};
 use glyph_core::ssh::{ShellHandle, SshSession};
-use glyph_terminal::{TerminalCanvas, TerminalEmulator, TerminalEvent, TerminalThemeId};
+use glyph_terminal::{
+    CompiledHighlightRule, SessionRecorder, TerminalCanvas, TerminalEmulator, TerminalEvent,
+    TerminalThemeId,
+};
 use iced::widget::{
     button, canvas, column, container, pick_list, row, scrollable, space, stack, text, text_input,
 };
 use iced::{alignment, Border, Element, Length};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BroadcastMode {
+    #[default]
+    Off,
+    Tabs,
+    AllWindows,
+}
+
+impl BroadcastMode {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Off => Self::Tabs,
+            Self::Tabs => Self::AllWindows,
+            Self::AllWindows => Self::Off,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Broadcast: Off",
+            Self::Tabs => "Broadcast: Tabs",
+            Self::AllWindows => "Broadcast: All Windows",
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum TerminalPageMsg {
@@ -28,6 +57,10 @@ pub enum TerminalPageMsg {
     ClearActive,
     ToggleSnippets,
     ToggleSecrets,
+    CycleBroadcast,
+    ToggleRecording,
+    ToggleHighlights,
+    ExportPlainLog,
     RunSnippet(String),
     InjectSecret(String),
     CanvasAction(String, TerminalEvent),
@@ -51,6 +84,11 @@ pub struct TerminalPageState {
     pub search_text: String,
     pub show_snippets: bool,
     pub show_secrets: bool,
+    pub broadcast_mode: BroadcastMode,
+    pub highlights_enabled: bool,
+    pub recorders: std::collections::HashMap<String, SessionRecorder>,
+    pub startup_sent: bool,
+    pub notice: Option<String>,
     tab_counter: usize,
 }
 
@@ -73,6 +111,11 @@ impl Default for TerminalPageState {
             search_text: String::new(),
             show_snippets: false,
             show_secrets: false,
+            broadcast_mode: BroadcastMode::Off,
+            highlights_enabled: true,
+            recorders: std::collections::HashMap::new(),
+            startup_sent: false,
+            notice: None,
             tab_counter: 1,
         }
     }
@@ -149,21 +192,22 @@ pub fn view<'a>(
     state: &'a TerminalPageState,
     snippets: &'a [CommandSnippet],
     secrets: &'a [SecretSummary],
+    highlight_rules: &'a [CompiledHighlightRule],
 ) -> Element<'a, TerminalPageMsg> {
     let palette = state.theme.palette();
     let bg_color = palette.background;
 
-    // â”€â”€ Top Toolbar (48px) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Row 1 Toolbar (Horizontally Scrollable, Zero Clipping/Overlap) ─────────
     let snippets_btn = button(
         row![
             icons::zap(14.0, TEXT_LIGHT),
             text("Snippets").size(12).color(TEXT_LIGHT),
             icons::chevron_down(14.0, TEXT_SECONDARY),
         ]
-        .spacing(6)
+        .spacing(5)
         .align_y(alignment::Vertical::Center),
     )
-    .padding([6, 12])
+    .padding([5, 10])
     .style(secondary_button)
     .on_press(TerminalPageMsg::ToggleSnippets);
 
@@ -173,52 +217,121 @@ pub fn view<'a>(
             text("Secrets").size(12).color(TEXT_LIGHT),
             icons::chevron_down(14.0, TEXT_SECONDARY),
         ]
-        .spacing(6)
+        .spacing(5)
         .align_y(alignment::Vertical::Center),
     )
-    .padding([6, 12])
+    .padding([5, 10])
     .style(secondary_button)
     .on_press(TerminalPageMsg::ToggleSecrets);
 
-    let theme_picker = pick_list(
-        TerminalThemeId::ALL.as_slice(),
-        Some(state.theme),
-        TerminalPageMsg::SelectTheme,
+    let bcast_active = state.broadcast_mode != BroadcastMode::Off;
+    let bcast_color = match state.broadcast_mode {
+        BroadcastMode::Off => TEXT_SECONDARY,
+        BroadcastMode::Tabs => crate::theme::YELLOW_400,
+        BroadcastMode::AllWindows => RED_400,
+    };
+    let bcast_btn = button(
+        row![
+            icons::radio(14.0, bcast_color),
+            text(state.broadcast_mode.label())
+                .size(12)
+                .color(if bcast_active { iced::Color::WHITE } else { TEXT_LIGHT }),
+        ]
+        .spacing(5)
+        .align_y(alignment::Vertical::Center),
     )
-    .text_size(12)
     .padding([5, 10])
-    .width(Length::Fixed(136.0))
-    .style(dark_pick_list);
+    .style(if bcast_active {
+        brand_button
+    } else {
+        secondary_button
+    })
+    .on_press(TerminalPageMsg::CycleBroadcast);
 
-    let font_controls = row![
-        button(icons::minus(14.0, TEXT_SECONDARY))
-            .padding(5)
-            .style(ghost_icon_button)
-            .on_press(TerminalPageMsg::FontSmaller),
-        text(format!("{}pt", state.font_size as i32))
-            .size(11)
-            .font(FONT_MONO)
-            .color(TEXT_SECONDARY),
-        button(icons::plus(14.0, TEXT_SECONDARY))
-            .padding(5)
-            .style(ghost_icon_button)
-            .on_press(TerminalPageMsg::FontLarger),
-    ]
-    .spacing(4)
-    .align_y(alignment::Vertical::Center);
+    let is_recording = state.recorders.contains_key(&state.active_tab_id);
+    let rec_btn = button(
+        row![
+            icons::circle_dot(
+                14.0,
+                if is_recording { RED_400 } else { TEXT_SECONDARY }
+            ),
+            text(if is_recording { "Rec .cast" } else { "Record" })
+                .size(12)
+                .color(if is_recording { RED_400 } else { TEXT_LIGHT }),
+        ]
+        .spacing(5)
+        .align_y(alignment::Vertical::Center),
+    )
+    .padding([5, 10])
+    .style(if is_recording {
+        crate::theme::danger_ghost_button
+    } else {
+        secondary_button
+    })
+    .on_press(TerminalPageMsg::ToggleRecording);
+
+    let hl_btn = button(
+        row![
+            icons::highlighter(
+                14.0,
+                if state.highlights_enabled {
+                    iced::Color::WHITE
+                } else {
+                    TEXT_SECONDARY
+                }
+            ),
+            text("Highlights")
+                .size(12)
+                .color(if state.highlights_enabled {
+                    iced::Color::WHITE
+                } else {
+                    TEXT_SECONDARY
+                }),
+        ]
+        .spacing(5)
+        .align_y(alignment::Vertical::Center),
+    )
+    .padding([5, 10])
+    .style(if state.highlights_enabled {
+        brand_button
+    } else {
+        ghost_icon_button
+    })
+    .on_press(TerminalPageMsg::ToggleHighlights);
+
+    let export_log_btn = button(
+        row![
+            icons::file_down(14.0, TEXT_LIGHT),
+            text("Export .log").size(12).color(TEXT_LIGHT),
+        ]
+        .spacing(5)
+        .align_y(alignment::Vertical::Center),
+    )
+    .padding([5, 10])
+    .style(secondary_button)
+    .on_press(TerminalPageMsg::ExportPlainLog);
 
     let split_active = state.split_tab_id.is_some();
     let split_btn = button(
         row![
-            icons::columns(14.0, if split_active { iced::Color::WHITE } else { TEXT_SECONDARY }),
-            text("Split")
-                .size(12)
-                .color(if split_active { iced::Color::WHITE } else { TEXT_SECONDARY }),
+            icons::columns(
+                14.0,
+                if split_active {
+                    iced::Color::WHITE
+                } else {
+                    TEXT_SECONDARY
+                }
+            ),
+            text("Split").size(12).color(if split_active {
+                iced::Color::WHITE
+            } else {
+                TEXT_SECONDARY
+            }),
         ]
-        .spacing(6)
+        .spacing(5)
         .align_y(alignment::Vertical::Center),
     )
-    .padding([6, 10])
+    .padding([5, 10])
     .style(if split_active {
         brand_button
     } else {
@@ -248,25 +361,29 @@ pub fn view<'a>(
         .on_press(TerminalPageMsg::ClearActive);
 
     let toolbar = container(
-        row![
-            snippets_btn,
-            secrets_btn,
-            icons::palette(14.0, TEXT_SECONDARY),
-            theme_picker,
-            v_divider(),
-            font_controls,
-            space().width(Length::Fill),
-            split_btn,
-            search_btn,
-            v_divider(),
-            clear_btn,
-        ]
-        .spacing(8)
-        .align_y(alignment::Vertical::Center),
+        scrollable(
+            row![
+                snippets_btn,
+                secrets_btn,
+                v_divider(),
+                bcast_btn,
+                rec_btn,
+                hl_btn,
+                export_log_btn,
+                v_divider(),
+                split_btn,
+                search_btn,
+                clear_btn,
+            ]
+            .spacing(6)
+            .align_y(alignment::Vertical::Center),
+        )
+        .horizontal()
+        .width(Length::Fill)
+        .style(dark_scrollable),
     )
-    .height(Length::Fixed(46.0))
     .width(Length::Fill)
-    .padding([0, 14])
+    .padding([6, 12])
     .style(|_| container::Style {
         background: Some(iced::Background::Color(DARK_800)),
         border: Border {
@@ -278,7 +395,34 @@ pub fn view<'a>(
         ..Default::default()
     });
 
-    // â”€â”€ Horizontally Scrollable Tab Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Row 2: Tabs on Left + Theme & Font Controls on Right ──────────────────
+    let theme_picker = pick_list(
+        TerminalThemeId::ALL.as_slice(),
+        Some(state.theme),
+        TerminalPageMsg::SelectTheme,
+    )
+    .text_size(11)
+    .padding([4, 8])
+    .width(Length::Fixed(130.0))
+    .style(dark_pick_list);
+
+    let font_controls = row![
+        button(icons::minus(13.0, TEXT_SECONDARY))
+            .padding(4)
+            .style(ghost_icon_button)
+            .on_press(TerminalPageMsg::FontSmaller),
+        text(format!("{}pt", state.font_size as i32))
+            .size(11)
+            .font(FONT_MONO)
+            .color(TEXT_SECONDARY),
+        button(icons::plus(13.0, TEXT_SECONDARY))
+            .padding(4)
+            .style(ghost_icon_button)
+            .on_press(TerminalPageMsg::FontLarger),
+    ]
+    .spacing(3)
+    .align_y(alignment::Vertical::Center);
+
     let mut tab_row = row![].spacing(6).align_y(alignment::Vertical::Center);
     for tab in &state.tabs {
         let is_active = state.active_tab_id == tab.id;
@@ -349,13 +493,21 @@ pub fn view<'a>(
     );
 
     let tab_bar = container(
-        scrollable(tab_row)
-            .horizontal()
-            .width(Length::Fill)
-            .style(dark_scrollable),
+        row![
+            scrollable(tab_row)
+                .horizontal()
+                .width(Length::Fill)
+                .style(dark_scrollable),
+            v_divider(),
+            icons::palette(13.0, TEXT_SECONDARY),
+            theme_picker,
+            font_controls,
+        ]
+        .spacing(8)
+        .align_y(alignment::Vertical::Center),
     )
     .width(Length::Fill)
-    .padding([6, 12])
+    .padding([5, 12])
     .style(|_| container::Style {
         background: Some(iced::Background::Color(DARK_900)),
         border: Border {
@@ -367,7 +519,7 @@ pub fn view<'a>(
         ..Default::default()
     });
 
-    // â”€â”€ Terminal Pane(s) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Terminal Pane(s) ──────────────────────────────────────────────────────
     let active_tab = state
         .tabs
         .iter()
@@ -385,8 +537,8 @@ pub fn view<'a>(
                 font: FONT_MONO,
                 bold_font: FONT_MONO_BOLD,
                 focused,
-                highlight_rules: &[],
-                highlights_enabled: false,
+                highlight_rules,
+                highlights_enabled: state.highlights_enabled,
             })
             .width(Length::Fill)
             .height(Length::Fill),
@@ -408,8 +560,8 @@ pub fn view<'a>(
                     font: FONT_MONO,
                     bold_font: FONT_MONO_BOLD,
                     focused: focused2,
-                    highlight_rules: &[],
-                    highlights_enabled: false,
+                    highlight_rules,
+                    highlights_enabled: state.highlights_enabled,
                 })
                 .width(Length::Fill)
                 .height(Length::Fill),
@@ -567,10 +719,52 @@ pub fn view<'a>(
 
     let stacked = stack(overlays).width(Length::Fill).height(Length::Fill);
 
-    column![toolbar, tab_bar, stacked]
+    let mut page_col = column![toolbar, tab_bar].width(Length::Fill).height(Length::Fill);
+
+    if state.broadcast_mode != BroadcastMode::Off {
+        let bcast_banner = container(
+            row![
+                icons::radio(14.0, iced::Color::WHITE),
+                text(match state.broadcast_mode {
+                    BroadcastMode::Tabs => {
+                        "BROADCAST INPUT ACTIVE — Keystrokes & pastes fan out to ALL tabs in this window."
+                    }
+                    BroadcastMode::AllWindows => {
+                        "GLOBAL BROADCAST ACTIVE — Keystrokes & pastes fan out across ALL open server windows."
+                    }
+                    BroadcastMode::Off => "",
+                })
+                .size(11)
+                .font(FONT_MONO_BOLD)
+                .color(iced::Color::WHITE),
+            ]
+            .spacing(8)
+            .align_y(alignment::Vertical::Center),
+        )
         .width(Length::Fill)
-        .height(Length::Fill)
-        .into()
+        .padding([5, 12])
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(if state.broadcast_mode == BroadcastMode::AllWindows {
+                crate::theme::RED_600
+            } else {
+                crate::theme::YELLOW_500
+            })),
+            snap: true,
+            ..Default::default()
+        });
+        page_col = page_col.push(bcast_banner);
+    }
+
+    if let Some(msg) = &state.notice {
+        page_col = page_col.push(
+            container(text(msg).size(11).color(crate::theme::GREEN_400))
+                .width(Length::Fill)
+                .padding([4, 12])
+                .style(dark_800_bg),
+        );
+    }
+
+    page_col.push(stacked).into()
 }
 
 fn v_divider<'a, Message: 'a>() -> Element<'a, Message> {

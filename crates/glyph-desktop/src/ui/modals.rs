@@ -13,7 +13,8 @@ use glyph_core::mcp_config::{
     McpClientStatus, McpConfigFormat,
 };
 use glyph_core::models::{
-    KnownHostEntry, ServerEntry, ServerSummary, SshKeyAlgorithm, SshKeySummary,
+    HighlightRule, KnownHostEntry, ServerEntry, ServerSummary, SshKeyAlgorithm, SshKeySummary,
+    SyncBackend,
 };
 use glyph_core::updater::ReleaseInfo;
 use iced::widget::{
@@ -175,6 +176,7 @@ pub struct ConnectingModalState {
 pub enum SettingsTab {
     AiAgents,
     Security,
+    Sync,
     Mobile,
     Updates,
 }
@@ -200,6 +202,31 @@ pub struct SettingsModalState {
     pub latest_release: Option<ReleaseInfo>,
     pub is_newer_available: bool,
     pub update_error: Option<String>,
+
+    // App Lock & Terminal Highlight Rules (Security tab)
+    pub lock_enabled: bool,
+    pub lock_idle_mins: String,
+    pub lock_new_passcode: String,
+    pub lock_confirm_passcode: String,
+    pub lock_status: Option<String>,
+    pub lock_error: Option<String>,
+    pub highlight_rules: Vec<HighlightRule>,
+    pub new_hl_name: String,
+    pub new_hl_pattern: String,
+    pub new_hl_color: String,
+    pub hl_error: Option<String>,
+
+    // Zero-Knowledge E2EE Sync (Sync tab)
+    pub sync_backend: SyncBackend,
+    pub sync_folder_path: String,
+    pub sync_webdav_url: String,
+    pub sync_webdav_user: String,
+    pub sync_webdav_pass: String,
+    pub sync_passphrase: String,
+    pub sync_last_at: Option<String>,
+    pub sync_busy: bool,
+    pub sync_status: Option<String>,
+    pub sync_error: Option<String>,
 }
 
 impl SettingsModalState {
@@ -229,6 +256,27 @@ impl SettingsModalState {
             latest_release: None,
             is_newer_available: false,
             update_error: None,
+            lock_enabled: false,
+            lock_idle_mins: "15".to_string(),
+            lock_new_passcode: String::new(),
+            lock_confirm_passcode: String::new(),
+            lock_status: None,
+            lock_error: None,
+            highlight_rules: Vec::new(),
+            new_hl_name: String::new(),
+            new_hl_pattern: String::new(),
+            new_hl_color: "#f87171".to_string(),
+            hl_error: None,
+            sync_backend: SyncBackend::None,
+            sync_folder_path: String::new(),
+            sync_webdav_url: String::new(),
+            sync_webdav_user: String::new(),
+            sync_webdav_pass: String::new(),
+            sync_passphrase: String::new(),
+            sync_last_at: None,
+            sync_busy: false,
+            sync_status: None,
+            sync_error: None,
         }
     }
 }
@@ -397,6 +445,32 @@ pub enum ModalMsg {
     OpenMobileFromSettings,
     CheckUpdates,
     OpenUpdateReleaseUrl(String),
+
+    // Security -> App Lock & Highlights
+    LockPasscodeInput(String),
+    LockConfirmInput(String),
+    LockTimeoutInput(String),
+    SaveAppLock,
+    UpdateLockTimeout,
+    DisableAppLock,
+    LockNow,
+    ToggleHighlightRule(String),
+    NewHlName(String),
+    NewHlPattern(String),
+    NewHlColor(String),
+    AddHighlightRule,
+    DeleteHighlightRule(String),
+
+    // Sync tab
+    SyncSelectBackend(SyncBackend),
+    SyncFolderInput(String),
+    SyncBrowseFolder,
+    SyncWebdavUrl(String),
+    SyncWebdavUser(String),
+    SyncWebdavPass(String),
+    SyncPassphrase(String),
+    SyncSaveConfig,
+    SyncRunNow,
 
     // Mobile APK QR Modal
     SelectMobileQrMode(MobileQrMode),
@@ -1654,6 +1728,11 @@ fn view_settings<'a>(
                 icons::shield_check(15.0, GREEN_400).into(),
             ),
             nav_btn(
+                SettingsTab::Sync,
+                "E2EE Vault Sync",
+                icons::cloud_download(15.0, BRAND_400).into(),
+            ),
+            nav_btn(
                 SettingsTab::Mobile,
                 "Glyph Mobile",
                 icons::smartphone(15.0, PURPLE_400).into(),
@@ -1683,6 +1762,7 @@ fn view_settings<'a>(
     let right_pane: Element<'a, ModalMsg> = match st.active_tab {
         SettingsTab::AiAgents => view_settings_mcp(st),
         SettingsTab::Security => view_settings_security(st, known_hosts),
+        SettingsTab::Sync => view_settings_sync(st),
         SettingsTab::Mobile => view_settings_mobile(),
         SettingsTab::Updates => view_settings_updates(st),
     };
@@ -2096,8 +2176,170 @@ fn view_settings_security<'a>(
         }
     }
 
+    let mut lock_col = column![
+        row![
+            icons::lock_open(15.0, BRAND_400),
+            text("Master Passcode & Idle Lock")
+                .size(13)
+                .font(FONT_MONO_BOLD)
+                .color(TEXT_PRIMARY),
+            space().width(Length::Fill),
+            text(if st.lock_enabled { "Enabled" } else { "Disabled" })
+                .size(11)
+                .color(if st.lock_enabled { GREEN_400 } else { TEXT_MUTED }),
+        ]
+        .spacing(8)
+        .align_y(alignment::Vertical::Center),
+        row![
+            text_input("New passcode (min 4 chars)", &st.lock_new_passcode)
+                .secure(true)
+                .on_input(ModalMsg::LockPasscodeInput)
+                .padding([7, 10])
+                .size(12)
+                .style(dark_input),
+            text_input("Confirm passcode", &st.lock_confirm_passcode)
+                .secure(true)
+                .on_input(ModalMsg::LockConfirmInput)
+                .padding([7, 10])
+                .size(12)
+                .style(dark_input),
+            text_input("Idle mins (0=off)", &st.lock_idle_mins)
+                .on_input(ModalMsg::LockTimeoutInput)
+                .padding([7, 10])
+                .size(12)
+                .width(Length::Fixed(110.0))
+                .style(dark_input),
+        ]
+        .spacing(8),
+    ]
+    .spacing(8);
+
+    let mut lock_btns = row![
+        button(
+            text(if st.lock_enabled {
+                "Update Passcode"
+            } else {
+                "Enable Passcode"
+            })
+            .size(11)
+            .color(Color::WHITE),
+        )
+        .padding([7, 12])
+        .style(brand_button)
+        .on_press(ModalMsg::SaveAppLock),
+    ]
+    .spacing(8);
+    if st.lock_enabled {
+        lock_btns = lock_btns
+            .push(
+                button(text("Save Timeout").size(11).color(TEXT_LIGHT))
+                    .padding([7, 10])
+                    .style(secondary_button)
+                    .on_press(ModalMsg::UpdateLockTimeout),
+            )
+            .push(
+                button(text("Lock Now").size(11).color(BRAND_300))
+                    .padding([7, 10])
+                    .style(secondary_button)
+                    .on_press(ModalMsg::LockNow),
+            )
+            .push(
+                button(text("Disable Lock").size(11))
+                    .padding([7, 10])
+                    .style(danger_ghost_button)
+                    .on_press(ModalMsg::DisableAppLock),
+            );
+    }
+    lock_col = lock_col.push(lock_btns);
+    if let Some(msg) = &st.lock_status {
+        lock_col = lock_col.push(success_banner(msg));
+    }
+    if let Some(err) = &st.lock_error {
+        lock_col = lock_col.push(error_banner(err));
+    }
+    let lock_card = container(lock_col).width(Length::Fill).padding(12).style(dark_card);
+
+    let mut hl_col = column![
+        row![
+            icons::highlighter(15.0, BRAND_400),
+            text("Terminal Highlight Rules (Regex)")
+                .size(13)
+                .font(FONT_MONO_BOLD)
+                .color(TEXT_PRIMARY),
+        ]
+        .spacing(8)
+        .align_y(alignment::Vertical::Center),
+    ]
+    .spacing(8);
+
+    for rule in &st.highlight_rules {
+        let rid = rule.id.clone();
+        hl_col = hl_col.push(
+            row![
+                checkbox(rule.enabled).on_toggle(move |_| ModalMsg::ToggleHighlightRule(rid.clone())),
+                text(&rule.name)
+                    .size(12)
+                    .font(FONT_MONO_BOLD)
+                    .color(TEXT_PRIMARY)
+                    .width(Length::Fixed(110.0)),
+                text(&rule.pattern)
+                    .size(11)
+                    .font(FONT_MONO)
+                    .color(TEXT_SECONDARY)
+                    .width(Length::Fill),
+                text(&rule.color_hex)
+                    .size(11)
+                    .font(FONT_MONO)
+                    .color(BRAND_300),
+                button(icons::trash(12.0, RED_400))
+                    .padding([4, 7])
+                    .style(danger_ghost_button)
+                    .on_press(ModalMsg::DeleteHighlightRule(rule.id.clone())),
+            ]
+            .spacing(8)
+            .align_y(alignment::Vertical::Center),
+        );
+    }
+
+    hl_col = hl_col.push(
+        row![
+            text_input("Name", &st.new_hl_name)
+                .on_input(ModalMsg::NewHlName)
+                .padding([6, 8])
+                .size(12)
+                .width(Length::FillPortion(2))
+                .style(dark_input),
+            text_input("Regex (e.g. (?i)error|panic)", &st.new_hl_pattern)
+                .on_input(ModalMsg::NewHlPattern)
+                .padding([6, 8])
+                .size(12)
+                .font(FONT_MONO)
+                .width(Length::FillPortion(3))
+                .style(dark_input),
+            text_input("#f87171", &st.new_hl_color)
+                .on_input(ModalMsg::NewHlColor)
+                .padding([6, 8])
+                .size(12)
+                .font(FONT_MONO)
+                .width(Length::Fixed(86.0))
+                .style(dark_input),
+            button(text("Add").size(11).color(Color::WHITE))
+                .padding([6, 12])
+                .style(brand_button)
+                .on_press(ModalMsg::AddHighlightRule),
+        ]
+        .spacing(6)
+        .align_y(alignment::Vertical::Center),
+    );
+    if let Some(err) = &st.hl_error {
+        hl_col = hl_col.push(error_banner(err));
+    }
+    let hl_card = container(hl_col).width(Length::Fill).padding(12).style(dark_card);
+
     column![
         vault_card,
+        lock_card,
+        hl_card,
         text("Trusted SSH Host Keys (TOFU Known Hosts)")
             .size(12)
             .font(FONT_MONO_BOLD)
@@ -2109,6 +2351,161 @@ fn view_settings_security<'a>(
     ]
     .spacing(12)
     .into()
+}
+
+fn view_settings_sync<'a>(st: &'a SettingsModalState) -> Element<'a, ModalMsg> {
+    let backend_btn = |label: &'static str, b: SyncBackend| {
+        let active = st.sync_backend == b;
+        button(
+            text(label)
+                .size(12)
+                .color(if active { Color::WHITE } else { TEXT_LIGHT }),
+        )
+        .padding([7, 12])
+        .style(if active { brand_button } else { secondary_button })
+        .on_press(ModalMsg::SyncSelectBackend(b))
+    };
+
+    let mut col = column![
+        text("Zero-Knowledge End-to-End Encrypted Sync")
+            .size(15)
+            .font(FONT_MONO_BOLD)
+            .color(TEXT_PRIMARY),
+        text("Syncs servers, groups, identities, SSH keys, snippet packages, and highlight rules using AES-256-GCM. Only ciphertext leaves your device.")
+            .size(11)
+            .color(TEXT_SECONDARY),
+        row![
+            backend_btn("Disabled", SyncBackend::None),
+            backend_btn("Local / Cloud Folder", SyncBackend::LocalFolder),
+            backend_btn("WebDAV (Nextcloud / OwnCloud)", SyncBackend::WebDav),
+        ]
+        .spacing(8),
+    ]
+    .spacing(10);
+
+    match st.sync_backend {
+        SyncBackend::None => {
+            col = col.push(
+                container(
+                    text("Choose a Local/Dropbox/OneDrive folder or WebDAV endpoint to enable encrypted multi-device sync.")
+                        .size(12)
+                        .color(TEXT_SECONDARY),
+                )
+                .width(Length::Fill)
+                .padding(12)
+                .style(dark_card),
+            );
+        }
+        SyncBackend::LocalFolder => {
+            col = col.push(
+                container(
+                    row![
+                        text_input("Sync folder path...", &st.sync_folder_path)
+                            .on_input(ModalMsg::SyncFolderInput)
+                            .padding([8, 10])
+                            .size(12)
+                            .style(dark_input),
+                        button(text("Browse...").size(12).color(TEXT_LIGHT))
+                            .padding([8, 12])
+                            .style(secondary_button)
+                            .on_press(ModalMsg::SyncBrowseFolder),
+                    ]
+                    .spacing(8)
+                    .align_y(alignment::Vertical::Center),
+                )
+                .width(Length::Fill)
+                .padding(12)
+                .style(dark_card),
+            );
+        }
+        SyncBackend::WebDav => {
+            col = col.push(
+                container(
+                    column![
+                        text_input("WebDAV Base URL (e.g. https://cloud.example.com/remote.php/dav/files/user/Glyph)", &st.sync_webdav_url)
+                            .on_input(ModalMsg::SyncWebdavUrl)
+                            .padding([8, 10])
+                            .size(12)
+                            .style(dark_input),
+                        row![
+                            text_input("WebDAV Username", &st.sync_webdav_user)
+                                .on_input(ModalMsg::SyncWebdavUser)
+                                .padding([8, 10])
+                                .size(12)
+                                .style(dark_input),
+                            text_input("WebDAV Password (blank keeps saved)", &st.sync_webdav_pass)
+                                .secure(true)
+                                .on_input(ModalMsg::SyncWebdavPass)
+                                .padding([8, 10])
+                                .size(12)
+                                .style(dark_input),
+                        ]
+                        .spacing(8),
+                    ]
+                    .spacing(8),
+                )
+                .width(Length::Fill)
+                .padding(12)
+                .style(dark_card),
+            );
+        }
+    }
+
+    col = col.push(
+        container(
+            column![
+                text("Zero-Knowledge Encryption Passphrase")
+                    .size(12)
+                    .font(FONT_MONO_BOLD)
+                    .color(TEXT_LIGHT),
+                text_input("Required when running Sync Now (never written to disk)", &st.sync_passphrase)
+                    .secure(true)
+                    .on_input(ModalMsg::SyncPassphrase)
+                    .padding([8, 10])
+                    .size(12)
+                    .style(dark_input),
+                row![
+                    button(text("Save Settings").size(12).color(TEXT_LIGHT))
+                        .padding([8, 14])
+                        .style(secondary_button)
+                        .on_press(ModalMsg::SyncSaveConfig),
+                    button(
+                        text(if st.sync_busy { "Syncing..." } else { "Sync Now" })
+                            .size(12)
+                            .font(FONT_MONO_BOLD)
+                            .color(Color::WHITE),
+                    )
+                    .padding([8, 16])
+                    .style(brand_button)
+                    .on_press_maybe((!st.sync_busy && st.sync_backend != SyncBackend::None).then_some(ModalMsg::SyncRunNow)),
+                    space().width(Length::Fill),
+                    text(
+                        st.sync_last_at
+                            .as_deref()
+                            .map(|t| format!("Last sync: {t}"))
+                            .unwrap_or_else(|| "Never synced".to_string())
+                    )
+                    .size(11)
+                    .color(TEXT_MUTED),
+                ]
+                .spacing(10)
+                .align_y(alignment::Vertical::Center),
+            ]
+            .spacing(8),
+        )
+        .width(Length::Fill)
+        .padding(12)
+        .style(dark_card),
+    );
+
+    if let Some(msg) = &st.sync_status {
+        col = col.push(success_banner(msg));
+    }
+    if let Some(err) = &st.sync_error {
+        col = col.push(error_banner(err));
+    }
+
+    col.into()
 }
 
 fn view_settings_mobile<'a>() -> Element<'a, ModalMsg> {
