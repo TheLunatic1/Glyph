@@ -1,0 +1,20 @@
+[package]
+name = "glyph-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+directories.workspace = true
+
+[dev-dependencies]
+glyph-core = { path = "../glyph-core" }
+glyph-api = { path = "../glyph-api" }
+russh.workspace = true
+russh-sftp.workspace = true
+ssh-key.workspace = true

@@ -82,6 +82,7 @@ pub struct GlyphHandler {
     newly_trusted: Arc<Mutex<Vec<TrustedHostRecord>>>,
     disconnect_tx: Option<mpsc::UnboundedSender<SessionEvent>>,
     intentional_close: Arc<AtomicBool>,
+    remote_tunnels: Arc<Mutex<HashMap<u16, crate::tunnels::RemoteTunnelTarget>>>,
 }
 
 impl client::Handler for GlyphHandler {
@@ -164,19 +165,55 @@ impl client::Handler for GlyphHandler {
             DisconnectReason::Error(e) => Err(e),
         }
     }
+
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: russh::Channel<russh::client::Msg>,
+        _connected_address: &str,
+        connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: russh::client::ChannelOpenHandle,
+        _session: &mut russh::client::Session,
+    ) -> std::result::Result<(), Self::Error> {
+        let target = {
+            let guard = self.remote_tunnels.lock().await;
+            guard.get(&(connected_port as u16)).cloned()
+        };
+        let Some(target) = target else {
+            reply
+                .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                .await;
+            return Ok(());
+        };
+        reply.accept().await;
+        tokio::spawn(async move {
+            if let Ok(mut local) =
+                tokio::net::TcpStream::connect((target.local_host.as_str(), target.local_port))
+                    .await
+            {
+                let mut ssh_stream = channel.into_stream();
+                let _ = tokio::io::copy_bidirectional(&mut ssh_stream, &mut local).await;
+            }
+        });
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
 pub struct SshSession {
-    inner: Arc<SshSessionInner>,
+    pub(crate) inner: Arc<SshSessionInner>,
 }
 
-struct SshSessionInner {
-    handle: Arc<Mutex<Option<client::Handle<GlyphHandler>>>>,
+pub(crate) struct SshSessionInner {
+    pub(crate) handle: Arc<Mutex<Option<client::Handle<GlyphHandler>>>>,
     exec_sem: Arc<Semaphore>,
     shells: Mutex<HashMap<String, ShellHandle>>,
     stat_abort: Mutex<Option<tokio::task::JoinHandle<()>>>,
     intentional_close: Arc<AtomicBool>,
+    pub(crate) sftp: Mutex<Option<Arc<russh_sftp::client::SftpSession>>>,
+    pub(crate) tunnels: Mutex<HashMap<String, crate::tunnels::ActiveTunnel>>,
+    pub(crate) remote_tunnels: Arc<Mutex<HashMap<u16, crate::tunnels::RemoteTunnelTarget>>>,
 }
 
 pub struct ConnectOutcome {
@@ -202,12 +239,14 @@ impl SshSession {
         let known_hosts = Arc::new(known_hosts);
         let newly_trusted = Arc::new(Mutex::new(Vec::new()));
         let intentional_close = Arc::new(AtomicBool::new(false));
+        let remote_tunnels = Arc::new(Mutex::new(HashMap::new()));
 
         let handle = connect_recursive(
             &config,
             Arc::clone(&known_hosts),
             Arc::clone(&newly_trusted),
             Arc::clone(&intentional_close),
+            Arc::clone(&remote_tunnels),
             event_tx.clone(),
             host_key_tx,
             true,
@@ -220,6 +259,9 @@ impl SshSession {
             shells: Mutex::new(HashMap::new()),
             stat_abort: Mutex::new(None),
             intentional_close,
+            sftp: Mutex::new(None),
+            tunnels: Mutex::new(HashMap::new()),
+            remote_tunnels,
         });
 
         let session = SshSession { inner };
@@ -433,6 +475,20 @@ impl SshSession {
         Ok(shell_handle)
     }
 
+    pub async fn open_direct_tcpip(
+        &self,
+        host: &str,
+        port: u16,
+    ) -> Result<impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static> {
+        let guard = self.inner.handle.lock().await;
+        let handle = guard.as_ref().ok_or_else(|| anyhow!("Not connected"))?;
+        let ch = handle
+            .channel_open_direct_tcpip(host, port as u32, "127.0.0.1", 0)
+            .await
+            .with_context(|| format!("SSH direct-tcpip failed to {host}:{port}"))?;
+        Ok(ch.into_stream())
+    }
+
     pub async fn close_shell(&self, tab_id: &str) {
         if let Some(shell) = self.inner.shells.lock().await.remove(tab_id) {
             shell.close();
@@ -444,6 +500,22 @@ impl SshSession {
 
         if let Some(h) = self.inner.stat_abort.lock().await.take() {
             h.abort();
+        }
+
+        let active_tunnels: Vec<crate::tunnels::ActiveTunnel> = {
+            let mut map = self.inner.tunnels.lock().await;
+            map.drain().map(|(_, v)| v).collect()
+        };
+        for t in active_tunnels {
+            t.cancel.cancel();
+            if let Some(task) = t.task {
+                task.abort();
+            }
+        }
+        self.inner.remote_tunnels.lock().await.clear();
+
+        if let Some(sftp) = self.inner.sftp.lock().await.take() {
+            let _ = sftp.close().await;
         }
 
         let shells: Vec<ShellHandle> = {
@@ -462,11 +534,17 @@ impl SshSession {
     }
 }
 
+pub(crate) fn posix_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+#[allow(clippy::too_many_arguments)]
 fn connect_recursive<'a>(
     config: &'a ConnectionConfig,
     known_hosts: Arc<HashMap<String, String>>,
     newly_trusted: Arc<Mutex<Vec<TrustedHostRecord>>>,
     intentional_close: Arc<AtomicBool>,
+    remote_tunnels: Arc<Mutex<HashMap<u16, crate::tunnels::RemoteTunnelTarget>>>,
     event_tx: mpsc::UnboundedSender<SessionEvent>,
     host_key_tx: mpsc::UnboundedSender<HostKeyPrompt>,
     is_target: bool,
@@ -489,6 +567,7 @@ fn connect_recursive<'a>(
                 Arc::clone(&known_hosts),
                 Arc::clone(&newly_trusted),
                 Arc::clone(&intentional_close),
+                Arc::new(Mutex::new(HashMap::new())),
                 event_tx.clone(),
                 host_key_tx.clone(),
                 false,
@@ -517,6 +596,11 @@ fn connect_recursive<'a>(
                     None
                 },
                 intentional_close,
+                remote_tunnels: if is_target {
+                    remote_tunnels
+                } else {
+                    Arc::new(Mutex::new(HashMap::new()))
+                },
             };
             tokio::time::timeout(
                 Duration::from_secs(15),
@@ -543,6 +627,11 @@ fn connect_recursive<'a>(
                     None
                 },
                 intentional_close,
+                remote_tunnels: if is_target {
+                    remote_tunnels
+                } else {
+                    Arc::new(Mutex::new(HashMap::new()))
+                },
             };
             tokio::time::timeout(
                 Duration::from_secs(15),

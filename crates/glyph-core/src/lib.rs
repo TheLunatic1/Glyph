@@ -1,5 +1,10 @@
+pub mod containers;
 pub mod crypto;
+pub mod mcp_config;
 pub mod models;
+pub mod sftp;
 pub mod ssh;
 pub mod telemetry;
+pub mod tunnels;
+pub mod updater;
 pub mod vault;

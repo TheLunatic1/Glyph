@@ -1,0 +1,22 @@
+[package]
+name = "glyph-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+glyph-core = { path = "../glyph-core" }
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+rand.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+russh.workspace = true
+russh-sftp.workspace = true
+ssh-key.workspace = true
+reqwest.workspace = true

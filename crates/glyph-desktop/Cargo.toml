@@ -8,9 +8,13 @@ authors.workspace = true
 [dependencies]
 glyph-core = { path = "../glyph-core" }
 glyph-terminal = { path = "../glyph-terminal" }
+glyph-vnc = { path = "../glyph-vnc" }
+glyph-api = { path = "../glyph-api" }
 
 iced.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
+qrcode.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
