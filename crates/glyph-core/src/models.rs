@@ -183,7 +183,8 @@ pub struct IdentityEntry {
     pub passphrase: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IdentitySummary {
     pub id: String,
     pub name: String,
@@ -560,7 +561,8 @@ pub struct SshKeyEntry {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SshKeySummary {
     pub id: String,
     pub name: String,
@@ -630,19 +632,22 @@ pub struct CommandSnippet {
     pub uses: u64,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CpuCoreStat {
     pub id: String,
     pub pct: f32,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TempReading {
     pub label: String,
     pub celsius: f32,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MemStats {
     pub total_mb: f32,
     pub used_mb: f32,
@@ -653,7 +658,8 @@ pub struct MemStats {
     pub swap_free_mb: f32,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DiskMount {
     pub source: String,
     pub size: String,
@@ -663,7 +669,8 @@ pub struct DiskMount {
     pub mountpoint: String,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NetInterfaceStat {
     pub iface: String,
     pub rx_bytes: u64,
@@ -672,7 +679,8 @@ pub struct NetInterfaceStat {
     pub tx_bps: f64,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GpuInfo {
     pub index: String,
     pub name: String,
@@ -682,7 +690,8 @@ pub struct GpuInfo {
     pub mem_used_mb: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TelemetrySnapshot {
     pub cpu_pct: f32,
     pub mem_pct: f32,

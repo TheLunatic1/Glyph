@@ -199,13 +199,156 @@ async fn execute_tool(name: &str, args: &Value) -> Result<String> {
         }
         "glyph_stop_tunnel" => {
             let server_id = req_str(args, "serverId")?;
-            let local_port = args
-                .get("localPort")
-                .and_then(Value::as_u64)
-                .ok_or_else(|| anyhow!("Missing required integer parameter: localPort"))?;
+            let local_port = args.get("localPort").and_then(Value::as_u64).unwrap_or(0);
+            let tunnel_id = args
+                .get("tunnelId")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            if tunnel_id.is_none() && local_port == 0 {
+                return Err(anyhow!("Provide either tunnelId or localPort"));
+            }
             call_glyph_api(
                 "POST",
                 "/api/tunnels/stop",
+                Some(json!({
+                    "serverId": server_id,
+                    "localPort": local_port,
+                    "tunnelId": tunnel_id,
+                })),
+            )
+            .await?
+        }
+        "glyph_disconnect_server" => {
+            let server_id = req_str(args, "serverId")?;
+            call_glyph_api(
+                "POST",
+                "/api/disconnect",
+                Some(json!({ "serverId": server_id })),
+            )
+            .await?
+        }
+        "glyph_get_server_stats" => {
+            let server_id = req_str(args, "serverId")?;
+            call_glyph_api(
+                "POST",
+                "/api/telemetry",
+                Some(json!({ "serverId": server_id })),
+            )
+            .await?
+        }
+        "glyph_sftp_list" => {
+            let server_id = req_str(args, "serverId")?;
+            let path = args.get("path").and_then(Value::as_str).unwrap_or("/");
+            call_glyph_api(
+                "POST",
+                "/api/sftp/list",
+                Some(json!({ "serverId": server_id, "path": path })),
+            )
+            .await?
+        }
+        "glyph_sftp_mkdir" => {
+            let server_id = req_str(args, "serverId")?;
+            let path = req_str(args, "path")?;
+            call_glyph_api(
+                "POST",
+                "/api/sftp/mkdir",
+                Some(json!({ "serverId": server_id, "path": path })),
+            )
+            .await?
+        }
+        "glyph_sftp_rename" => {
+            let server_id = req_str(args, "serverId")?;
+            let old_path = req_str(args, "oldPath")?;
+            let new_path = req_str(args, "newPath")?;
+            call_glyph_api(
+                "POST",
+                "/api/sftp/rename",
+                Some(json!({ "serverId": server_id, "oldPath": old_path, "newPath": new_path })),
+            )
+            .await?
+        }
+        "glyph_sftp_chmod" => {
+            let server_id = req_str(args, "serverId")?;
+            let path = req_str(args, "path")?;
+            let mode = args
+                .get("mode")
+                .ok_or_else(|| anyhow!("Missing required parameter: mode"))?;
+            call_glyph_api(
+                "POST",
+                "/api/sftp/chmod",
+                Some(json!({ "serverId": server_id, "path": path, "mode": mode })),
+            )
+            .await?
+        }
+        "glyph_sftp_delete" => {
+            let server_id = req_str(args, "serverId")?;
+            let path = req_str(args, "path")?;
+            let is_dir = args.get("isDir").and_then(Value::as_bool).unwrap_or(false);
+            call_glyph_api(
+                "POST",
+                "/api/sftp/delete",
+                Some(json!({ "serverId": server_id, "path": path, "isDir": is_dir })),
+            )
+            .await?
+        }
+        "glyph_sftp_transfer" => {
+            let source_server_id = req_str(args, "sourceServerId")?;
+            let source_path = req_str(args, "sourcePath")?;
+            let dest_server_id = req_str(args, "destServerId")?;
+            let dest_path = req_str(args, "destPath")?;
+            call_glyph_api(
+                "POST",
+                "/api/sftp/transfer",
+                Some(json!({
+                    "sourceServerId": source_server_id,
+                    "sourcePath": source_path,
+                    "destServerId": dest_server_id,
+                    "destPath": dest_path,
+                })),
+            )
+            .await?
+        }
+        "glyph_list_tunnels" => {
+            let server_id = req_str(args, "serverId")?;
+            call_glyph_api(
+                "POST",
+                "/api/tunnels/list",
+                Some(json!({ "serverId": server_id })),
+            )
+            .await?
+        }
+        "glyph_start_remote_tunnel" => {
+            let server_id = req_str(args, "serverId")?;
+            let remote_bind_addr = args
+                .get("remoteBindAddr")
+                .and_then(Value::as_str)
+                .unwrap_or("127.0.0.1");
+            let remote_port = req_u64(args, "remotePort")?;
+            let local_host = args
+                .get("localHost")
+                .and_then(Value::as_str)
+                .unwrap_or("127.0.0.1");
+            let local_port = req_u64(args, "localPort")?;
+            call_glyph_api(
+                "POST",
+                "/api/tunnels/start_remote",
+                Some(json!({
+                    "serverId": server_id,
+                    "remoteBindAddr": remote_bind_addr,
+                    "remotePort": remote_port,
+                    "localHost": local_host,
+                    "localPort": local_port,
+                })),
+            )
+            .await?
+        }
+        "glyph_start_socks_tunnel" => {
+            let server_id = req_str(args, "serverId")?;
+            let local_port = args.get("localPort").and_then(Value::as_u64).unwrap_or(0);
+            call_glyph_api(
+                "POST",
+                "/api/tunnels/start_socks",
                 Some(json!({ "serverId": server_id, "localPort": local_port })),
             )
             .await?
@@ -258,10 +401,7 @@ async fn execute_tool(name: &str, args: &Value) -> Result<String> {
         }
         "glyph_remove_command" => {
             let server_id = req_str(args, "serverId")?;
-            let cmd_id = args
-                .get("id")
-                .and_then(Value::as_u64)
-                .ok_or_else(|| anyhow!("Missing required integer parameter: id"))?;
+            let cmd_id = req_u64(args, "id")?;
             call_glyph_api(
                 "POST",
                 "/api/commands/remove",
@@ -269,10 +409,131 @@ async fn execute_tool(name: &str, args: &Value) -> Result<String> {
             )
             .await?
         }
+        "glyph_container_logs" => {
+            let server_id = req_str(args, "serverId")?;
+            let container_id = req_str(args, "containerId")?;
+            let tail = args.get("tail").and_then(Value::as_u64).unwrap_or(200);
+            call_glyph_api(
+                "POST",
+                "/api/containers/logs",
+                Some(json!({
+                    "serverId": server_id,
+                    "containerId": container_id,
+                    "tail": tail,
+                })),
+            )
+            .await?
+        }
+        "glyph_container_inspect" => {
+            let server_id = req_str(args, "serverId")?;
+            let container_id = req_str(args, "containerId")?;
+            let is_running = args.get("isRunning").and_then(Value::as_bool).unwrap_or(true);
+            call_glyph_api(
+                "POST",
+                "/api/containers/inspect",
+                Some(json!({
+                    "serverId": server_id,
+                    "containerId": container_id,
+                    "isRunning": is_running,
+                })),
+            )
+            .await?
+        }
+        "glyph_container_action" => {
+            let server_id = req_str(args, "serverId")?;
+            let container_id = req_str(args, "containerId")?;
+            let action = req_str(args, "action")?;
+            call_glyph_api(
+                "POST",
+                "/api/containers/action",
+                Some(json!({
+                    "serverId": server_id,
+                    "containerId": container_id,
+                    "action": action,
+                })),
+            )
+            .await?
+        }
+        "glyph_compose_action" => {
+            let server_id = req_str(args, "serverId")?;
+            let dir = req_str(args, "dir")?;
+            let action = req_str(args, "action")?;
+            call_glyph_api(
+                "POST",
+                "/api/containers/compose",
+                Some(json!({
+                    "serverId": server_id,
+                    "dir": dir,
+                    "action": action,
+                })),
+            )
+            .await?
+        }
+        "glyph_list_groups" => call_glyph_api("GET", "/api/groups", None).await?,
+        "glyph_run_group_command" => {
+            let group_id = req_str(args, "groupId")?;
+            let command = req_str(args, "command")?;
+            call_glyph_api(
+                "POST",
+                "/api/groups/execute",
+                Some(json!({ "groupId": group_id, "command": command })),
+            )
+            .await?
+        }
+        "glyph_list_snippet_packages" => {
+            call_glyph_api("GET", "/api/snippet_packages", None).await?
+        }
+        "glyph_add_snippet_package" => {
+            let pkg_name = req_str(args, "name")?;
+            let description = args.get("description").and_then(Value::as_str).unwrap_or("");
+            let snippets = args.get("snippets").cloned().unwrap_or_else(|| json!([]));
+            call_glyph_api(
+                "POST",
+                "/api/snippet_packages/add",
+                Some(json!({
+                    "name": pkg_name,
+                    "description": description,
+                    "snippets": snippets,
+                })),
+            )
+            .await?
+        }
+        "glyph_list_ssh_keys" => call_glyph_api("GET", "/api/ssh_keys", None).await?,
+        "glyph_list_identities" => call_glyph_api("GET", "/api/identities", None).await?,
+        "glyph_list_known_hosts" => call_glyph_api("GET", "/api/known_hosts", None).await?,
+        "glyph_open_vnc" => {
+            let server_id = req_str(args, "serverId")?;
+            let host = args
+                .get("host")
+                .and_then(Value::as_str)
+                .unwrap_or("127.0.0.1");
+            let port = args.get("port").and_then(Value::as_u64).unwrap_or(5900);
+            let auto_connect = args
+                .get("autoConnect")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            call_glyph_api(
+                "POST",
+                "/api/vnc/open",
+                Some(json!({
+                    "serverId": server_id,
+                    "host": host,
+                    "port": port,
+                    "autoConnect": auto_connect,
+                })),
+            )
+            .await?
+        }
         other => return Err(anyhow!("Unknown tool: {other}")),
     };
 
     Ok(serde_json::to_string_pretty(&val)?)
+}
+
+fn req_u64(args: &Value, key: &str) -> Result<u64> {
+    args.get(key)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| anyhow!("Missing required integer parameter: {key}"))
 }
 
 fn req_str<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
@@ -634,14 +895,15 @@ fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "glyph_stop_tunnel",
-            "description": "Stop an active SSH port-forwarding tunnel by its local port.",
+            "description": "Stop an active SSH port-forwarding tunnel by tunnelId (e.g. L:8080, R:9000, D:1080) or localPort.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" },
-                    "localPort": { "type": "integer", "description": "Bound local TCP port to close" }
+                    "localPort": { "type": "integer", "description": "Bound local TCP port to close (optional if tunnelId is given)" },
+                    "tunnelId": { "type": "string", "description": "Tunnel ID (L:<port>, R:<port>, D:<port>) from glyph_list_tunnels" }
                 },
-                "required": ["serverId", "localPort"]
+                "required": ["serverId"]
             }
         }),
         json!({
@@ -713,6 +975,285 @@ fn tool_definitions() -> Vec<Value> {
                     "id": { "type": "integer", "description": "Command snippet ID" }
                 },
                 "required": ["serverId", "id"]
+            }
+        }),
+        json!({
+            "name": "glyph_disconnect_server",
+            "description": "Disconnect an active SSH session and close its server window in Glyph Desktop.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" }
+                },
+                "required": ["serverId"]
+            }
+        }),
+        json!({
+            "name": "glyph_get_server_stats",
+            "description": "Fetch live CPU, memory, disk, network, temperature, and GPU telemetry and display it on the server Dashboard tab.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" }
+                },
+                "required": ["serverId"]
+            }
+        }),
+        json!({
+            "name": "glyph_sftp_list",
+            "description": "List directory contents on the remote server over SFTP and display them in the SFTP tab.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" },
+                    "path": { "type": "string", "description": "Remote directory path (default /)" }
+                },
+                "required": ["serverId"]
+            }
+        }),
+        json!({
+            "name": "glyph_sftp_mkdir",
+            "description": "Create a remote directory over SFTP and refresh the SFTP view.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" },
+                    "path": { "type": "string", "description": "New remote directory path" }
+                },
+                "required": ["serverId", "path"]
+            }
+        }),
+        json!({
+            "name": "glyph_sftp_rename",
+            "description": "Rename or move a remote file or directory over SFTP and refresh the SFTP view.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" },
+                    "oldPath": { "type": "string", "description": "Existing remote path" },
+                    "newPath": { "type": "string", "description": "Destination remote path" }
+                },
+                "required": ["serverId", "oldPath", "newPath"]
+            }
+        }),
+        json!({
+            "name": "glyph_sftp_chmod",
+            "description": "Change POSIX permissions on a remote file or directory over SFTP (e.g. \"755\" or \"0644\").",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" },
+                    "path": { "type": "string", "description": "Remote file or directory path" },
+                    "mode": { "type": ["string", "integer"], "description": "Octal mode string (e.g. \"755\") or integer permissions" }
+                },
+                "required": ["serverId", "path", "mode"]
+            }
+        }),
+        json!({
+            "name": "glyph_sftp_delete",
+            "description": "Delete a remote file or directory over SFTP (refuses root or unsafe paths).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" },
+                    "path": { "type": "string", "description": "Remote file or directory path" },
+                    "isDir": { "type": "boolean", "description": "True if target is a directory (default false)" }
+                },
+                "required": ["serverId", "path"]
+            }
+        }),
+        json!({
+            "name": "glyph_sftp_transfer",
+            "description": "Stream a file directly between two connected servers over SFTP without saving locally.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "sourceServerId": { "type": "string", "description": "Source server ID" },
+                    "sourcePath": { "type": "string", "description": "Source file path" },
+                    "destServerId": { "type": "string", "description": "Destination server ID" },
+                    "destPath": { "type": "string", "description": "Destination file path" }
+                },
+                "required": ["sourceServerId", "sourcePath", "destServerId", "destPath"]
+            }
+        }),
+        json!({
+            "name": "glyph_list_tunnels",
+            "description": "List all active local, remote, and SOCKS5 SSH tunnels for a server and focus the Tunnels tab.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" }
+                },
+                "required": ["serverId"]
+            }
+        }),
+        json!({
+            "name": "glyph_start_remote_tunnel",
+            "description": "Start a reverse (-R) SSH port-forwarding tunnel from remoteBindAddr:remotePort to localHost:localPort.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" },
+                    "remoteBindAddr": { "type": "string", "description": "Remote bind address (default 127.0.0.1)" },
+                    "remotePort": { "type": "integer", "description": "Listening port on remote server (0 for server-assigned ephemeral)" },
+                    "localHost": { "type": "string", "description": "Local destination host (default 127.0.0.1)" },
+                    "localPort": { "type": "integer", "description": "Local destination port" }
+                },
+                "required": ["serverId", "remotePort", "localPort"]
+            }
+        }),
+        json!({
+            "name": "glyph_start_socks_tunnel",
+            "description": "Start a dynamic (-D) SOCKS5 proxy over the SSH connection.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" },
+                    "localPort": { "type": "integer", "description": "Local SOCKS5 TCP port on 127.0.0.1 (0 for ephemeral)" }
+                },
+                "required": ["serverId"]
+            }
+        }),
+        json!({
+            "name": "glyph_container_logs",
+            "description": "Fetch recent logs for a container and open its Logs sub-tab inside the Containers view.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" },
+                    "containerId": { "type": "string", "description": "Container ID or name" },
+                    "tail": { "type": "integer", "description": "Number of log lines to retrieve (default 200)" }
+                },
+                "required": ["serverId", "containerId"]
+            }
+        }),
+        json!({
+            "name": "glyph_container_inspect",
+            "description": "Inspect a container configuration + memory usage and open its Inspect sub-tab in Containers.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" },
+                    "containerId": { "type": "string", "description": "Container ID or name" },
+                    "isRunning": { "type": "boolean", "description": "Whether to query live stats (default true)" }
+                },
+                "required": ["serverId", "containerId"]
+            }
+        }),
+        json!({
+            "name": "glyph_container_action",
+            "description": "Start, stop, or restart a Docker/Podman container on the remote server.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" },
+                    "containerId": { "type": "string", "description": "Container ID or name" },
+                    "action": { "type": "string", "enum": ["start", "stop", "restart"], "description": "Lifecycle action" }
+                },
+                "required": ["serverId", "containerId", "action"]
+            }
+        }),
+        json!({
+            "name": "glyph_compose_action",
+            "description": "Run docker compose up -d or down in a remote project directory and show output in Containers.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" },
+                    "dir": { "type": "string", "description": "Remote directory containing compose.yaml/docker-compose.yml" },
+                    "action": { "type": "string", "enum": ["up", "down"], "description": "Compose action" }
+                },
+                "required": ["serverId", "dir", "action"]
+            }
+        }),
+        json!({
+            "name": "glyph_list_groups",
+            "description": "List saved host groups and their member server IDs.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        }),
+        json!({
+            "name": "glyph_run_group_command",
+            "description": "Broadcast a shell command across all servers in a host group and show each host's live AI Agent tab.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "groupId": { "type": "string", "description": "Group ID from glyph_list_groups" },
+                    "command": { "type": "string", "description": "Shell command to run on all hosts in the group" }
+                },
+                "required": ["groupId", "command"]
+            }
+        }),
+        json!({
+            "name": "glyph_list_snippet_packages",
+            "description": "List reusable multi-command snippet packages from the Glyph vault.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        }),
+        json!({
+            "name": "glyph_add_snippet_package",
+            "description": "Create a new reusable snippet package with optional initial commands in the Glyph vault.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Package name" },
+                    "description": { "type": "string", "description": "Optional package description" },
+                    "snippets": {
+                        "type": "array",
+                        "description": "Optional initial snippets",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": { "type": "string" },
+                                "cmd": { "type": "string" }
+                            },
+                            "required": ["name", "cmd"]
+                        }
+                    }
+                },
+                "required": ["name"]
+            }
+        }),
+        json!({
+            "name": "glyph_list_ssh_keys",
+            "description": "List SSH key metadata, SHA-256 fingerprints, and public keys (never private keys).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        }),
+        json!({
+            "name": "glyph_list_identities",
+            "description": "List reusable credential identity metadata (never passwords or passphrases).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        }),
+        json!({
+            "name": "glyph_list_known_hosts",
+            "description": "List trusted SSH host key fingerprints stored in Glyph Known Hosts.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        }),
+        json!({
+            "name": "glyph_open_vnc",
+            "description": "Open the VNC Remote Desktop tab in Glyph Desktop, fill target host/port, and optionally connect over SSH.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "serverId": { "type": "string", "description": "Server ID from glyph_list_servers" },
+                    "host": { "type": "string", "description": "VNC host reachable from the SSH server (default 127.0.0.1)" },
+                    "port": { "type": "integer", "description": "VNC TCP port (default 5900)" },
+                    "autoConnect": { "type": "boolean", "description": "Immediately initiate VNC connection (default true)" }
+                },
+                "required": ["serverId"]
             }
         }),
     ]

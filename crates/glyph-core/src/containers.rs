@@ -13,7 +13,8 @@ pub struct ContainerSummary {
     pub state: String,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ContainerDetails {
     pub raw_json: String,
     pub network_mode: String,

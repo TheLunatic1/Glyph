@@ -23,7 +23,7 @@ use crate::ui::sidebar::{self, ServerTab, SidebarMsg};
 use crate::ui::splash;
 use crate::ui::terminal_page::{self, TerminalPageMsg, TerminalPageState};
 use crate::ui::titlebar::{self, TitleBarMsg};
-use crate::ui::tunnels_page::{self, TunnelsPageMsg, TunnelsPageState};
+use crate::ui::tunnels_page::{self, TunnelsPageMsg, TunnelsPageState, UiTunnelDirection};
 use crate::ui::vnc_page::{self, VncPageMsg, VncPageState};
 use glyph_api::{
     default_mcp_token_path, ensure_mcp_token, start_local_api, ApiHostKeyPolicy, ApiUiEvent,
@@ -3577,6 +3577,230 @@ impl GlyphApp {
                     Task::none()
                 }
             }
+            ApiUiEvent::SessionDisconnected { server_id } => {
+                let target_wids: Vec<window::Id> = self
+                    .server_windows
+                    .iter()
+                    .filter(|(_, s)| s.server.id == server_id)
+                    .map(|(&wid, _)| wid)
+                    .collect();
+                let mut tasks = Vec::with_capacity(target_wids.len());
+                for wid in target_wids {
+                    if let Some(mut srv) = self.server_windows.remove(&wid) {
+                        srv.closing = true;
+                        if let Some(vh) = &srv.vnc.handle {
+                            vh.disconnect();
+                        }
+                        tasks.push(window::close(wid));
+                    }
+                }
+                self.rebuild_palette();
+                Task::batch(tasks)
+            }
+            ApiUiEvent::AgentTelemetryUpdated {
+                server_id,
+                snapshot,
+            } => {
+                let mut focus_wid = None;
+                for (&wid, srv) in &mut self.server_windows {
+                    if srv.server.id == server_id {
+                        srv.active_tab = ServerTab::Dashboard;
+                        srv.dashboard.stats = *snapshot.clone();
+                        focus_wid = Some(wid);
+                    }
+                }
+                if let Some(wid) = focus_wid {
+                    window::gain_focus(wid)
+                } else {
+                    Task::none()
+                }
+            }
+            ApiUiEvent::AgentSftpDir {
+                server_id,
+                path,
+                entries,
+                status,
+            } => {
+                let mut focus_wid = None;
+                for (&wid, srv) in &mut self.server_windows {
+                    if srv.server.id == server_id {
+                        srv.active_tab = ServerTab::Sftp;
+                        srv.sftp.opened = true;
+                        srv.sftp.loading = false;
+                        srv.sftp.error = None;
+                        srv.sftp.current_path = path.clone();
+                        srv.sftp.entries = entries.clone();
+                        srv.sftp.editor = None;
+                        srv.sftp.status = Some(status.clone());
+                        focus_wid = Some(wid);
+                    }
+                }
+                if let Some(wid) = focus_wid {
+                    window::gain_focus(wid)
+                } else {
+                    Task::none()
+                }
+            }
+            ApiUiEvent::AgentSftpRefresh {
+                server_id,
+                dir,
+                status,
+            } => {
+                let mut focus_wid = None;
+                for (&wid, srv) in &mut self.server_windows {
+                    if srv.server.id == server_id {
+                        srv.active_tab = ServerTab::Sftp;
+                        srv.sftp.opened = true;
+                        srv.sftp.loading = true;
+                        srv.sftp.error = None;
+                        srv.sftp.editor = None;
+                        srv.sftp.status = Some(status.clone());
+                        spawn_sftp_readdir(wid, srv.session.clone(), dir.clone());
+                        focus_wid = Some(wid);
+                    }
+                }
+                if let Some(wid) = focus_wid {
+                    window::gain_focus(wid)
+                } else {
+                    Task::none()
+                }
+            }
+            ApiUiEvent::AgentTunnelDirection {
+                server_id,
+                direction,
+            } => {
+                let dir_enum = match direction.as_str() {
+                    "remote" => UiTunnelDirection::Remote,
+                    "dynamic" => UiTunnelDirection::Dynamic,
+                    _ => UiTunnelDirection::Local,
+                };
+                let mut focus_wid = None;
+                for (&wid, srv) in &mut self.server_windows {
+                    if srv.server.id == server_id {
+                        srv.active_tab = ServerTab::Tunnels;
+                        srv.tunnels.direction = dir_enum;
+                        spawn_list_tunnels(wid, srv.session.clone());
+                        focus_wid = Some(wid);
+                    }
+                }
+                if let Some(wid) = focus_wid {
+                    window::gain_focus(wid)
+                } else {
+                    Task::none()
+                }
+            }
+            ApiUiEvent::AgentContainerDetail {
+                server_id,
+                container_id,
+                show_inspect,
+                logs,
+                inspect,
+            } => {
+                let mut focus_wid = None;
+                for (&wid, srv) in &mut self.server_windows {
+                    if srv.server.id == server_id {
+                        srv.active_tab = ServerTab::Containers;
+                        if srv.containers.containers.is_empty() {
+                            spawn_list_containers(wid, srv.session.clone());
+                        }
+                        let matched = srv
+                            .containers
+                            .containers
+                            .iter()
+                            .find(|c| {
+                                c.id == container_id
+                                    || c.id.starts_with(&container_id)
+                                    || c.name == container_id
+                            })
+                            .cloned();
+                        let summary = matched.unwrap_or_else(|| ContainerSummary {
+                            id: container_id.clone(),
+                            image: String::new(),
+                            name: container_id.clone(),
+                            status: String::new(),
+                            state: "running".to_string(),
+                        });
+                        let resolved_id = summary.id.clone();
+                        if !srv.containers.open_tabs.contains(&resolved_id) {
+                            srv.containers.open_tabs.push(resolved_id.clone());
+                        }
+                        let det = srv
+                            .containers
+                            .details
+                            .entry(resolved_id.clone())
+                            .or_insert_with(|| ContainerTabDetail::new(summary));
+                        det.subtab = if show_inspect {
+                            ContainerSubTab::Inspect
+                        } else {
+                            ContainerSubTab::Logs
+                        };
+                        det.loading = false;
+                        if let Some(ref l) = logs {
+                            det.logs = l.clone();
+                        }
+                        if let Some(ref insp) = inspect {
+                            det.inspect = Some((**insp).clone());
+                        }
+                        srv.containers.active_tab = Some(resolved_id);
+                        focus_wid = Some(wid);
+                    }
+                }
+                if let Some(wid) = focus_wid {
+                    window::gain_focus(wid)
+                } else {
+                    Task::none()
+                }
+            }
+            ApiUiEvent::AgentComposeResult {
+                server_id,
+                dir,
+                output,
+            } => {
+                let mut focus_wid = None;
+                for (&wid, srv) in &mut self.server_windows {
+                    if srv.server.id == server_id {
+                        srv.active_tab = ServerTab::Containers;
+                        srv.containers.active_tab = None;
+                        srv.containers.show_compose = true;
+                        srv.containers.compose_path = dir.clone();
+                        srv.containers.compose_busy = false;
+                        srv.containers.compose_output = Some(output.clone());
+                        spawn_list_containers(wid, srv.session.clone());
+                        focus_wid = Some(wid);
+                    }
+                }
+                if let Some(wid) = focus_wid {
+                    window::gain_focus(wid)
+                } else {
+                    Task::none()
+                }
+            }
+            ApiUiEvent::AgentOpenVnc {
+                server_id,
+                host,
+                port,
+                auto_connect,
+            } => {
+                let mut focus_wid = None;
+                for (&wid, srv) in &mut self.server_windows {
+                    if srv.server.id == server_id {
+                        srv.active_tab = ServerTab::Vnc;
+                        srv.vnc.host = host.clone();
+                        srv.vnc.port = port.to_string();
+                        srv.vnc.error = None;
+                        if auto_connect && !srv.vnc.connected && !srv.vnc.connecting {
+                            srv.vnc.connecting = true;
+                            spawn_vnc_connect(wid, srv.session.clone(), host.clone(), port, None);
+                        }
+                        focus_wid = Some(wid);
+                    }
+                }
+                if let Some(wid) = focus_wid {
+                    window::gain_focus(wid)
+                } else {
+                    Task::none()
+                }
+            }
             ApiUiEvent::SecretsChanged { server_id } => {
                 let updated = self.with_vault(|v| v.list_secrets(&server_id));
                 for srv in self.server_windows.values_mut() {
@@ -3601,6 +3825,12 @@ impl GlyphApp {
                         spawn_list_tunnels(wid, srv.session.clone());
                     }
                 }
+                Task::none()
+            }
+            ApiUiEvent::VaultChanged => {
+                self.refresh_vault_cache();
+                self.reload_termius_caches();
+                self.rebuild_palette();
                 Task::none()
             }
         }

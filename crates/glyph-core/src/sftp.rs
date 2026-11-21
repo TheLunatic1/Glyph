@@ -2,6 +2,7 @@ use crate::ssh::{posix_quote, SshSession};
 use anyhow::{anyhow, Context, Result};
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::FileAttributes;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -12,7 +13,8 @@ use uuid::Uuid;
 const MAX_EDIT_FILE_BYTES: usize = 5 * 1024 * 1024;
 const TRANSFER_CHUNK_BYTES: usize = 32 * 1024;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SftpEntry {
     pub filename: String,
     pub path: String,
