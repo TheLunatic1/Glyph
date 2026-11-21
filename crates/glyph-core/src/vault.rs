@@ -514,6 +514,27 @@ impl VaultManager {
         self.save()
     }
 
+    pub fn known_hosts_map(&self) -> HashMap<String, String> {
+        self.state
+            .known_hosts
+            .iter()
+            .map(|h| (h.host_port.clone(), h.fingerprint_sha256.clone()))
+            .collect()
+    }
+
+    pub fn list_known_hosts(&self) -> &[KnownHostEntry] {
+        &self.state.known_hosts
+    }
+
+    pub fn remove_known_host(&mut self, host_port: &str) -> Result<()> {
+        let before = self.state.known_hosts.len();
+        self.state.known_hosts.retain(|h| h.host_port != host_port);
+        if self.state.known_hosts.len() != before {
+            self.save()?;
+        }
+        Ok(())
+    }
+
     // ── Secrets Vault ─────────────────────────────────────────────────────────
 
     pub fn list_secrets(&self, server_id: &str) -> Vec<SecretSummary> {
@@ -620,7 +641,7 @@ impl VaultManager {
     pub fn list_commands(&self, server_id: &str) -> Vec<CommandSnippet> {
         if let Some(list) = self.state.commands.get(server_id) {
             let mut sorted = list.clone();
-            sorted.sort_by(|a, b| b.uses.cmp(&a.uses));
+            sorted.sort_by_key(|a| std::cmp::Reverse(a.uses));
             return sorted;
         }
         default_commands()

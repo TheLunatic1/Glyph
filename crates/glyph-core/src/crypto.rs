@@ -136,7 +136,7 @@ impl VaultCrypto {
                 Err(keyring::Error::NoEntry) => {
                     let mut key = Zeroizing::new([0u8; KEY_LEN]);
                     random_bytes(key.as_mut())?;
-                    let b64 = Zeroizing::new(B64.encode(&*key));
+                    let b64 = Zeroizing::new(B64.encode(*key));
                     if entry.set_password(&b64).is_ok() {
                         // Verify round-trip read because some stub backends accept writes silently
                         if entry.get_password().is_ok() {
@@ -232,7 +232,7 @@ impl VaultCrypto {
 
         let mut subkey = Zeroizing::new([0u8; KEY_LEN]);
         Argon2::default()
-            .hash_password_into(&*self.master_key, &salt, subkey.as_mut())
+            .hash_password_into(&*self.master_key, salt, subkey.as_mut())
             .map_err(|e| anyhow!("Argon2id subkey derivation failed: {e}"))?;
 
         let key = Key::<Aes256Gcm>::from(*subkey);

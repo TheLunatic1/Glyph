@@ -33,6 +33,7 @@ pub enum ShellEvent {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum SessionEvent {
     Status(String),
     Stats(TelemetrySnapshot),

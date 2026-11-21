@@ -10,6 +10,17 @@ pub enum AuthMethod {
     Agent,
 }
 
+impl std::fmt::Display for AuthMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Password => write!(f, "Password (or Auto-Detect)"),
+            Self::VaultKey => write!(f, "Vault SSH Key"),
+            Self::KeyFile => write!(f, "Private Key File"),
+            Self::Agent => write!(f, "SSH Agent"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerEntry {
