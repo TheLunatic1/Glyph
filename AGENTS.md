@@ -1,93 +1,73 @@
-# AGENTS.md — Glyph Developer & Architecture Documentation
+# AGENTS.md — Glyph v3 Pure-Rust Developer & Architecture Guide
 
 ## Project Overview & Philosophy
-**Glyph** is a modern, secure, glassmorphic Electron + React SSH and server management application. It features integrated PTY terminal tabs, live SFTP browser & editor, real-time Docker container management, live CPU/RAM/Disk stats, tunnels, ZeroTier networking, master-password-encrypted server vault, selective backup export/import, and an embedded Model Context Protocol (MCP) server for local AI agents (Antigravity, Claude Desktop, Claude Code, Cursor, VS Code).
+**Glyph v3** is a 100% pure-Rust, cross-platform (Windows, macOS, Linux) desktop SSH client, server telemetry suite, dual-pane SFTP browser/editor, Docker/Podman manager, VNC-over-SSH remote desktop viewer, encrypted credential vault, and 36-tool Model Context Protocol (MCP) host — replacing the Electron v2 runtime (archived on branch `legacy-electron`) while preserving full visual fidelity and `.glyph` vault interoperability with [Glyph Mobile](https://github.com/TheLunatic1/glyph-app).
 
-## Workspace & Codebase Tree
+## Workspace Layout
 ```
 Glyph/
-├── electron-builder.yml       # Electron builder packaging config & extraResources
-├── package.json               # Scripts, dependencies, and app version (v2.7.6)
-├── resources/
-│   ├── logo.png               # App & system tray icon
-│   └── mcp.js                 # Standalone bundled MCP server bundle for production
-├── scripts/
-│   └── bundle-mcp.cjs         # Standalone MCP bundler using esbuild
-├── src/
-│   ├── main/
-│   │   ├── index.js           # Electron main process, tray, window routes, single-instance lock
-│   │   ├── api.js             # Local token-authenticated HTTP API (port 15354) for MCP
-│   │   ├── sshManager.js      # SSH connection lifecycle, PTY stream, SFTP client
-│   │   ├── vault.js           # Server credential vault with AES/safeStorage encryption
-│   │   ├── secretsVault.js    # Per-server secrets manager
-│   │   ├── updater.js         # Auto-updater lifecycle
-│   │   └── cryptoUtil.js      # AES-256-GCM encryption/decryption utilities
-│   ├── preload/
-│   │   └── index.js           # Electron contextBridge IPC definitions (`window.api`)
-│   ├── renderer/
-│   │   ├── index.html         # HTML entry point
-│   │   └── src/
-│   │       ├── App.jsx        # Root component, routing, connection overlays, modals
-│   │       ├── assets/        # Visual assets and logo
-│   │       ├── components/    # Reusable UI components
-│   │       │   ├── TitleBar.jsx        # Drag title bar with left attribution
-│   │       │   ├── SplashScreen.jsx    # Smooth launch splash screen
-│   │       │   ├── ExportModal.jsx     # Selective server export modal
-│   │       │   ├── ImportModal.jsx     # Selective server import modal
-│   │       │   ├── SettingsModal.jsx   # AI Agent (MCP) & Mobile App config modal
-│   │       │   ├── MobileAppModal.jsx  # Dynamic QR code & instant APK download modal
-│   │       │   ├── Sidebar.jsx         # Server view navigation
-│   │       │   ├── OsLogo.jsx          # OS detection badges
-│   │       │   └── UpdateModal.jsx     # In-app update manager
-│   │       └── pages/         # Connected server views
-│   │           ├── Dashboard.jsx       # CPU, RAM, Disk, Uptime metrics
-│   │           ├── Terminal.jsx        # xterm.js PTY terminal tabs
-│   │           ├── SFTP.jsx            # Remote file browser & editor
-│   │           ├── Containers.jsx      # Docker management with search & compose
-│   │           ├── Commands.jsx        # Saved snippet launcher
-│   │           ├── Secrets.jsx         # Server secret injection
-│   │           └── Tunnels.jsx         # Local/remote port forwarding
-│   └── mcp/
-│       └── index.js           # MCP server implementation with auto-launch capability
+├── .github/workflows/
+│   ├── ci.yml                # Cross-OS lint, dependency audit & test suite (Win/Mac/Linux)
+│   ├── release.yml           # Auto tag & multi-OS binary packager (Cargo.toml version)
+│   └── security-guard.yml    # Dropper/malware signature scanner
+├── assets/
+│   ├── fonts/                # Bundled IBM Plex Sans/Mono static TTFs
+│   └── logo.png              # Application & tray icon
+├── docs/
+│   └── MCP.md                # Full 36-tool MCP & loopback HTTP API reference
+└── crates/
+    ├── glyph-core/           # Pure-Rust core domain engine & unit/SSH E2E tests
+    │   └── src/
+    │       ├── vault.rs      # Encrypted VaultManager (servers, groups, identities, keys, secrets, snippets, E2EE sync)
+    │       ├── crypto.rs     # AES-256-GCM, Argon2id, Scrypt, OS keyring integration
+    │       ├── ssh.rs        # russh + ring SSH, ProxyJump, TOFU, Agent Forwarding, Port Knocking
+    │       ├── sftp.rs       # russh-sftp operations + zero-copy remote-to-remote streaming
+    │       ├── tunnels.rs    # Local (-L), Remote (-R), and RFC 1928 Dynamic SOCKS5 (-D) tunnels
+    │       ├── containers.rs # Docker/Podman & Compose CLI orchestration + parsers
+    │       ├── telemetry.rs  # Multi-section Linux server metrics parser (CPU/RAM/Disk/Net/Temp/GPU)
+    │       ├── local_pty.rs  # Local shell PTY launcher (`portable-pty`)
+    │       ├── serial.rs     # Pure-Rust Serial/UART session (`serialport` default-features=false)
+    │       ├── telnet.rs     # RFC 854 Telnet + IAC NAWS session
+    │       ├── importers.rs  # OpenSSH config, PuTTY .reg, CSV importers & SSH config exporter
+    │       ├── cloud_import.rs # DigitalOcean, Hetzner, Tailscale host importers
+    │       ├── sync.rs       # Zero-knowledge folder & WebDAV encrypted vault sync
+    │       ├── mcp_config.rs # 1-click MCP client config detector/writer
+    │       └── updater.rs    # Semver comparison & GitHub Releases checker
+    ├── glyph-terminal/       # alacritty_terminal emulator, regex highlights, asciinema .cast recorder, Iced canvas
+    ├── glyph-vnc/            # Pure-Rust RFB 3.8 + DES VNC client & Iced viewport widget
+    ├── glyph-api/            # Axum loopback REST API (127.0.0.1:15354) + ApiUiEvent bus + E2E tests
+    ├── glyph-mcp/            # Standalone stdio JSON-RPC 2.0 MCP binary (auto-launches GUI, 36 tools) + E2E tests
+    └── glyph-desktop/        # Multi-window Iced 0.14 GUI, tray, splash, OS icons, palette & modals
 ```
 
 ## Critical Architectural Rules & Invariants
-1. **Single Instance Lock:** Always enforce `app.requestSingleInstanceLock()` in `src/main/index.js` to ensure subsequent launches restore and focus the existing main window from the tray without port 15354 collisions.
-2. **Local MCP API Protocol:** The MCP backend runs an Express server on `127.0.0.1:15354` authenticated with a per-session token stored in `~/.glyph/mcp_token`.
-3. **Safe Storage & Encrypted Backups:** Passwords in the vault use Electron `safeStorage` locally, and `.glyph` export files are encrypted with user-provided master passwords via AES-256-GCM.
-4. **Window Isolation:** Each connected server runs in a dedicated `BrowserWindow` keyed by `windowRoutes` and `sshManagers` maps.
+1. **Zero C/CMake/OpenSSL Dependencies:** Do **NOT** introduce `openssl-sys`, `aws-lc-sys`, `cmake`, `nasm`, or `libudev` into `Cargo.lock`. Use `ring` + `rustls` (`rustls-tls-webpki-roots-no-provider`) and pure-Rust crates (`aes-gcm`, `argon2`, `scrypt`, `des`). CI enforces this via `cargo tree`.
+2. **Single-Instance & Loopback REST API:** `glyph-desktop` enforces `SingleInstance::new("com.glyph.app.v3")` and binds Axum HTTP on `127.0.0.1:15354` (configurable via `GLYPH_API_PORT` for isolated tests) protected by a constant-time Bearer token in `~/.glyph/mcp_token` (`GLYPH_MCP_TOKEN_FILE` override in tests).
+3. **Windows Auto-Launch Pipe Hygiene (`glyph-mcp`):** When `glyph-mcp` spawns `glyph-desktop.exe` on Windows, it clears `HANDLE_FLAG_INHERIT` on stdio handles (`disable_stdio_handle_inheritance`) and passes `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` (`0x0000_0208`). Never pass `CREATE_BREAKAWAY_FROM_JOB` (fails under restricted Job Objects) and never skip clearing pipe inheritance (otherwise MCP clients block on EOF).
+4. **MCP Live UI Synchronization & Security Boundary:** Every mutating/visual `glyph_*` route emits typed `ApiUiEvent` events handled in `GlyphApp::handle_api_ui_event` so actions open windows, focus tabs, stream `AI Agent` output, open files in the SFTP editor, open container Logs/Inspect sub-tabs, and refresh views live. Keep decrypted secrets, private SSH keys, destructive vault edits, local host filesystem reads/writes, VNC passwords, and root SFTP deletion (`/` / `.` / `..`) excluded from MCP.
+5. **macOS Cross-Arch Compatibility:** `release.yml` builds universal macOS binaries (`aarch64-apple-darwin` + `x86_64-apple-darwin` via `lipo`) — avoid target-only crates or inline assembly that breaks on either target.
+6. **Legacy Mobile Interoperability:** Keep `.glyph` AES-256-GCM export/import schemas compatible with `TheLunatic1/glyph-app` and legacy Glyph v2.
 
-## Mobile Ecosystem (`glyph-app/`)
-The mobile application (`D:\REPOSITORIES\glyph-app`) is a high-performance React Native / Expo application built for Android & iOS with 100% architectural and visual parity with Desktop Glyph:
-1. **Server Schema Parity:** Direct alignment with Desktop vault schema: `{ id, name, host, username, port (default 22), password, privateKey, zerotier, os, status, metrics }`.
-2. **ZeroTier Network Overlay:** First-class ZeroTier Network ID support with ZT Network status pill badge and mesh routing indications.
-3. **OS Auto-Detection & Badges:** Remote OS is probed automatically upon SSH connection via `/etc/os-release` / `uname -s` and saved to the server in the vault, displaying distro-specific badges (Ubuntu, Debian, Alpine, CentOS, Arch, Fedora, macOS, Windows).
-4. **Desktop Modal & Terminal Flow:** Add/Edit Server form directly ports Desktop fields with "Show Advanced Options" toggle. The Connecting Modal replicates Desktop's real-time terminal sequence with live ms counter and step logs.
-5. **Connected Server Hub & Live Telemetry:** Feature parity across live Dashboard stats (CPU, RAM, Disk, GPU, and Network bandwidth) with full interactive hardware breakdown modals (Per-thread CPU load, Memory & Swap allocation, Storage & Mount partitions, Multi-vendor GPU driver setup & metrics, Network interface throughput), interactive Terminal with mobile accessory keys (ESC, TAB, CTRL, ALT, ^C, ^Z, ^D, |, /), SFTP file manager with remote code editor, Docker container cards with search & live logs, Commands catalog, Tunnels, and Secrets vault.
-6. **Author Attribution & Open Source Documentation:** Author branding (`TheLunatic1 (Salman Toha)`) across app header and settings, alongside an embedded in-app markdown document viewer for Apache License 2.0, Contributing Guidelines (`CONTRIBUTING.md`), Code of Conduct (`CODE_OF_CONDUCT.md`), and Release Notes (`RELEASE_NOTES.md`).
-
-## Build, Test & Run Workflow
-### Desktop (Electron + React)
+## Build, Test & Verify Workflow
 ```bash
-# Install dependencies
-npm install
+# Check formatting/lints strictly (zero warnings allowed)
+cargo clippy --workspace --all-targets -- -D warnings
 
-# Run in development mode (hot-reloading)
-npm run dev
+# Run all unit & loopback E2E suites (SSH, SFTP, VNC, REST API, MCP stdio)
+cargo test --workspace
 
-# Build production bundle (auto-bundles MCP server + Vite)
-npm run build
+# Run desktop GUI from source
+cargo run -p glyph-desktop
 
-# Package installers (NSIS / portable for Windows)
-npm run dist
+# Build release binaries
+cargo build --workspace --release
 ```
 
-### Mobile (React Native / Expo)
-```bash
-# Bundle embedded JS for Android
-npx expo export:embed --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res
-
-# Install & run on attached Android device / emulator
-cd android && .\gradlew.bat installDebug
-adb shell am start -n dev.glyph.mobile/.MainActivity
+### Windows Low-Memory Cargo Guardrail
+On Windows hosts with tight memory when compiling debug artifacts alongside the browser/IDE:
+```powershell
+$env:CARGO_PROFILE_DEV_DEBUG="0"
+cargo clippy --workspace --all-targets -j 1 -- -D warnings
+cargo test --workspace -j 1
+cargo build --workspace --release -j 2
 ```

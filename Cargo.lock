@@ -2326,7 +2326,7 @@ dependencies = [
 
 [[package]]
 name = "glyph-api"
-version = "3.0.0-alpha.1"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2345,7 +2345,7 @@ dependencies = [
 
 [[package]]
 name = "glyph-core"
-version = "3.0.0-alpha.1"
+version = "3.0.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -2378,7 +2378,7 @@ dependencies = [
 
 [[package]]
 name = "glyph-desktop"
-version = "3.0.0-alpha.1"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -2410,7 +2410,7 @@ dependencies = [
 
 [[package]]
 name = "glyph-mcp"
-version = "3.0.0-alpha.1"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "directories",
@@ -2426,7 +2426,7 @@ dependencies = [
 
 [[package]]
 name = "glyph-terminal"
-version = "3.0.0-alpha.1"
+version = "3.0.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -2441,7 +2441,7 @@ dependencies = [
 
 [[package]]
 name = "glyph-vnc"
-version = "3.0.0-alpha.1"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "cipher 0.4.4",

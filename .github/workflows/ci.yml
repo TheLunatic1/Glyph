@@ -48,13 +48,14 @@ jobs:
             libxinerama-dev \
             libxrandr-dev \
             libvulkan-dev \
+            libfontconfig1-dev \
             pkg-config
 
       - name: Verify zero OpenSSL / aws-lc-sys / cmake build dependencies
         shell: bash
         run: |
-          if cargo tree | grep -qi "aws-lc"; then
-            echo "ERROR: Forbidden aws-lc dependency detected"
+          if cargo tree | grep -qiE "aws-lc|openssl-sys"; then
+            echo "ERROR: Forbidden aws-lc or openssl-sys dependency detected"
             exit 1
           fi
 

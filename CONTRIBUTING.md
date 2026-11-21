@@ -1,22 +1,40 @@
 # Contributing to Glyph
 
-First off, thank you for considering contributing to Glyph! It's people like you that make Glyph such a great tool for the community.
+Thank you for contributing to **Glyph**!
 
-## Where do I go from here?
+## Development Prerequisites
 
-If you've noticed a bug or have a feature request, make sure to check our [Issues](https://github.com/TheLunatic1/Glyph/issues) to see if someone has already reported it or requested it. If not, feel free to open a new issue using the provided templates!
+- **Rust stable (`1.85+`, 2021 edition)** via [rustup.rs](https://rustup.rs)
+- **Linux only (Debian / Ubuntu):**
+  ```bash
+  sudo apt-get update && sudo apt-get install -y \
+    libx11-dev libxkbcommon-dev libwayland-dev libgtk-3-dev libxdo-dev \
+    libasound2-dev libdbus-1-dev libxcursor-dev libxi-dev libxinerama-dev \
+    libxrandr-dev libvulkan-dev libfontconfig1-dev pkg-config
+  ```
 
-## Setting up your development environment
+## Local Setup & Workflow
 
-To build and run Glyph locally:
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/TheLunatic1/Glyph.git
+   cd Glyph
+   ```
+2. Run lint checks (CI enforces zero warnings):
+   ```bash
+   cargo clippy --workspace --all-targets -- -D warnings
+   ```
+3. Run the full unit and loopback E2E test suite:
+   ```bash
+   cargo test --workspace
+   ```
+4. Launch the desktop app from source:
+   ```bash
+   cargo run -p glyph-desktop
+   ```
 
-1. Clone the repository: `git clone https://github.com/TheLunatic1/Glyph.git`
-2. Change directory: `cd Glyph`
-3. Install dependencies: `npm install`
-4. Start the app in development mode: `npm run dev`
+## Guidelines
 
-## Pull Request Process
-
-1. Ensure any install or build dependencies are removed before the end of the layer when doing a build.
-2. Update the README.md with details of changes to the interface, this includes new environment variables, exposed ports, useful file locations and container parameters.
-3. You may merge the Pull Request in once you have the sign-off of at least one other developer, or if you do not have permission to do that, you may request the maintainer to merge it for you.
+- Keep all crates **100% pure Rust without CMake, NASM, OpenSSL, or `aws-lc-sys`**. CI verifies `cargo tree` on every PR.
+- Add or update unit/E2E tests in the matching crate (`glyph-core`, `glyph-terminal`, `glyph-vnc`, `glyph-api`, `glyph-mcp`) for any new behavior or MCP route.
+- Update [`README.md`](README.md) and [`docs/MCP.md`](docs/MCP.md) when adding MCP tools or user-facing configuration changes.

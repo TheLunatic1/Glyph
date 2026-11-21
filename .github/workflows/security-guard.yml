@@ -31,4 +31,4 @@ jobs:
             exit 1
           fi
 
-          echo "âœ… Security check passed. Codebase is clean."
+          echo "✅ Security check passed. Codebase is clean."

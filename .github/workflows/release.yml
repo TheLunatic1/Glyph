@@ -1,11 +1,11 @@
 name: Release Glyph
 
 # Triggers:
-#   1. Auto — on push to main/v3-rust touching Cargo.toml (reads workspace version, tags if new, builds + publishes)
+#   1. Auto — on push to main touching Cargo.toml (reads workspace version, tags if new, builds + publishes)
 #   2. Manual — workflow_dispatch with optional custom tag override
 on:
   push:
-    branches: [main, v3-rust]
+    branches: [main]
     paths:
       - 'Cargo.toml'
   workflow_dispatch:
@@ -109,8 +109,8 @@ jobs:
             libxinerama-dev \
             libxrandr-dev \
             libvulkan-dev \
+            libfontconfig1-dev \
             pkg-config \
-            fuse \
             wget
 
       - name: Build Windows Release Binaries
@@ -201,6 +201,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
+          body_path: RELEASE_NOTES.md
           generate_release_notes: true
           files: |
             dist/*.exe
@@ -211,6 +212,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
+          body_path: RELEASE_NOTES.md
           generate_release_notes: true
           files: |
             dist/*.dmg
@@ -221,6 +223,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
+          body_path: RELEASE_NOTES.md
           generate_release_notes: true
           files: |
             dist/*.tar.gz
