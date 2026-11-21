@@ -237,12 +237,13 @@ async fn execute_tool(name: &str, args: &Value) -> Result<String> {
         }
         "glyph_list_commands" => {
             let server_id = req_str(args, "serverId")?;
-            call_glyph_api(
+            let raw = call_glyph_api(
                 "POST",
                 "/api/commands/list",
                 Some(json!({ "serverId": server_id })),
             )
-            .await?
+            .await?;
+            raw.get("commands").cloned().unwrap_or(raw)
         }
         "glyph_add_command" => {
             let server_id = req_str(args, "serverId")?;

@@ -559,9 +559,9 @@ async fn handle_containers_list(
 async fn handle_commands_list(
     State(state): State<AppState>,
     Json(body): Json<ServerIdBody>,
-) -> ApiResult<Json<Vec<CommandSnippet>>> {
+) -> ApiResult<Json<Value>> {
     let list = state.controller.commands_list(body.server_id).await?;
-    Ok(Json(list))
+    Ok(Json(json!({ "commands": list })))
 }
 
 async fn handle_commands_add(

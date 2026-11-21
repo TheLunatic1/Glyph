@@ -524,7 +524,7 @@ async fn local_api_all_13_routes_and_auth_e2e() {
     assert_eq!(cmd_add["success"], true);
     let cmd_id = cmd_add["id"].as_u64().expect("cmd id");
 
-    let cmds: Vec<Value> = client
+    let cmds_resp: Value = client
         .post(format!("{base}/api/commands/list"))
         .bearer_auth(&token)
         .json(&json!({ "serverId": server_id }))
@@ -534,6 +534,7 @@ async fn local_api_all_13_routes_and_auth_e2e() {
         .json()
         .await
         .expect("cmds json");
+    let cmds = cmds_resp["commands"].as_array().expect("commands array");
     assert!(cmds.iter().any(|c| c["id"] == cmd_id && c["name"] == "Disk Free"));
 
     let cmd_rm: Value = client
