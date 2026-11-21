@@ -385,6 +385,8 @@ pub fn view<'a>(
                 font: FONT_MONO,
                 bold_font: FONT_MONO_BOLD,
                 focused,
+                highlight_rules: &[],
+                highlights_enabled: false,
             })
             .width(Length::Fill)
             .height(Length::Fill),
@@ -406,6 +408,8 @@ pub fn view<'a>(
                     font: FONT_MONO,
                     bold_font: FONT_MONO_BOLD,
                     focused: focused2,
+                    highlight_rules: &[],
+                    highlights_enabled: false,
                 })
                 .width(Length::Fill)
                 .height(Length::Fill),

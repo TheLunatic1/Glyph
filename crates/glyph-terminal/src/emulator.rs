@@ -1,5 +1,5 @@
 use alacritty_terminal::event::VoidListener;
-use alacritty_terminal::grid::Scroll;
+use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Direction, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::cell::Flags;
@@ -188,6 +188,36 @@ impl TerminalEmulator {
             .map(|l| l.trim_end().to_string())
             .collect()
     }
+
+    /// Exports the entire terminal scrollback plus visible screen text as plain UTF-8 lines.
+    pub fn all_text(&self) -> String {
+        let grid = self.term.grid();
+        let top = grid.topmost_line();
+        let bottom = grid.bottommost_line();
+        let raw = self.term.bounds_to_string(
+            Point::new(top, Column(0)),
+            Point::new(bottom, Column(self.cols.saturating_sub(1))),
+        );
+        let trimmed: Vec<&str> = raw
+            .lines()
+            .map(str::trim_end)
+            .collect();
+        // Strip trailing completely empty lines
+        let end = trimmed
+            .iter()
+            .rposition(|l| !l.is_empty())
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        trimmed[..end].join("\n")
+    }
+
+    /// 1-based cursor `(row, col)` suitable for answering ANSI DSR `\x1b[6n` queries.
+    pub fn cursor_position_1based(&self) -> (usize, usize) {
+        let pt = self.term.grid().cursor.point;
+        let row = (pt.line.0.max(0) as usize) + 1;
+        let col = pt.column.0 + 1;
+        (row, col)
+    }
 }
 
 fn escape_regex_literal(input: &str) -> String {
@@ -347,6 +377,10 @@ mod tests {
         let lines = emu.visible_lines();
         assert_eq!(lines[0], "Hello Glyph");
         assert_eq!(lines[1], "Second line");
+        assert_eq!(emu.cursor_position_1based(), (2, 12));
+        let all = emu.all_text();
+        assert!(all.contains("Hello Glyph"));
+        assert!(all.contains("Second line"));
     }
 
     #[test]

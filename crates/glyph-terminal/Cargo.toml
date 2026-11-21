@@ -7,6 +7,11 @@ authors.workspace = true
 
 [dependencies]
 alacritty_terminal.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+directories.workspace = true
 iced.workspace = true
+regex.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 unicode-width = "0.2"

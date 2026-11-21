@@ -1,8 +1,9 @@
 use crate::emulator::{encode_iced_key, TerminalEmulator};
+use crate::highlights::{compute_line_highlights, CompiledHighlightRule};
 use crate::themes::TerminalThemeId;
 use alacritty_terminal::index::Point;
 use alacritty_terminal::term::cell::Flags;
-use alacritty_terminal::vte::ansi::CursorShape;
+use alacritty_terminal::vte::ansi::{Color as AnsiColor, CursorShape, NamedColor};
 use iced::keyboard::key::Named;
 use iced::keyboard::{self, Key};
 use iced::mouse;
@@ -29,6 +30,8 @@ pub struct TerminalCanvas<'a> {
     pub font: Font,
     pub bold_font: Font,
     pub focused: bool,
+    pub highlight_rules: &'a [CompiledHighlightRule],
+    pub highlights_enabled: bool,
 }
 
 #[derive(Default)]
@@ -84,6 +87,17 @@ impl<'a> Program<TerminalEvent> for TerminalCanvas<'a> {
         // Background fill
         frame.fill_rectangle(IcedPoint::ORIGIN, bounds.size(), palette.background);
 
+        let row_highlights: Vec<Vec<Option<Color>>> =
+            if self.highlights_enabled && !self.highlight_rules.is_empty() {
+                self.emulator
+                    .visible_lines()
+                    .iter()
+                    .map(|line| compute_line_highlights(line, self.highlight_rules))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
         let content = self.emulator.renderable();
         let offset = content.display_offset as i32;
         let visible_rows = self.emulator.rows() as i32;
@@ -115,6 +129,16 @@ impl<'a> Program<TerminalEvent> for TerminalCanvas<'a> {
 
             let bright = cell.flags.contains(Flags::BOLD);
             let mut fg = palette.resolve(cell.fg, content.colors, bright);
+            if matches!(cell.fg, AnsiColor::Named(NamedColor::Foreground)) {
+                if let Some(hl_color) = row_highlights
+                    .get(row as usize)
+                    .and_then(|cols| cols.get(col as usize))
+                    .copied()
+                    .flatten()
+                {
+                    fg = hl_color;
+                }
+            }
             let mut bg = palette.resolve(cell.bg, content.colors, false);
 
             if cell.flags.contains(Flags::INVERSE) {

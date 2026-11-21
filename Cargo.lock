@@ -2425,8 +2425,13 @@ name = "glyph-terminal"
 version = "3.0.0-alpha.1"
 dependencies = [
  "alacritty_terminal",
+ "anyhow",
+ "chrono",
+ "directories",
  "iced",
+ "regex",
  "serde",
+ "serde_json",
  "unicode-width",
 ]
 
