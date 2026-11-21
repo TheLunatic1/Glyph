@@ -205,14 +205,15 @@ pub struct SettingsModalState {
 impl SettingsModalState {
     pub fn new(encryption_available: bool, data_dir: String) -> Self {
         let mcp_bin_path = resolve_mcp_binary_path().display().to_string();
-        let mcp_token_path = glyph_api::default_mcp_token_path()
+        let api_port = crate::app::effective_api_port();
+        let mcp_token_path = crate::app::effective_mcp_token_path()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|_| "~/.glyph/mcp_token".to_string());
         Self {
             active_tab: SettingsTab::AiAgents,
             encryption_available,
             data_dir,
-            api_port: glyph_api::DEFAULT_API_PORT,
+            api_port,
             mcp_token_path,
             mcp_bin_path,
             clients: scan_mcp_clients(),

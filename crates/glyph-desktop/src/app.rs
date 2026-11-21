@@ -256,13 +256,31 @@ fn api_handle_cell() -> &'static Mutex<Option<LocalApiHandle>> {
     API_HANDLE.get_or_init(|| Mutex::new(None))
 }
 
+pub(crate) fn effective_api_port() -> u16 {
+    std::env::var("GLYPH_API_PORT")
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok())
+        .filter(|&p| p > 0)
+        .unwrap_or(DEFAULT_API_PORT)
+}
+
+pub(crate) fn effective_mcp_token_path() -> anyhow::Result<PathBuf> {
+    if let Ok(raw) = std::env::var("GLYPH_MCP_TOKEN_FILE") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
+        }
+    }
+    default_mcp_token_path()
+}
+
 fn start_local_api_task(
     vault: Arc<Mutex<VaultManager>>,
     sessions: Arc<AsyncMutex<HashMap<String, SshSession>>>,
 ) -> Task<Message> {
     Task::perform(
         async move {
-            let token_path = default_mcp_token_path().map_err(|e| e.to_string())?;
+            let token_path = effective_mcp_token_path().map_err(|e| e.to_string())?;
             let token = ensure_mcp_token(&token_path).map_err(|e| e.to_string())?;
             let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<ApiUiEvent>();
             let bus = app_bus_sender();
@@ -278,7 +296,7 @@ fn start_local_api_task(
                 Some(ui_tx),
                 ApiHostKeyPolicy::AutoTrustFirstUse,
             ));
-            let addr = SocketAddr::from(([127, 0, 0, 1], DEFAULT_API_PORT));
+            let addr = SocketAddr::from(([127, 0, 0, 1], effective_api_port()));
             let handle = start_local_api(addr, token, controller)
                 .await
                 .map_err(|e| e.to_string())?;
