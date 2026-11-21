@@ -1,154 +1,64 @@
-# Glyph
+# Glyph v3 — Pure Rust SSH & Server Manager
 
-Glyph is a modern, high-performance SSH client and server management application built with Electron and React. Designed for power users, developers, and system administrators, Glyph combines a beautiful user interface with powerful networking, automation, and AI-agent features.
+**Made by TheLunatic1 (Salman Toha)**
 
----
-
-## Table of Contents
-
-1. [Features](#features)
-2. [Installation](#installation)
-3. [Architecture](#architecture)
-4. [Security](#security)
-5. [AI Agent Setup (MCP)](#ai-agent-setup-mcp)
-6. [Development](#development)
+Glyph is a cross-platform, 100% pure-Rust desktop SSH client, server telemetry suite, SFTP file explorer, Docker/Podman manager, VNC-over-SSH viewer, encrypted credential vault, and native Model Context Protocol (MCP) host for Windows, macOS, and Linux — replacing the legacy Electron/Node runtime while keeping 1:1 visual styling and full `.glyph` backup interoperability with [Glyph Mobile](https://github.com/TheLunatic1/glyph-app).
 
 ---
 
 ## Features
 
-### Comprehensive Server Management
-* **Secure Vault:** Store server credentials and configurations in a secure, encrypted vault.
-* **Master Password Encryption:** Optionally encrypt your entire server database with a master password.
-* **Quick Connect & Multi-Window:** Seamlessly connect to your saved environments with a single click in dedicated windows.
-* **System Tray Quick Access:** Access all saved servers directly from the system tray menu and run Glyph quietly in the background.
-
-### Advanced Terminal & UI
-* **Multi-Tab Interface:** Manage multiple SSH sessions concurrently with a clean tabbed layout.
-* **Customizable Themes:** Switch between various syntax and terminal color themes (Dracula, Monokai, One Dark, Solarized).
-* **Live System Dashboard:** View real-time metrics including CPU usage, RAM, and Disk space for connected servers.
-
-### Next-Level Connectivity
-* **Universal Protocol Tunneling:** Forward any TCP or UDP traffic from your local machine to remote destinations.
-* **Built-in ZeroTier Integration:** Connect directly to ZeroTier virtual networks from within the application.
-* **Visual SFTP Client:** Transfer, read, and edit files on remote servers using the integrated file browser.
-
-### Automation & AI
-* **Command Snippets:** Save and execute frequently used shell commands.
-* **Secret Injection:** Store environment variables and secrets, securely injecting them into your terminal when needed.
-* **In-App AI Agent Setup:** Configure any MCP-compatible AI assistant to control your servers via the built-in Settings modal — no manual config editing required.
-* **Agentic AI Support (MCP):** Once connected, AI agents can list servers, run commands, manage files via SFTP, control tunnels, manage secrets, and more.
+- **SSH Key Vault & TOFU Verification:** Generate/import Ed25519, RSA-4096, and ECDSA-P256 keys inside your OS keyring/Argon2id vault, deploy public keys to `~/.ssh/authorized_keys`, authenticate with Vault Key / Key File / Password / SSH Agent / ProxyJump, and verify host identities via Trust-On-First-Use (TOFU).
+- **100% `.glyph` Mobile Interop:** Export and import encrypted server/secret bundles using identical `scrypt (N=16384, r=8, p=1)` + `AES-256-GCM` format compatible with Glyph v2 and Glyph Android APK.
+- **5-Metric Live Telemetry & Modals:** Real-time CPU per-core breakdown, memory/swap, disk mounts, network RX/TX interfaces, temperature sensors, and NVIDIA/AMD GPU monitoring.
+- **GPU-Accelerated Multi-Tab Split Terminal:** Powered by `alacritty_terminal` and `iced` canvas with split panes, themes, search, quick snippet runner, and non-echoing Secret injection.
+- **SFTP File Explorer & Text Editor:** Breadcrumbs, sortable columns, drag-and-drop uploads, file download/transfer progress toasts, clipboard copy/cut/paste, inline `chmod`/rename/delete, and remote text editor.
+- **Port Forwarding (`-L` & `-R`):** Manage Local and Remote SSH tunnels with live clickable `http`/`https` endpoints.
+- **Docker / Podman Containers & Compose:** Container list, multi-tab Logs/Inspect/Resource Settings, live log tailing, and Docker Compose Up/Down.
+- **Pure-Rust VNC over SSH:** RFB 3.8 client (`des` + `flate2` + `russh` `direct-tcpip`) with Fit/1:1 scaling, keyboard/mouse input, Ctrl+Alt+Del, and clipboard relay — zero plaintext VNC ports exposed.
+- **Native Local REST API & `glyph-mcp`:** Bearer-authenticated loopback API on `127.0.0.1:15354` (`~/.glyph/mcp_token`) and standalone `glyph-mcp` stdio server exposing all 13 infrastructure tools for Antigravity IDE, Claude Desktop, Claude Code, Cursor, and VS Code.
+- **Mobile Companion QR & Updater:** Live QR code downloader for `TheLunatic1/glyph-app` Android APK releases and built-in GitHub release update checking.
 
 ---
 
-## Installation
+## Workspace Architecture (`glyph-rust`)
+
+| Crate | Responsibility |
+|---|---|
+| `crates/glyph-core` | Vault crypto (`aes-gcm`, `scrypt`, `argon2`, `keyring`), SSH/ProxyJump (`russh` + `ring`), telemetry parser, SFTP, `-L`/`-R` tunnels, Docker/Podman, MCP config manager, GitHub updater |
+| `crates/glyph-terminal` | `alacritty_terminal` PTY state + GPU-accelerated `iced` terminal canvas widget |
+| `crates/glyph-vnc` | Pure-Rust RFB 3.8 client + `iced` remote desktop viewport widget |
+| `crates/glyph-api` | `axum` Bearer-protected loopback REST API (`127.0.0.1:15354`) shared by GUI and headless tests |
+| `crates/glyph-mcp` | Standalone stdio JSON-RPC 2.0 MCP server (`glyph-mcp`) with all 13 `glyph_*` tools |
+| `crates/glyph-desktop` | Cross-platform `iced` multi-window GUI, system tray, single-instance lock, and QR/Settings modals |
+
+---
+
+## Build & Verification
+
+Glyph uses pure-Rust cryptography (`ring`, `aes-gcm`, `scrypt`, `argon2`, `des`) with **zero CMake, NASM, OpenSSL, or `aws-lc-sys` build dependencies**.
 
 ### Prerequisites
-* Node.js v18 or newer
-* npm
 
-### Setup
+- Rust stable (`1.85+` / Rust 2021 edition)
+- **Linux only:** `libx11-dev libxkbcommon-dev libwayland-dev libgtk-3-dev libxdo-dev libasound2-dev libdbus-1-dev libxcursor-dev libxi-dev libxinerama-dev libxrandr-dev libvulkan-dev pkg-config`
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/TheLunatic1/Glyph.git
-   cd Glyph
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Run the application in development mode:
-   ```bash
-   npm run dev
-   ```
-
-### Building for Production
+### Commands
 
 ```bash
-npm run build   # bundles MCP server + compiles app
-npm run dist    # packages a distributable installer
+# Lint workspace strictly
+cargo clippy --workspace --all-targets -- -D warnings
+
+# Run all unit, SSH/SFTP, VNC-over-SSH, REST API, and spawned MCP stdio E2E tests
+cargo test --workspace
+
+# Build release GUI + MCP server binaries
+cargo build --workspace --release
 ```
 
 ---
 
-## Architecture
+## Automated CI & Releases
 
-Glyph utilises a modern stack to ensure high performance and maintainability:
-
-* **Frontend:** React 18, Tailwind CSS, Lucide React (Icons).
-* **Backend (Main Process):** Electron, Node.js, `ssh2` for core networking.
-* **Terminal Emulator:** xterm.js for high-fidelity shell emulation.
-* **IPC Bridge:** Secure context bridging between the Electron main process and the React renderer via a typed `preload/index.js` API.
-* **MCP Server:** `src/mcp/index.js` — compiled into a self-contained `resources/mcp.js` bundle for production installs.
-
----
-
-## Security
-
-Security is a first-class citizen in Glyph:
-* **Local-Only:** All data, credentials, and settings remain on your local machine.
-* **Zero Telemetry:** Glyph does not track your usage or send data to third parties.
-* **AES-256 Encryption:** The server vault and exported configurations are encrypted using industry-standard AES-256.
-
----
-
-## AI Agent Setup (MCP)
-
-Glyph natively supports the [Model Context Protocol (MCP)](https://modelcontextprotocol.io), letting AI assistants interact with your infrastructure securely.
-
-### In-App Setup (Recommended)
-
-Open Glyph and click the **Settings** (gear) icon in the top right of the dashboard. Select **AI Agents (MCP)** from the sidebar to automatically detect which AI clients are installed on your machine and view their current configuration status. Click **Auto-Install** next to any client to have Glyph write the correct config in one step.
-
-**Supported clients (auto-install):**
-| Client | Config location |
-|---|---|
-| Antigravity IDE | `~/.gemini/config/mcp_config.json` |
-| Claude Desktop | `%APPDATA%\Claude\claude_desktop_config.json` |
-| Cursor | `~/.cursor/mcp.json` |
-| VS Code | `%APPDATA%\Code\User\settings.json` (under `mcp.servers`) |
-
-For any other MCP-compatible tool, use the **Custom / Manual Setup** drawer to browse to its config file, pick the key format, preview the JSON, and write it in one click.
-
-### Manual Config Snippet
-
-If you prefer to configure manually, add the following entry to your AI client's MCP config:
-
-```json
-"glyph_mcp": {
-  "command": "node",
-  "args": ["/path/to/Glyph/resources/mcp.js"],
-  "env": { "NODE_ENV": "production" }
-}
-```
-
-> **Dev mode:** use `src/mcp/index.js` instead of `resources/mcp.js`.
-
-### Available MCP Tools
-
-| Tool | Description |
-|---|---|
-| `glyph_list_servers` | Returns all saved servers |
-| `glyph_connect_server` | Opens a connection to a server in the Glyph UI |
-| `glyph_execute_command` | Executes a shell command and returns the output |
-| `glyph_read_file` / `glyph_write_file` | Read and write files via SFTP |
-| `glyph_start_tunnel` / `glyph_stop_tunnel` | Start and stop port-forwarding tunnels |
-| `glyph_list_secrets` / `glyph_add_secret` | Manage vault secrets |
-| `glyph_list_containers` | View Docker containers on the server |
-| `glyph_list_commands` / `glyph_add_command` / `glyph_remove_command` | Manage command snippets |
-
----
-
-## Development
-
-Glyph uses `electron-vite` for rapid development.
-
-* `src/main` — Electron backend (SSH, Vault, API, Updater, MCP IPC handlers).
-* `src/renderer` — React frontend application.
-* `src/preload` — Typed IPC bridge exposed as `window.api`.
-* `src/mcp` — Standalone MCP server (compiled to `resources/mcp.js` at build time via `scripts/bundle-mcp.cjs`).
-
-Contributions, pull requests, and bug reports are highly welcome.
+- **CI (`.github/workflows/ci.yml`):** Runs `cargo tree` dependency audit, strict `clippy -D warnings`, and full `cargo test --workspace` on every push/PR across `ubuntu-latest`, `windows-latest`, and `macos-latest`.
+- **Release (`.github/workflows/release.yml`):** Reads `[workspace.package].version` from `Cargo.toml`, tags `v<version>`, compiles release `glyph-desktop` and `glyph-mcp` for Windows (`.exe` / `.zip`), macOS Universal (`.dmg` / `.zip`), and Linux (`.tar.gz` / `.AppImage`), and publishes directly to GitHub Releases.
