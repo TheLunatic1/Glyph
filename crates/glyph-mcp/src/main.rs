@@ -351,6 +351,32 @@ async fn call_glyph_api(method: &str, path: &str, body: Option<Value>) -> Result
     send_http_json(stream, &host_port, &token, method, path, body).await
 }
 
+#[cfg(windows)]
+fn disable_stdio_handle_inheritance() {
+    const STD_INPUT_HANDLE: u32 = (-10i32) as u32;
+    const STD_OUTPUT_HANDLE: u32 = (-11i32) as u32;
+    const STD_ERROR_HANDLE: u32 = (-12i32) as u32;
+    const HANDLE_FLAG_INHERIT: u32 = 0x0000_0001;
+    const INVALID_HANDLE_VALUE: isize = -1;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetStdHandle(n_std_handle: u32) -> isize;
+        fn SetHandleInformation(h_object: isize, dw_mask: u32, dw_flags: u32) -> i32;
+    }
+
+    for std_id in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // SAFETY: Clearing HANDLE_FLAG_INHERIT on our own std handles only prevents
+        // spawned child processes (like glyph-desktop.exe) from inheriting our MCP pipes.
+        unsafe {
+            let handle = GetStdHandle(std_id);
+            if handle != 0 && handle != INVALID_HANDLE_VALUE {
+                let _ = SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+    }
+}
+
 async fn ensure_desktop_running(host_port: &str) -> Result<()> {
     if std::env::var("GLYPH_NO_AUTOLAUNCH").as_deref() == Ok("1") {
         return Err(anyhow!(
@@ -382,7 +408,9 @@ async fn ensure_desktop_running(host_port: &str) -> Result<()> {
             #[cfg(windows)]
             {
                 use std::os::windows::process::CommandExt;
-                cmd.creation_flags(0x0000_0200);
+                disable_stdio_handle_inheritance();
+                // DETACHED_PROCESS (0x0000_0008) | CREATE_NEW_PROCESS_GROUP (0x0000_0200)
+                cmd.creation_flags(0x0000_0208);
             }
             cmd.spawn()
                 .with_context(|| format!("Failed to launch {}", candidate.display()))?;
