@@ -1,16 +1,15 @@
+pub use crate::models::TunnelDirection;
 use crate::ssh::SshSession;
 use anyhow::{anyhow, Context, Result};
+use russh::client;
 use serde::{Deserialize, Serialize};
+use std::net::{Ipv4Addr, Ipv6Addr};
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TunnelDirection {
-    Local,
-    Remote,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -196,6 +195,64 @@ impl SshSession {
         Ok(info)
     }
 
+    /// Starts an RFC 1928 Dynamic SOCKS5 (`-D`) proxy server over SSH `direct-tcpip`.
+    pub async fn start_dynamic_socks5_tunnel(&self, local_port: u16) -> Result<TunnelInfo> {
+        let listener = TcpListener::bind(("127.0.0.1", local_port))
+            .await
+            .with_context(|| format!("Failed to bind SOCKS5 port {local_port}"))?;
+        let bound_port = listener.local_addr()?.port();
+        let id = format!("D:{bound_port}");
+
+        {
+            let map = self.inner.tunnels.lock().await;
+            if map.contains_key(&id) {
+                return Err(anyhow!("SOCKS5 proxy already active on port {bound_port}"));
+            }
+        }
+
+        let info = TunnelInfo {
+            id: id.clone(),
+            direction: TunnelDirection::Dynamic,
+            local_port: bound_port,
+            remote_host: "SOCKS5 Dynamic".to_string(),
+            remote_port: 0,
+            protocol: "socks5".to_string(),
+        };
+
+        let cancel = CancellationToken::new();
+        let cancel_loop = cancel.clone();
+        let handle_arc = self.inner.handle.clone();
+
+        let task = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancel_loop.cancelled() => break,
+                    accepted = listener.accept() => {
+                        let Ok((client_sock, _)) = accepted else {
+                            break;
+                        };
+                        let handle_clone = Arc::clone(&handle_arc);
+                        let conn_cancel = cancel_loop.clone();
+                        tokio::spawn(async move {
+                            let _ = handle_socks5_client(client_sock, handle_clone, conn_cancel).await;
+                        });
+                    }
+                }
+            }
+        });
+
+        self.inner.tunnels.lock().await.insert(
+            id,
+            ActiveTunnel {
+                info: info.clone(),
+                cancel,
+                task: Some(task),
+            },
+        );
+
+        Ok(info)
+    }
+
     pub async fn stop_tunnel_by_id(&self, id: &str) -> Result<()> {
         let removed = self.inner.tunnels.lock().await.remove(id);
         let Some(active) = removed else {
@@ -230,6 +287,10 @@ impl SshSession {
         if self.inner.tunnels.lock().await.contains_key(&local_id) {
             return self.stop_tunnel_by_id(&local_id).await;
         }
+        let dyn_id = format!("D:{local_port}");
+        if self.inner.tunnels.lock().await.contains_key(&dyn_id) {
+            return self.stop_tunnel_by_id(&dyn_id).await;
+        }
         let matching = {
             let map = self.inner.tunnels.lock().await;
             map.values()
@@ -248,4 +309,99 @@ impl SshSession {
         list.sort_by(|a, b| a.id.cmp(&b.id));
         list
     }
+}
+
+async fn handle_socks5_client(
+    mut sock: tokio::net::TcpStream,
+    handle_arc: Arc<Mutex<Option<client::Handle<crate::ssh::GlyphHandler>>>>,
+    cancel: CancellationToken,
+) -> Result<()> {
+    // 1. Version + auth methods negotiation
+    let mut head = [0u8; 2];
+    sock.read_exact(&mut head).await?;
+    if head[0] != 0x05 {
+        return Err(anyhow!("Unsupported SOCKS version"));
+    }
+    let nmethods = head[1] as usize;
+    let mut methods = vec![0u8; nmethods];
+    sock.read_exact(&mut methods).await?;
+    if !methods.contains(&0x00) {
+        let _ = sock.write_all(&[0x05, 0xFF]).await;
+        return Err(anyhow!("Client does not offer NO AUTH"));
+    }
+    sock.write_all(&[0x05, 0x00]).await?;
+
+    // 2. Request header: VER CMD RSV ATYP
+    let mut req = [0u8; 4];
+    sock.read_exact(&mut req).await?;
+    if req[0] != 0x05 {
+        return Err(anyhow!("Invalid SOCKS5 request version"));
+    }
+    let cmd = req[1];
+    let atyp = req[3];
+    if cmd != 0x01 {
+        let _ = sock
+            .write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+            .await;
+        return Err(anyhow!("Only SOCKS5 CONNECT is supported"));
+    }
+
+    let target_host = match atyp {
+        0x01 => {
+            let mut octets = [0u8; 4];
+            sock.read_exact(&mut octets).await?;
+            Ipv4Addr::from(octets).to_string()
+        }
+        0x03 => {
+            let len = sock.read_u8().await? as usize;
+            let mut domain = vec![0u8; len];
+            sock.read_exact(&mut domain).await?;
+            String::from_utf8(domain).context("Invalid SOCKS5 domain")?
+        }
+        0x04 => {
+            let mut octets = [0u8; 16];
+            sock.read_exact(&mut octets).await?;
+            Ipv6Addr::from(octets).to_string()
+        }
+        _ => {
+            let _ = sock
+                .write_all(&[0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                .await;
+            return Err(anyhow!("Unsupported SOCKS5 address type {atyp}"));
+        }
+    };
+
+    let mut port_buf = [0u8; 2];
+    sock.read_exact(&mut port_buf).await?;
+    let target_port = u16::from_be_bytes(port_buf);
+
+    let ch_res = {
+        let guard = handle_arc.lock().await;
+        match guard.as_ref() {
+            Some(h) => {
+                h.channel_open_direct_tcpip(&target_host, target_port as u32, "127.0.0.1", 0)
+                    .await
+            }
+            None => return Err(anyhow!("SSH session closed")),
+        }
+    };
+
+    let channel = match ch_res {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = sock
+                .write_all(&[0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+                .await;
+            return Err(anyhow!("SOCKS5 SSH forward failed: {e}"));
+        }
+    };
+
+    sock.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+        .await?;
+    let mut ssh_stream = channel.into_stream();
+    tokio::select! {
+        _ = cancel.cancelled() => {},
+        _ = tokio::io::copy_bidirectional(&mut sock, &mut ssh_stream) => {},
+    }
+    Ok(())
 }

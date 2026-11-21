@@ -1,5 +1,7 @@
 use glyph_core::containers::ContainerAction;
-use glyph_core::models::{AuthMethod, ConnectionConfig, HostKeyStatus};
+use glyph_core::models::{
+    AuthMethod, ConnectionConfig, HostKeyStatus, KnockProtocol, PortKnockStep,
+};
 use glyph_core::sftp::SftpProgress;
 use glyph_core::ssh::{HostKeyPrompt, SessionEvent, ShellEvent, SshSession};
 use glyph_core::tunnels::TunnelDirection;
@@ -578,12 +580,8 @@ async fn full_loopback_ssh_tofu_keygen_pty_sftp_tunnel_and_containers_e2e() {
             port: ssh_addr.port(),
             username: "tester".into(),
             password: Some("secret-pass".into()),
-            private_key_path: None,
-            private_key_pem: None,
-            passphrase: None,
             auth_method: AuthMethod::Password,
-            zerotier: String::new(),
-            proxy_jump: None,
+            ..Default::default()
         };
         assert!(
             SshSession::connect(cfg, vault.known_hosts_map(), ev_tx, hk_tx)
@@ -593,7 +591,19 @@ async fn full_loopback_ssh_tofu_keygen_pty_sftp_tunnel_and_containers_e2e() {
         );
     }
 
-    // 2. Connect accepting TOFU + password, deploy Vault SSH public key
+    // 2. Connect accepting TOFU + password + Port Knocking, deploy Vault SSH public key
+    let knock_tcp = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let knock_tcp_port = knock_tcp.local_addr().unwrap().port();
+    let knock_udp = tokio::net::UdpSocket::bind(("127.0.0.1", 0)).await.unwrap();
+    let knock_udp_port = knock_udp.local_addr().unwrap().port();
+
+    let knock_task = tokio::spawn(async move {
+        let tcp_res = tokio::time::timeout(Duration::from_secs(3), knock_tcp.accept()).await;
+        let mut udp_buf = [0u8; 32];
+        let udp_res = tokio::time::timeout(Duration::from_secs(3), knock_udp.recv_from(&mut udp_buf)).await;
+        (tcp_res.is_ok(), udp_res.is_ok())
+    });
+
     let (ev_tx, mut ev_rx) = mpsc::unbounded_channel::<SessionEvent>();
     let (hk_tx, mut hk_rx) = mpsc::unbounded_channel::<HostKeyPrompt>();
     tokio::spawn(async move {
@@ -607,16 +617,26 @@ async fn full_loopback_ssh_tofu_keygen_pty_sftp_tunnel_and_containers_e2e() {
         port: ssh_addr.port(),
         username: "tester".into(),
         password: Some("secret-pass".into()),
-        private_key_path: None,
-        private_key_pem: None,
-        passphrase: None,
         auth_method: AuthMethod::Password,
-        zerotier: String::new(),
-        proxy_jump: None,
+        port_knock: vec![
+            PortKnockStep {
+                protocol: KnockProtocol::Tcp,
+                port: knock_tcp_port,
+                delay_ms: 20,
+            },
+            PortKnockStep {
+                protocol: KnockProtocol::Udp,
+                port: knock_udp_port,
+                delay_ms: 20,
+            },
+        ],
+        ..Default::default()
     };
     let outcome = SshSession::connect(cfg, vault.known_hosts_map(), ev_tx, hk_tx)
         .await
         .unwrap();
+    let (saw_tcp_knock, saw_udp_knock) = knock_task.await.unwrap();
+    assert!(saw_tcp_knock && saw_udp_knock, "Port knocking TCP & UDP must fire before SSH connect");
     assert_eq!(outcome.os.as_deref(), Some("ubuntu"));
     assert_eq!(outcome.newly_trusted_hosts.len(), 1);
     for rec in &outcome.newly_trusted_hosts {
@@ -656,13 +676,9 @@ async fn full_loopback_ssh_tofu_keygen_pty_sftp_tunnel_and_containers_e2e() {
         host: "127.0.0.1".into(),
         port: ssh_addr.port(),
         username: "tester".into(),
-        password: None,
-        private_key_path: None,
         private_key_pem: Some(key_pem),
-        passphrase: None,
         auth_method: AuthMethod::VaultKey,
-        zerotier: String::new(),
-        proxy_jump: None,
+        ..Default::default()
     };
     let session = SshSession::connect(key_cfg, vault.known_hosts_map(), ev_tx.clone(), hk_tx)
         .await
@@ -762,6 +778,31 @@ async fn full_loopback_ssh_tofu_keygen_pty_sftp_tunnel_and_containers_e2e() {
 
     assert_eq!(session.list_tunnels().await.len(), 1);
     session.stop_tunnel(tunnel.local_port).await.unwrap();
+    assert!(session.list_tunnels().await.is_empty());
+
+    // 6b. Test Dynamic SOCKS5 (-D) RFC 1928 proxy forwarding live TCP stream
+    let socks = session.start_dynamic_socks5_tunnel(0).await.unwrap();
+    assert_eq!(socks.direction, TunnelDirection::Dynamic);
+    let mut s_cli = tokio::net::TcpStream::connect(("127.0.0.1", socks.local_port))
+        .await
+        .unwrap();
+    s_cli.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut greet_ack = [0u8; 2];
+    s_cli.read_exact(&mut greet_ack).await.unwrap();
+    assert_eq!(greet_ack, [0x05, 0x00]);
+    let port_be = echo_port.to_be_bytes();
+    s_cli
+        .write_all(&[0x05, 0x01, 0x00, 0x01, 127, 0, 0, 1, port_be[0], port_be[1]])
+        .await
+        .unwrap();
+    let mut conn_ack = [0u8; 10];
+    s_cli.read_exact(&mut conn_ack).await.unwrap();
+    assert_eq!(conn_ack[1], 0x00);
+    s_cli.write_all(b"glyph-socks5-test").await.unwrap();
+    let n = s_cli.read(&mut rbuf).await.unwrap();
+    assert_eq!(&rbuf[..n], b"ECHO:glyph-socks5-test");
+    drop(s_cli);
+    session.stop_tunnel(socks.local_port).await.unwrap();
     assert!(session.list_tunnels().await.is_empty());
 
     // 7. Test Containers command routing over SSH

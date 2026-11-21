@@ -148,6 +148,7 @@ impl ServerFormState {
             },
             proxy_jump_id: self.proxy_jump_id.clone(),
             tags: Vec::new(),
+            ..Default::default()
         })
     }
 }

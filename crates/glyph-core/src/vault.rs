@@ -1,17 +1,25 @@
-use crate::crypto::{decrypt_glyph_export, encrypt_glyph_export, write_restricted_file, VaultCrypto};
+use crate::crypto::{
+    decrypt_glyph_export, encrypt_glyph_export, write_restricted_file, VaultCrypto,
+};
 use crate::models::{
-    AuthMethod, CommandSnippet, ConnectionConfig, HostKeyStatus, KnownHostEntry, SecretEntry,
-    SecretSummary, ServerConfigInput, ServerEntry, ServerSummary, SshKeyAlgorithm, SshKeyEntry,
-    SshKeySummary,
+    AppLockConfig, AuthMethod, CommandSnippet, ConnectionConfig, HighlightRule, HostGroup,
+    HostKeyStatus, IdentityEntry, IdentityInput, IdentitySummary, KnownHostEntry, SavedTunnelRule,
+    SecretEntry, SecretSummary, ServerConfigInput, ServerEntry, ServerSummary, SnippetPackage,
+    SshKeyAlgorithm, SshKeyEntry, SshKeySummary, SyncBackend, SyncConfig, SyncMergeStats,
 };
 use anyhow::{anyhow, Context, Result};
+use argon2::{
+    password_hash::{phc::PasswordHash, PasswordHasher, PasswordVerifier},
+    Argon2,
+};
 use chrono::Utc;
 use directories::ProjectDirs;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use ssh_key::{
     getrandom::SysRng, rand_core::UnwrapErr, Algorithm, EcdsaCurve, HashAlg, LineEnding, PrivateKey,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
@@ -29,6 +37,50 @@ struct VaultState {
     ssh_keys: Vec<SshKeyEntry>,
     #[serde(default)]
     known_hosts: Vec<KnownHostEntry>,
+    #[serde(default)]
+    groups: Vec<HostGroup>,
+    #[serde(default)]
+    identities: Vec<IdentityEntry>,
+    #[serde(default)]
+    snippet_packages: Vec<SnippetPackage>,
+    #[serde(default)]
+    highlight_rules: Vec<HighlightRule>,
+    #[serde(default)]
+    app_lock: AppLockConfig,
+    #[serde(default)]
+    sync_config: SyncConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FullSyncSnapshot {
+    version: u32,
+    exported_at: String,
+    #[serde(default)]
+    servers: Vec<ServerEntry>,
+    #[serde(default)]
+    groups: Vec<HostGroup>,
+    #[serde(default)]
+    identities: Vec<IdentityEntry>,
+    #[serde(default)]
+    ssh_keys: Vec<ExportedSshKey>,
+    #[serde(default)]
+    snippet_packages: Vec<SnippetPackage>,
+    #[serde(default)]
+    highlight_rules: Vec<HighlightRule>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportedSshKey {
+    id: String,
+    name: String,
+    algorithm: String,
+    fingerprint_sha256: String,
+    public_key_openssh: String,
+    private_key_pem: String,
+    has_passphrase: bool,
+    created_at: String,
 }
 
 pub struct VaultManager {
@@ -56,13 +108,20 @@ impl VaultManager {
 
     fn open_with_crypto(data_dir: PathBuf, crypto: VaultCrypto) -> Result<Self> {
         let vault_file = data_dir.join("glyph_vault_v3.json");
-        let state = if vault_file.exists() {
+        let mut state: VaultState = if vault_file.exists() {
             let raw = fs::read_to_string(&vault_file)
                 .with_context(|| format!("Failed to read {}", vault_file.display()))?;
             serde_json::from_str(&raw).unwrap_or_default()
         } else {
             VaultState::default()
         };
+
+        if state.snippet_packages.is_empty() {
+            state.snippet_packages = default_snippet_packages();
+        }
+        if state.highlight_rules.is_empty() {
+            state.highlight_rules = default_highlight_rules();
+        }
 
         Ok(Self {
             data_dir,
@@ -83,6 +142,20 @@ impl VaultManager {
     fn save(&self) -> Result<()> {
         let json = serde_json::to_string_pretty(&self.state)?;
         write_restricted_file(&self.vault_file, json.as_bytes())
+    }
+
+    fn encrypt_opt(&self, plain: Option<String>) -> Result<Option<String>> {
+        match plain.filter(|p| !p.is_empty()) {
+            Some(p) => Ok(Some(self.crypto.encrypt_str(&p)?)),
+            None => Ok(None),
+        }
+    }
+
+    fn decrypt_opt(&self, enc: Option<&String>) -> Result<Option<String>> {
+        match enc {
+            Some(e) if !e.is_empty() => Ok(Some(self.crypto.decrypt_str(e)?)),
+            _ => Ok(None),
+        }
     }
 
     // ── Servers ───────────────────────────────────────────────────────────────
@@ -106,25 +179,23 @@ impl VaultManager {
         } else {
             input.name.trim().to_string()
         };
-        let password = match input.password.filter(|p| !p.is_empty()) {
-            Some(plain) => Some(self.crypto.encrypt_str(&plain)?),
-            None => None,
-        };
-        let passphrase = match input.passphrase.filter(|p| !p.is_empty()) {
-            Some(plain) => Some(self.crypto.encrypt_str(&plain)?),
-            None => None,
+        let password = self.encrypt_opt(input.password)?;
+        let passphrase = self.encrypt_opt(input.passphrase)?;
+
+        let username = input.username.trim().to_string();
+        let has_identity = input.identity_id.is_some() || input.group_id.is_some();
+        let resolved_user = if username.is_empty() && !has_identity {
+            "root".to_string()
+        } else {
+            username
         };
 
         let entry = ServerEntry {
             id: id.clone(),
             name,
             host: input.host.trim().to_string(),
-            username: if input.username.trim().is_empty() {
-                "root".to_string()
-            } else {
-                input.username.trim().to_string()
-            },
-            port: if input.port == 0 { 22 } else { input.port },
+            username: resolved_user,
+            port: input.port,
             os: None,
             zerotier: input.zerotier.trim().to_string(),
             private_key_path: input.private_key_path.trim().to_string(),
@@ -134,6 +205,15 @@ impl VaultManager {
             passphrase,
             proxy_jump_id: input.proxy_jump_id,
             tags: input.tags,
+            group_id: input.group_id,
+            identity_id: input.identity_id,
+            forward_agent: input.forward_agent,
+            keepalive_secs: input.keepalive_secs,
+            startup_command: input.startup_command.trim().to_string(),
+            env_vars: input.env_vars,
+            port_knock: input.port_knock,
+            saved_tunnels: input.saved_tunnels,
+            auto_log: input.auto_log,
         };
 
         self.state.servers.push(entry);
@@ -154,6 +234,19 @@ impl VaultManager {
             Some(plain) => Some(self.crypto.encrypt_str(&plain)?),
             None => existing.passphrase,
         };
+        let saved_tunnels = if input.saved_tunnels.is_empty() {
+            existing.saved_tunnels
+        } else {
+            input.saved_tunnels
+        };
+
+        let username = input.username.trim().to_string();
+        let has_identity = input.identity_id.is_some() || input.group_id.is_some();
+        let resolved_user = if username.is_empty() && !has_identity {
+            "root".to_string()
+        } else {
+            username
+        };
 
         let updated = ServerEntry {
             id: existing.id,
@@ -163,12 +256,8 @@ impl VaultManager {
                 input.name.trim().to_string()
             },
             host: input.host.trim().to_string(),
-            username: if input.username.trim().is_empty() {
-                "root".to_string()
-            } else {
-                input.username.trim().to_string()
-            },
-            port: if input.port == 0 { 22 } else { input.port },
+            username: resolved_user,
+            port: input.port,
             os: existing.os,
             zerotier: input.zerotier.trim().to_string(),
             private_key_path: input.private_key_path.trim().to_string(),
@@ -178,6 +267,15 @@ impl VaultManager {
             passphrase,
             proxy_jump_id: input.proxy_jump_id,
             tags: input.tags,
+            group_id: input.group_id,
+            identity_id: input.identity_id,
+            forward_agent: input.forward_agent,
+            keepalive_secs: input.keepalive_secs,
+            startup_command: input.startup_command.trim().to_string(),
+            env_vars: input.env_vars,
+            port_knock: input.port_knock,
+            saved_tunnels,
+            auto_log: input.auto_log,
         };
 
         if let Some(slot) = self.state.servers.iter_mut().find(|s| s.id == id) {
@@ -210,6 +308,46 @@ impl VaultManager {
         self.save()
     }
 
+    pub fn add_saved_tunnel(&mut self, server_id: &str, rule: SavedTunnelRule) -> Result<()> {
+        let srv = self
+            .state
+            .servers
+            .iter_mut()
+            .find(|s| s.id == server_id)
+            .ok_or_else(|| anyhow!("Server not found"))?;
+        srv.saved_tunnels.push(rule);
+        self.save()
+    }
+
+    pub fn toggle_saved_tunnel_autostart(
+        &mut self,
+        server_id: &str,
+        rule_id: &str,
+    ) -> Result<()> {
+        let srv = self
+            .state
+            .servers
+            .iter_mut()
+            .find(|s| s.id == server_id)
+            .ok_or_else(|| anyhow!("Server not found"))?;
+        if let Some(r) = srv.saved_tunnels.iter_mut().find(|r| r.id == rule_id) {
+            r.auto_start = !r.auto_start;
+            self.save()?;
+        }
+        Ok(())
+    }
+
+    pub fn delete_saved_tunnel(&mut self, server_id: &str, rule_id: &str) -> Result<()> {
+        let srv = self
+            .state
+            .servers
+            .iter_mut()
+            .find(|s| s.id == server_id)
+            .ok_or_else(|| anyhow!("Server not found"))?;
+        srv.saved_tunnels.retain(|r| r.id != rule_id);
+        self.save()
+    }
+
     pub fn get_connection_config(&self, id: &str) -> Result<ConnectionConfig> {
         self.build_connection_config(id, 0)
     }
@@ -225,19 +363,77 @@ impl VaultManager {
             .find(|s| s.id == id)
             .ok_or_else(|| anyhow!("Server not found in Vault"))?;
 
-        let password = match &server.password {
-            Some(enc) => Some(self.crypto.decrypt_str(enc)?),
+        let ancestors = self.ancestor_groups(server.group_id.as_deref());
+
+        let mut username = server.username.trim().to_string();
+        let mut password = self.decrypt_opt(server.password.as_ref())?;
+        let mut passphrase = self.decrypt_opt(server.passphrase.as_ref())?;
+        let mut ssh_key_id = server.ssh_key_id.clone();
+        let mut key_path = (!server.private_key_path.trim().is_empty())
+            .then(|| server.private_key_path.trim().to_string());
+        let mut auth_method = server.auth_method;
+        let mut port = server.port;
+        let mut proxy_jump_id = server.proxy_jump_id.clone();
+
+        // Determine candidate identities: server's own identity first, then ancestor group identities
+        let mut identity_chain: Vec<&IdentityEntry> = Vec::new();
+        if let Some(id_ref) = &server.identity_id {
+            if let Some(ident) = self.state.identities.iter().find(|i| &i.id == id_ref) {
+                identity_chain.push(ident);
+            }
+        }
+        for grp in &ancestors {
+            if port == 0 {
+                if let Some(gp) = grp.default_port {
+                    if gp > 0 {
+                        port = gp;
+                    }
+                }
+            }
+            if proxy_jump_id.is_none() {
+                proxy_jump_id = grp.proxy_jump_id.clone();
+            }
+            if let Some(id_ref) = &grp.identity_id {
+                if let Some(ident) = self.state.identities.iter().find(|i| &i.id == id_ref) {
+                    identity_chain.push(ident);
+                }
+            }
+        }
+
+        for ident in identity_chain {
+            if username.is_empty() && !ident.username.trim().is_empty() {
+                username = ident.username.trim().to_string();
+            }
+            if password.is_none() {
+                password = self.decrypt_opt(ident.password.as_ref())?;
+            }
+            if passphrase.is_none() {
+                passphrase = self.decrypt_opt(ident.passphrase.as_ref())?;
+            }
+            if ssh_key_id.is_none() && key_path.is_none() {
+                if let Some(kid) = &ident.ssh_key_id {
+                    ssh_key_id = Some(kid.clone());
+                } else if !ident.private_key_path.trim().is_empty() {
+                    key_path = Some(ident.private_key_path.trim().to_string());
+                }
+                if auth_method == AuthMethod::Password && ident.auth_method != AuthMethod::Password {
+                    auth_method = ident.auth_method;
+                }
+            }
+        }
+
+        if username.is_empty() {
+            username = "root".to_string();
+        }
+        if port == 0 {
+            port = 22;
+        }
+
+        let private_key_pem = match &ssh_key_id {
+            Some(kid) => Some(self.get_decrypted_ssh_key(kid)?),
             None => None,
         };
-        let passphrase = match &server.passphrase {
-            Some(enc) => Some(self.crypto.decrypt_str(enc)?),
-            None => None,
-        };
-        let private_key_pem = match &server.ssh_key_id {
-            Some(key_id) => Some(self.get_decrypted_ssh_key(key_id)?),
-            None => None,
-        };
-        let proxy_jump = match &server.proxy_jump_id {
+        let proxy_jump = match &proxy_jump_id {
             Some(jump_id) if jump_id != id => {
                 Some(Box::new(self.build_connection_config(jump_id, depth + 1)?))
             }
@@ -246,20 +442,184 @@ impl VaultManager {
 
         Ok(ConnectionConfig {
             host: server.host.clone(),
-            port: server.port,
-            username: server.username.clone(),
+            port,
+            username,
             password,
-            private_key_path: if server.private_key_path.is_empty() {
-                None
-            } else {
-                Some(server.private_key_path.clone())
-            },
+            private_key_path: key_path,
             private_key_pem,
             passphrase,
-            auth_method: server.auth_method,
+            auth_method,
             zerotier: server.zerotier.clone(),
             proxy_jump,
+            forward_agent: server.forward_agent,
+            keepalive_secs: server.keepalive_secs,
+            env_vars: server.env_vars.clone(),
+            port_knock: server.port_knock.clone(),
         })
+    }
+
+    // ── Host Groups (Nested + Inheritance) ────────────────────────────────────
+
+    pub fn list_groups(&self) -> &[HostGroup] {
+        &self.state.groups
+    }
+
+    pub fn ancestor_groups(&self, start_group_id: Option<&str>) -> Vec<&HostGroup> {
+        let mut chain = Vec::new();
+        let mut seen = HashSet::new();
+        let mut cur = start_group_id;
+        while let Some(gid) = cur {
+            if !seen.insert(gid) {
+                break;
+            }
+            let Some(grp) = self.state.groups.iter().find(|g| g.id == gid) else {
+                break;
+            };
+            chain.push(grp);
+            cur = grp.parent_id.as_deref();
+        }
+        chain
+    }
+
+    pub fn is_server_in_group_subtree(&self, server: &ServerSummary, target_group_id: &str) -> bool {
+        self.ancestor_groups(server.group_id.as_deref())
+            .into_iter()
+            .any(|g| g.id == target_group_id)
+    }
+
+    pub fn add_group(&mut self, mut group: HostGroup) -> Result<String> {
+        if group.name.trim().is_empty() {
+            return Err(anyhow!("Group name is required"));
+        }
+        group.id = Uuid::new_v4().to_string();
+        group.name = group.name.trim().to_string();
+        if group.parent_id.as_deref() == Some(group.id.as_str()) {
+            group.parent_id = None;
+        }
+        let id = group.id.clone();
+        self.state.groups.push(group);
+        self.save()?;
+        Ok(id)
+    }
+
+    pub fn edit_group(&mut self, id: &str, updated: HostGroup) -> Result<()> {
+        if updated.name.trim().is_empty() {
+            return Err(anyhow!("Group name is required"));
+        }
+        if updated.parent_id.as_deref() == Some(id) {
+            return Err(anyhow!("A group cannot be its own parent"));
+        }
+        if let Some(pid) = &updated.parent_id {
+            if self
+                .ancestor_groups(Some(pid.as_str()))
+                .into_iter()
+                .any(|g| g.id == id)
+            {
+                return Err(anyhow!("Cycle detected in group hierarchy"));
+            }
+        }
+        let slot = self
+            .state
+            .groups
+            .iter_mut()
+            .find(|g| g.id == id)
+            .ok_or_else(|| anyhow!("Group not found"))?;
+        slot.name = updated.name.trim().to_string();
+        slot.parent_id = updated.parent_id;
+        slot.identity_id = updated.identity_id;
+        slot.proxy_jump_id = updated.proxy_jump_id;
+        slot.default_port = updated.default_port;
+        slot.tags = updated.tags;
+        self.save()
+    }
+
+    pub fn delete_group(&mut self, id: &str) -> Result<()> {
+        let parent_of_deleted = self
+            .state
+            .groups
+            .iter()
+            .find(|g| g.id == id)
+            .and_then(|g| g.parent_id.clone());
+        self.state.groups.retain(|g| g.id != id);
+        for g in &mut self.state.groups {
+            if g.parent_id.as_deref() == Some(id) {
+                g.parent_id = parent_of_deleted.clone();
+            }
+        }
+        for s in &mut self.state.servers {
+            if s.group_id.as_deref() == Some(id) {
+                s.group_id = None;
+            }
+        }
+        self.save()
+    }
+
+    // ── Reusable Identities ───────────────────────────────────────────────────
+
+    pub fn list_identities(&self) -> Vec<IdentitySummary> {
+        self.state.identities.iter().map(IdentitySummary::from).collect()
+    }
+
+    pub fn add_identity(&mut self, input: IdentityInput) -> Result<String> {
+        if input.name.trim().is_empty() {
+            return Err(anyhow!("Identity name is required"));
+        }
+        let id = Uuid::new_v4().to_string();
+        let entry = IdentityEntry {
+            id: id.clone(),
+            name: input.name.trim().to_string(),
+            username: input.username.trim().to_string(),
+            auth_method: input.auth_method,
+            password: self.encrypt_opt(input.password)?,
+            ssh_key_id: input.ssh_key_id,
+            private_key_path: input.private_key_path.trim().to_string(),
+            passphrase: self.encrypt_opt(input.passphrase)?,
+        };
+        self.state.identities.push(entry);
+        self.save()?;
+        Ok(id)
+    }
+
+    pub fn edit_identity(&mut self, id: &str, input: IdentityInput) -> Result<()> {
+        let Some(existing) = self.state.identities.iter().find(|i| i.id == id).cloned() else {
+            return Err(anyhow!("Identity not found"));
+        };
+        if input.name.trim().is_empty() {
+            return Err(anyhow!("Identity name is required"));
+        }
+        let password = match input.password.filter(|p| !p.is_empty()) {
+            Some(plain) => Some(self.crypto.encrypt_str(&plain)?),
+            None => existing.password,
+        };
+        let passphrase = match input.passphrase.filter(|p| !p.is_empty()) {
+            Some(plain) => Some(self.crypto.encrypt_str(&plain)?),
+            None => existing.passphrase,
+        };
+        if let Some(slot) = self.state.identities.iter_mut().find(|i| i.id == id) {
+            slot.name = input.name.trim().to_string();
+            slot.username = input.username.trim().to_string();
+            slot.auth_method = input.auth_method;
+            slot.password = password;
+            slot.ssh_key_id = input.ssh_key_id;
+            slot.private_key_path = input.private_key_path.trim().to_string();
+            slot.passphrase = passphrase;
+        }
+        self.save()
+    }
+
+    pub fn delete_identity(&mut self, id: &str) -> Result<()> {
+        self.state.identities.retain(|i| i.id != id);
+        for s in &mut self.state.servers {
+            if s.identity_id.as_deref() == Some(id) {
+                s.identity_id = None;
+            }
+        }
+        for g in &mut self.state.groups {
+            if g.identity_id.as_deref() == Some(id) {
+                g.identity_id = None;
+            }
+        }
+        self.save()
     }
 
     // ── .glyph Backup Export / Import (100% v2 & Mobile Interop) ─────────────
@@ -277,12 +637,8 @@ impl VaultManager {
                 }
             }
             let mut copy = s.clone();
-            if let Some(enc) = &s.password {
-                copy.password = Some(self.crypto.decrypt_str(enc)?);
-            }
-            if let Some(enc) = &s.passphrase {
-                copy.passphrase = Some(self.crypto.decrypt_str(enc)?);
-            }
+            copy.password = self.decrypt_opt(s.password.as_ref())?;
+            copy.passphrase = self.decrypt_opt(s.passphrase.as_ref())?;
             export_list.push(copy);
         }
         let json = serde_json::to_string(&export_list)?;
@@ -317,6 +673,15 @@ impl VaultManager {
                 passphrase: s.passphrase,
                 proxy_jump_id: s.proxy_jump_id,
                 tags: s.tags,
+                group_id: s.group_id,
+                identity_id: s.identity_id,
+                forward_agent: s.forward_agent,
+                keepalive_secs: s.keepalive_secs,
+                startup_command: s.startup_command,
+                env_vars: s.env_vars,
+                port_knock: s.port_knock,
+                saved_tunnels: s.saved_tunnels,
+                auto_log: s.auto_log,
             };
             self.add_server(input)?;
             added += 1;
@@ -603,10 +968,7 @@ impl VaultManager {
         let mut list = Vec::new();
         if let Some(items) = self.state.secrets.get(server_id) {
             for s in items {
-                let plain = match &s.value {
-                    Some(enc) => Some(self.crypto.decrypt_str(enc)?),
-                    None => None,
-                };
+                let plain = self.decrypt_opt(s.value.as_ref())?;
                 list.push(SecretEntry {
                     id: s.id.clone(),
                     name: s.name.clone(),
@@ -636,7 +998,7 @@ impl VaultManager {
         Ok(count)
     }
 
-    // ── Command Snippets ──────────────────────────────────────────────────────
+    // ── Per-Server Command Snippets & Global Snippet Packages ─────────────────
 
     pub fn list_commands(&self, server_id: &str) -> Vec<CommandSnippet> {
         if let Some(list) = self.state.commands.get(server_id) {
@@ -686,6 +1048,305 @@ impl VaultManager {
         }
         Ok(())
     }
+
+    pub fn list_snippet_packages(&self) -> &[SnippetPackage] {
+        &self.state.snippet_packages
+    }
+
+    pub fn add_snippet_package(&mut self, name: &str, description: &str) -> Result<String> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(anyhow!("Package name is required"));
+        }
+        let id = Uuid::new_v4().to_string();
+        self.state.snippet_packages.push(SnippetPackage {
+            id: id.clone(),
+            name: trimmed.to_string(),
+            description: description.trim().to_string(),
+            snippets: Vec::new(),
+        });
+        self.save()?;
+        Ok(id)
+    }
+
+    pub fn delete_snippet_package(&mut self, package_id: &str) -> Result<()> {
+        self.state.snippet_packages.retain(|p| p.id != package_id);
+        self.save()
+    }
+
+    pub fn add_package_snippet(&mut self, package_id: &str, name: &str, cmd: &str) -> Result<u64> {
+        let pkg = self
+            .state
+            .snippet_packages
+            .iter_mut()
+            .find(|p| p.id == package_id)
+            .ok_or_else(|| anyhow!("Snippet package not found"))?;
+        let id = Utc::now().timestamp_millis() as u64;
+        pkg.snippets.push(CommandSnippet {
+            id,
+            name: name.trim().to_string(),
+            cmd: cmd.to_string(),
+            uses: 0,
+        });
+        self.save()?;
+        Ok(id)
+    }
+
+    pub fn remove_package_snippet(&mut self, package_id: &str, snippet_id: u64) -> Result<()> {
+        if let Some(pkg) = self
+            .state
+            .snippet_packages
+            .iter_mut()
+            .find(|p| p.id == package_id)
+        {
+            pkg.snippets.retain(|s| s.id != snippet_id);
+            self.save()?;
+        }
+        Ok(())
+    }
+
+    // ── Terminal Highlight Rules ──────────────────────────────────────────────
+
+    pub fn list_highlight_rules(&self) -> &[HighlightRule] {
+        &self.state.highlight_rules
+    }
+
+    pub fn save_highlight_rules(&mut self, rules: Vec<HighlightRule>) -> Result<()> {
+        self.state.highlight_rules = rules;
+        self.save()
+    }
+
+    // ── Optional Master Passcode & Idle Lock ──────────────────────────────────
+
+    pub fn app_lock_config(&self) -> &AppLockConfig {
+        &self.state.app_lock
+    }
+
+    pub fn set_app_lock_passcode(&mut self, passcode: &str, idle_timeout_mins: u32) -> Result<()> {
+        if passcode.len() < 4 {
+            return Err(anyhow!("Master passcode must be at least 4 characters"));
+        }
+        let hash = Argon2::default()
+            .hash_password(passcode.as_bytes())
+            .map_err(|e| anyhow!("Passcode hashing failed: {e}"))?
+            .to_string();
+        self.state.app_lock = AppLockConfig {
+            enabled: true,
+            password_hash: Some(hash),
+            idle_timeout_mins,
+        };
+        self.save()
+    }
+
+    pub fn set_app_lock_timeout(&mut self, idle_timeout_mins: u32) -> Result<()> {
+        self.state.app_lock.idle_timeout_mins = idle_timeout_mins;
+        self.save()
+    }
+
+    pub fn disable_app_lock(&mut self) -> Result<()> {
+        self.state.app_lock = AppLockConfig::default();
+        self.save()
+    }
+
+    pub fn verify_app_lock_passcode(&self, passcode: &str) -> bool {
+        let Some(raw_hash) = self.state.app_lock.password_hash.as_deref() else {
+            return !self.state.app_lock.enabled;
+        };
+        let Ok(parsed) = PasswordHash::new(raw_hash) else {
+            return false;
+        };
+        Argon2::default()
+            .verify_password(passcode.as_bytes(), &parsed)
+            .is_ok()
+    }
+
+    // ── Zero-Knowledge E2EE Sync ──────────────────────────────────────────────
+
+    pub fn sync_config(&self) -> &SyncConfig {
+        &self.state.sync_config
+    }
+
+    pub fn save_sync_config(
+        &mut self,
+        backend: SyncBackend,
+        folder_path: String,
+        webdav_url: String,
+        webdav_username: String,
+        webdav_password: Option<String>,
+    ) -> Result<()> {
+        let encrypted_webdav_password = match webdav_password.filter(|p| !p.is_empty()) {
+            Some(plain) => Some(self.crypto.encrypt_str(&plain)?),
+            None => self.state.sync_config.encrypted_webdav_password.clone(),
+        };
+        self.state.sync_config = SyncConfig {
+            backend,
+            folder_path: folder_path.trim().to_string(),
+            webdav_url: webdav_url.trim().to_string(),
+            webdav_username: webdav_username.trim().to_string(),
+            encrypted_webdav_password,
+            last_sync_at: self.state.sync_config.last_sync_at.clone(),
+        };
+        self.save()
+    }
+
+    pub fn decrypt_webdav_password(&self) -> Result<Option<String>> {
+        self.decrypt_opt(self.state.sync_config.encrypted_webdav_password.as_ref())
+    }
+
+    pub fn mark_synced_at(&mut self, iso_ts: String) -> Result<()> {
+        self.state.sync_config.last_sync_at = Some(iso_ts);
+        self.save()
+    }
+
+    pub fn export_full_sync_snapshot(&self, passphrase: &str) -> Result<String> {
+        let mut servers = Vec::with_capacity(self.state.servers.len());
+        for s in &self.state.servers {
+            let mut copy = s.clone();
+            copy.password = self.decrypt_opt(s.password.as_ref())?;
+            copy.passphrase = self.decrypt_opt(s.passphrase.as_ref())?;
+            servers.push(copy);
+        }
+        let mut identities = Vec::with_capacity(self.state.identities.len());
+        for ident in &self.state.identities {
+            let mut copy = ident.clone();
+            copy.password = self.decrypt_opt(ident.password.as_ref())?;
+            copy.passphrase = self.decrypt_opt(ident.passphrase.as_ref())?;
+            identities.push(copy);
+        }
+        let mut ssh_keys = Vec::with_capacity(self.state.ssh_keys.len());
+        for k in &self.state.ssh_keys {
+            let pem = self.crypto.decrypt_str(&k.encrypted_private_key)?;
+            ssh_keys.push(ExportedSshKey {
+                id: k.id.clone(),
+                name: k.name.clone(),
+                algorithm: k.algorithm.clone(),
+                fingerprint_sha256: k.fingerprint_sha256.clone(),
+                public_key_openssh: k.public_key_openssh.clone(),
+                private_key_pem: pem,
+                has_passphrase: k.has_passphrase,
+                created_at: k.created_at.clone(),
+            });
+        }
+
+        let snap = FullSyncSnapshot {
+            version: 3,
+            exported_at: Utc::now().to_rfc3339(),
+            servers,
+            groups: self.state.groups.clone(),
+            identities,
+            ssh_keys,
+            snippet_packages: self.state.snippet_packages.clone(),
+            highlight_rules: self.state.highlight_rules.clone(),
+        };
+        let json = serde_json::to_string(&snap)?;
+        encrypt_glyph_export(&json, passphrase)
+    }
+
+    pub fn merge_sync_snapshot(
+        &mut self,
+        encrypted_blob: &str,
+        passphrase: &str,
+    ) -> Result<SyncMergeStats> {
+        let plain = decrypt_glyph_export(encrypted_blob, passphrase)?;
+        let snap: FullSyncSnapshot = serde_json::from_str(&plain)
+            .context("Sync snapshot payload is malformed or incompatible")?;
+        let mut stats = SyncMergeStats::default();
+
+        for g in snap.groups {
+            if !self.state.groups.iter().any(|eg| eg.id == g.id) {
+                self.state.groups.push(g);
+                stats.groups_added += 1;
+            }
+        }
+        for k in snap.ssh_keys {
+            if !self
+                .state
+                .ssh_keys
+                .iter()
+                .any(|ek| ek.id == k.id || ek.fingerprint_sha256 == k.fingerprint_sha256)
+            {
+                let enc_priv = self.crypto.encrypt_str(&k.private_key_pem)?;
+                self.state.ssh_keys.push(SshKeyEntry {
+                    id: k.id,
+                    name: k.name,
+                    algorithm: k.algorithm,
+                    fingerprint_sha256: k.fingerprint_sha256,
+                    public_key_openssh: k.public_key_openssh,
+                    encrypted_private_key: enc_priv,
+                    has_passphrase: k.has_passphrase,
+                    created_at: k.created_at,
+                });
+                stats.keys_added += 1;
+            }
+        }
+        for mut ident in snap.identities {
+            if !self.state.identities.iter().any(|ei| ei.id == ident.id) {
+                ident.password = self.encrypt_opt(ident.password)?;
+                ident.passphrase = self.encrypt_opt(ident.passphrase)?;
+                self.state.identities.push(ident);
+                stats.identities_added += 1;
+            }
+        }
+        for pkg in snap.snippet_packages {
+            if !self
+                .state
+                .snippet_packages
+                .iter()
+                .any(|ep| ep.id == pkg.id || ep.name.eq_ignore_ascii_case(&pkg.name))
+            {
+                self.state.snippet_packages.push(pkg);
+                stats.packages_added += 1;
+            }
+        }
+        for mut srv in snap.servers {
+            let exists = self.state.servers.iter().any(|es| {
+                es.id == srv.id
+                    || (es.host == srv.host
+                        && es.port == srv.port
+                        && es.username == srv.username)
+            });
+            if !exists {
+                srv.password = self.encrypt_opt(srv.password)?;
+                srv.passphrase = self.encrypt_opt(srv.passphrase)?;
+                self.state.servers.push(srv);
+                stats.servers_added += 1;
+            }
+        }
+        for rule in snap.highlight_rules {
+            if !self.state.highlight_rules.iter().any(|r| r.id == rule.id) {
+                self.state.highlight_rules.push(rule);
+            }
+        }
+
+        self.save()?;
+        Ok(stats)
+    }
+}
+
+/// Extracts unique `{{var_name}}` placeholders in left-to-right appearance order.
+pub fn extract_template_vars(cmd: &str) -> Vec<String> {
+    let re = Regex::new(r"\{\{\s*([a-zA-Z0-9_.\-]+)\s*\}\}").expect("valid regex");
+    let mut vars = Vec::new();
+    let mut seen = HashSet::new();
+    for cap in re.captures_iter(cmd) {
+        if let Some(m) = cap.get(1) {
+            let name = m.as_str().to_string();
+            if seen.insert(name.clone()) {
+                vars.push(name);
+            }
+        }
+    }
+    vars
+}
+
+/// Replaces `{{var}}` placeholders in `cmd` with the provided map values.
+pub fn render_template_cmd(cmd: &str, values: &HashMap<String, String>) -> String {
+    let re = Regex::new(r"\{\{\s*([a-zA-Z0-9_.\-]+)\s*\}\}").expect("valid regex");
+    re.replace_all(cmd, |caps: &regex::Captures<'_>| {
+        let key = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+        values.get(key).cloned().unwrap_or_default()
+    })
+    .into_owned()
 }
 
 fn default_commands() -> Vec<CommandSnippet> {
@@ -705,8 +1366,103 @@ fn default_commands() -> Vec<CommandSnippet> {
         CommandSnippet {
             id: 3,
             name: "List Ports".to_string(),
-            cmd: "netstat -tulpn".to_string(),
+            cmd: "ss -tulpn".to_string(),
             uses: 0,
+        },
+    ]
+}
+
+fn default_snippet_packages() -> Vec<SnippetPackage> {
+    vec![
+        SnippetPackage {
+            id: "pkg-sysops".to_string(),
+            name: "System Ops".to_string(),
+            description: "Essential Linux admin diagnostics and systemd commands".to_string(),
+            snippets: vec![
+                CommandSnippet {
+                    id: 101,
+                    name: "Restart Service".to_string(),
+                    cmd: "sudo systemctl restart {{service}} && systemctl status {{service}} --no-pager".to_string(),
+                    uses: 0,
+                },
+                CommandSnippet {
+                    id: 102,
+                    name: "Tail Journal Logs".to_string(),
+                    cmd: "sudo journalctl -u {{service}} -n {{lines}} --no-pager".to_string(),
+                    uses: 0,
+                },
+                CommandSnippet {
+                    id: 103,
+                    name: "Disk & Memory Snapshot".to_string(),
+                    cmd: "df -h && echo --- && free -h".to_string(),
+                    uses: 0,
+                },
+            ],
+        },
+        SnippetPackage {
+            id: "pkg-docker-net".to_string(),
+            name: "Docker & Network".to_string(),
+            description: "Containers, sockets, and certificate inspection".to_string(),
+            snippets: vec![
+                CommandSnippet {
+                    id: 201,
+                    name: "Docker Container Logs".to_string(),
+                    cmd: "docker logs --tail {{lines}} {{container}}".to_string(),
+                    uses: 0,
+                },
+                CommandSnippet {
+                    id: 202,
+                    name: "Listening Sockets".to_string(),
+                    cmd: "ss -tulpn".to_string(),
+                    uses: 0,
+                },
+                CommandSnippet {
+                    id: 203,
+                    name: "Check TLS Expiry".to_string(),
+                    cmd: "echo | openssl s_client -servername {{domain}} -connect {{domain}}:443 2>/dev/null | openssl x509 -noout -dates".to_string(),
+                    uses: 0,
+                },
+            ],
+        },
+    ]
+}
+
+fn default_highlight_rules() -> Vec<HighlightRule> {
+    vec![
+        HighlightRule {
+            id: "hl-error".to_string(),
+            name: "Errors & Fatal".to_string(),
+            pattern: r"(?i)\b(ERROR|FATAL|CRITICAL|PANIC|FAILED|EXCEPTION)\b".to_string(),
+            color_hex: "#f87171".to_string(),
+            enabled: true,
+        },
+        HighlightRule {
+            id: "hl-warn".to_string(),
+            name: "Warnings".to_string(),
+            pattern: r"(?i)\b(WARN|WARNING|DEPRECATED|TIMEOUT|RETRY)\b".to_string(),
+            color_hex: "#facc15".to_string(),
+            enabled: true,
+        },
+        HighlightRule {
+            id: "hl-ok".to_string(),
+            name: "Success / OK".to_string(),
+            pattern: r"(?i)\b(OK|SUCCESS|READY|CONNECTED|ACTIVE|RUNNING|PASS)\b".to_string(),
+            color_hex: "#4ade80".to_string(),
+            enabled: true,
+        },
+        HighlightRule {
+            id: "hl-ip".to_string(),
+            name: "IPv4 Addresses".to_string(),
+            pattern: r"\b(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\b".to_string(),
+            color_hex: "#22d3ee".to_string(),
+            enabled: true,
+        },
+        HighlightRule {
+            id: "hl-url".to_string(),
+            name: "URLs".to_string(),
+            pattern: r"https?://[^\s\x22'<>]+".to_string(),
+            color_hex: "#60a5fa".to_string(),
+            enabled: true,
         },
     ]
 }
@@ -714,6 +1470,7 @@ fn default_commands() -> Vec<CommandSnippet> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sync::run_e2ee_sync;
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("glyph_test_{}_{}", name, Uuid::new_v4()));
@@ -794,5 +1551,171 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn group_inheritance_and_identity_rotation_propagate() {
+        let dir = temp_dir("groups_identities");
+        let mut vault = VaultManager::open_for_test(dir.clone(), [11u8; 32]).unwrap();
+
+        let ident_id = vault
+            .add_identity(IdentityInput {
+                name: "Prod Ops".into(),
+                username: "opsadmin".into(),
+                auth_method: AuthMethod::Password,
+                password: Some("initial-secret".into()),
+                ..Default::default()
+            })
+            .unwrap();
+
+        let root_gid = vault
+            .add_group(HostGroup {
+                id: String::new(),
+                name: "Cloud".into(),
+                parent_id: None,
+                identity_id: Some(ident_id.clone()),
+                proxy_jump_id: None,
+                default_port: Some(2222),
+                tags: vec!["cloud".into()],
+            })
+            .unwrap();
+
+        let child_gid = vault
+            .add_group(HostGroup {
+                id: String::new(),
+                name: "Prod".into(),
+                parent_id: Some(root_gid),
+                identity_id: None,
+                proxy_jump_id: None,
+                default_port: None,
+                tags: vec![],
+            })
+            .unwrap();
+
+        let srv_id = vault
+            .add_server(ServerConfigInput {
+                name: "API-01".into(),
+                host: "10.0.10.1".into(),
+                username: String::new(), // Inherited from Cloud group's Identity
+                port: 0,                 // Inherited from Cloud group's default_port
+                group_id: Some(child_gid),
+                ..Default::default()
+            })
+            .unwrap();
+
+        let cfg = vault.get_connection_config(&srv_id).unwrap();
+        assert_eq!(cfg.username, "opsadmin");
+        assert_eq!(cfg.port, 2222);
+        assert_eq!(cfg.password.as_deref(), Some("initial-secret"));
+
+        // Rotating the shared Identity must immediately propagate to linked servers
+        vault
+            .edit_identity(
+                &ident_id,
+                IdentityInput {
+                    name: "Prod Ops".into(),
+                    username: "opsadmin".into(),
+                    auth_method: AuthMethod::Password,
+                    password: Some("rotated-secret-2026".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let cfg2 = vault.get_connection_config(&srv_id).unwrap();
+        assert_eq!(cfg2.password.as_deref(), Some("rotated-secret-2026"));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn snippet_template_variables_and_app_lock_work() {
+        let vars = extract_template_vars("docker logs --tail {{lines}} {{container}} {{lines}}");
+        assert_eq!(vars, vec!["lines", "container"]);
+
+        let mut map = HashMap::new();
+        map.insert("lines".into(), "200".into());
+        map.insert("container".into(), "nginx".into());
+        let rendered = render_template_cmd("docker logs --tail {{lines}} {{container}}", &map);
+        assert_eq!(rendered, "docker logs --tail 200 nginx");
+
+        let dir = temp_dir("app_lock");
+        let mut vault = VaultManager::open_for_test(dir.clone(), [12u8; 32]).unwrap();
+        assert!(!vault.app_lock_config().enabled);
+        vault.set_app_lock_passcode("glyph-pass-42", 15).unwrap();
+        assert!(vault.app_lock_config().enabled);
+        assert!(vault.verify_app_lock_passcode("glyph-pass-42"));
+        assert!(!vault.verify_app_lock_passcode("wrong-pass"));
+        vault.disable_app_lock().unwrap();
+        assert!(!vault.app_lock_config().enabled);
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn e2ee_folder_sync_merges_two_vaults_losslessly() {
+        let dir_a = temp_dir("sync_a");
+        let dir_b = temp_dir("sync_b");
+        let sync_dir = temp_dir("sync_folder");
+
+        let mut vault_a = VaultManager::open_for_test(dir_a.clone(), [21u8; 32]).unwrap();
+        vault_a
+            .add_server(ServerConfigInput {
+                name: "Alpha".into(),
+                host: "10.0.0.10".into(),
+                username: "ubuntu".into(),
+                password: Some("alpha-pw".into()),
+                ..Default::default()
+            })
+            .unwrap();
+        vault_a
+            .save_sync_config(
+                SyncBackend::LocalFolder,
+                sync_dir.display().to_string(),
+                String::new(),
+                String::new(),
+                None,
+            )
+            .unwrap();
+
+        let out_a = run_e2ee_sync(&mut vault_a, "shared-sync-secret", None)
+            .await
+            .unwrap();
+        assert_eq!(out_a.stats.servers_added, 0);
+
+        let mut vault_b = VaultManager::open_for_test(dir_b.clone(), [22u8; 32]).unwrap();
+        vault_b
+            .add_server(ServerConfigInput {
+                name: "Beta".into(),
+                host: "10.0.0.20".into(),
+                username: "root".into(),
+                password: Some("beta-pw".into()),
+                ..Default::default()
+            })
+            .unwrap();
+        vault_b
+            .save_sync_config(
+                SyncBackend::LocalFolder,
+                sync_dir.display().to_string(),
+                String::new(),
+                String::new(),
+                None,
+            )
+            .unwrap();
+
+        let out_b = run_e2ee_sync(&mut vault_b, "shared-sync-secret", None)
+            .await
+            .unwrap();
+        assert_eq!(out_b.stats.servers_added, 1);
+        assert_eq!(vault_b.list_servers().len(), 2);
+
+        let out_a2 = run_e2ee_sync(&mut vault_a, "shared-sync-secret", None)
+            .await
+            .unwrap();
+        assert_eq!(out_a2.stats.servers_added, 1);
+        assert_eq!(vault_a.list_servers().len(), 2);
+
+        let _ = fs::remove_dir_all(dir_a);
+        let _ = fs::remove_dir_all(dir_b);
+        let _ = fs::remove_dir_all(sync_dir);
     }
 }

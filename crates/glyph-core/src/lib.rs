@@ -1,10 +1,16 @@
+pub mod cloud_import;
 pub mod containers;
 pub mod crypto;
+pub mod importers;
+pub mod local_pty;
 pub mod mcp_config;
 pub mod models;
+pub mod serial;
 pub mod sftp;
 pub mod ssh;
+pub mod sync;
 pub mod telemetry;
+pub mod telnet;
 pub mod tunnels;
 pub mod updater;
 pub mod vault;

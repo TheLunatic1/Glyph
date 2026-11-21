@@ -343,12 +343,8 @@ async fn vnc_over_ssh_tunnel_auth_render_zlib_resize_and_input_e2e() {
             port: ssh_port,
             username: "vncuser".into(),
             password: Some("sshpass".into()),
-            private_key_path: None,
-            private_key_pem: None,
-            passphrase: None,
             auth_method: AuthMethod::Password,
-            zerotier: String::new(),
-            proxy_jump: None,
+            ..Default::default()
         },
         known_hosts,
         ev_tx,

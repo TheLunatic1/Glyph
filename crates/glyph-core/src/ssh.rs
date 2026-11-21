@@ -1,4 +1,6 @@
-use crate::models::{AuthMethod, ConnectionConfig, HostKeyStatus, TelemetrySnapshot};
+use crate::models::{
+    AuthMethod, ConnectionConfig, HostKeyStatus, KnockProtocol, PortKnockStep, TelemetrySnapshot,
+};
 use crate::telemetry::{TelemetryTracker, GLYPH_STAT_CMD};
 use anyhow::{anyhow, Context, Result};
 use futures::Future;
@@ -83,6 +85,7 @@ pub struct GlyphHandler {
     disconnect_tx: Option<mpsc::UnboundedSender<SessionEvent>>,
     intentional_close: Arc<AtomicBool>,
     remote_tunnels: Arc<Mutex<HashMap<u16, crate::tunnels::RemoteTunnelTarget>>>,
+    forward_agent: bool,
 }
 
 impl client::Handler for GlyphHandler {
@@ -198,6 +201,48 @@ impl client::Handler for GlyphHandler {
         });
         Ok(())
     }
+
+    async fn server_channel_open_agent_forward(
+        &mut self,
+        channel: russh::Channel<russh::client::Msg>,
+        reply: russh::client::ChannelOpenHandle,
+        _session: &mut russh::client::Session,
+    ) -> std::result::Result<(), Self::Error> {
+        if !self.forward_agent {
+            reply
+                .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                .await;
+            return Ok(());
+        }
+
+        #[cfg(windows)]
+        let agent_res =
+            tokio::net::windows::named_pipe::ClientOptions::new().open(r"\\.\pipe\openssh-ssh-agent");
+        #[cfg(unix)]
+        let agent_res = match std::env::var("SSH_AUTH_SOCK") {
+            Ok(sock_path) if !sock_path.trim().is_empty() => {
+                tokio::net::UnixStream::connect(sock_path).await
+            }
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "SSH_AUTH_SOCK not set",
+            )),
+        };
+
+        let Ok(mut agent_stream) = agent_res else {
+            reply
+                .reject(russh::ChannelOpenFailure::ConnectFailed)
+                .await;
+            return Ok(());
+        };
+
+        reply.accept().await;
+        tokio::spawn(async move {
+            let mut ssh_stream = channel.into_stream();
+            let _ = tokio::io::copy_bidirectional(&mut ssh_stream, &mut agent_stream).await;
+        });
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -214,6 +259,8 @@ pub(crate) struct SshSessionInner {
     pub(crate) sftp: Mutex<Option<Arc<russh_sftp::client::SftpSession>>>,
     pub(crate) tunnels: Mutex<HashMap<String, crate::tunnels::ActiveTunnel>>,
     pub(crate) remote_tunnels: Arc<Mutex<HashMap<u16, crate::tunnels::RemoteTunnelTarget>>>,
+    forward_agent: bool,
+    env_vars: Vec<(String, String)>,
 }
 
 pub struct ConnectOutcome {
@@ -262,6 +309,8 @@ impl SshSession {
             sftp: Mutex::new(None),
             tunnels: Mutex::new(HashMap::new()),
             remote_tunnels,
+            forward_agent: config.forward_agent,
+            env_vars: config.env_vars,
         });
 
         let session = SshSession { inner };
@@ -402,6 +451,12 @@ impl SshSession {
         tx.request_pty(false, "xterm-256color", cols.max(10), rows.max(4), 0, 0, &[])
             .await
             .context("PTY allocation failed")?;
+        for (k, v) in &self.inner.env_vars {
+            let _ = tx.set_env(false, k.as_str(), v.as_str()).await;
+        }
+        if self.inner.forward_agent {
+            let _ = tx.agent_forward(false).await;
+        }
         tx.request_shell(false)
             .await
             .context("Failed to start remote shell")?;
@@ -552,7 +607,8 @@ fn connect_recursive<'a>(
     Box::pin(async move {
         let russh_cfg = Arc::new(client::Config {
             inactivity_timeout: Some(Duration::from_secs(300)),
-            keepalive_interval: Some(Duration::from_secs(15)),
+            keepalive_interval: (config.keepalive_secs > 0)
+                .then(|| Duration::from_secs(config.keepalive_secs as u64)),
             keepalive_max: 3,
             ..Default::default()
         });
@@ -601,6 +657,7 @@ fn connect_recursive<'a>(
                 } else {
                     Arc::new(Mutex::new(HashMap::new()))
                 },
+                forward_agent: is_target && config.forward_agent,
             };
             tokio::time::timeout(
                 Duration::from_secs(15),
@@ -610,6 +667,9 @@ fn connect_recursive<'a>(
             .map_err(|_| anyhow!("SSH handshake timed out for {}:{}", config.host, config.port))?
             .map_err(|e| anyhow!("SSH connection failed: {e}"))?
         } else {
+            if !config.port_knock.is_empty() {
+                perform_port_knock(&config.host, &config.port_knock, &event_tx).await;
+            }
             let _ = event_tx.send(SessionEvent::Status(format!(
                 "Initializing connection to {}:{}...",
                 config.host, config.port
@@ -632,6 +692,7 @@ fn connect_recursive<'a>(
                 } else {
                     Arc::new(Mutex::new(HashMap::new()))
                 },
+                forward_agent: is_target && config.forward_agent,
             };
             tokio::time::timeout(
                 Duration::from_secs(15),
@@ -649,6 +710,42 @@ fn connect_recursive<'a>(
         authenticate_session(&mut handle, config, &event_tx).await?;
         Ok(handle)
     })
+}
+
+async fn perform_port_knock(
+    host: &str,
+    steps: &[PortKnockStep],
+    event_tx: &mpsc::UnboundedSender<SessionEvent>,
+) {
+    let summary: String = steps
+        .iter()
+        .map(|s| format!("{}:{}", s.protocol, s.port))
+        .collect::<Vec<_>>()
+        .join(" -> ");
+    let _ = event_tx.send(SessionEvent::Status(format!(
+        "Port knocking {host} ({summary})..."
+    )));
+
+    for step in steps {
+        match step.protocol {
+            KnockProtocol::Tcp => {
+                let _ = tokio::time::timeout(
+                    Duration::from_millis(250),
+                    tokio::net::TcpStream::connect((host, step.port)),
+                )
+                .await;
+            }
+            KnockProtocol::Udp => {
+                if let Ok(sock) = tokio::net::UdpSocket::bind("0.0.0.0:0").await {
+                    let _ = sock.send_to(b"glyph", (host, step.port)).await;
+                }
+            }
+        }
+        let delay = step.delay_ms.min(5000);
+        if delay > 0 {
+            tokio::time::sleep(Duration::from_millis(delay)).await;
+        }
+    }
 }
 
 async fn authenticate_session(

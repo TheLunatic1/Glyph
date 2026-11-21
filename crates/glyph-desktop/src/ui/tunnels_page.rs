@@ -320,15 +320,23 @@ pub fn view<'a>(st: &'a TunnelsPageState) -> Element<'a, TunnelsPageMsg> {
                     .color(BRAND_300)
                     .width(Length::FillPortion(3))
                     .into(),
+                TunnelDirection::Dynamic => text(format!("socks5://127.0.0.1:{}", tun.local_port))
+                    .size(12)
+                    .font(FONT_MONO_BOLD)
+                    .color(GREEN_400)
+                    .width(Length::FillPortion(3))
+                    .into(),
             };
 
             let dest_label = match tun.direction {
                 TunnelDirection::Local => format!("{}:{}", tun.remote_host, tun.remote_port),
                 TunnelDirection::Remote => format!("{}:{}", tun.remote_host, tun.local_port),
+                TunnelDirection::Dynamic => "Dynamic Proxy".to_string(),
             };
             let dir_badge = match tun.direction {
                 TunnelDirection::Local => format!("-L {}", tun.protocol),
                 TunnelDirection::Remote => format!("-R {}", tun.protocol),
+                TunnelDirection::Dynamic => "-D SOCKS5".to_string(),
             };
 
             let tun_row = container(

@@ -39,14 +39,16 @@ sha2 = "0.11"
 # Cryptography & Vault (Pure Rust — no cmake/nasm)
 aes-gcm = "0.11"
 scrypt = { version = "0.12", default-features = false }
-argon2 = "0.6"
+argon2 = { version = "0.6", features = ["getrandom"] }
 zeroize = { version = "1.9", features = ["derive"] }
 keyring = "4.2"
 ssh-key = { version = "0.7.0-rc.12", features = ["crypto", "encryption", "getrandom", "serde"] }
 
-# SSH / SFTP (ring crypto provider — zero aws-lc-sys / cmake / nasm)
+# SSH / SFTP / Local PTY / Serial (ring crypto provider — zero aws-lc-sys / cmake / nasm / libudev)
 russh = { version = "0.65", default-features = false, features = ["flate2", "ring", "rsa"] }
 russh-sftp = "3.0"
+portable-pty = "0.9"
+serialport = { version = "4.10", default-features = false }
 
 # Terminal Emulation
 alacritty_terminal = "0.26"

@@ -30,6 +30,8 @@ ssh-key.workspace = true
 
 russh.workspace = true
 russh-sftp.workspace = true
+portable-pty.workspace = true
+serialport.workspace = true
 tokio-util.workspace = true
 reqwest.workspace = true
 rustls.workspace = true
