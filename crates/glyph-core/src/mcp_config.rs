@@ -73,6 +73,7 @@ impl std::fmt::Display for McpConfigFormat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McpClientStatus {
     Configured,
+    LegacyOutdated,
     NotConfigured,
     NotInstalled,
 }
@@ -156,20 +157,53 @@ pub fn client_format(id: McpClientId) -> McpConfigFormat {
     }
 }
 
+/// Returns `true` if a `glyph_mcp` JSON entry invokes Node.js against a legacy Electron `mcp.js` entrypoint.
+pub fn is_legacy_electron_mcp_entry(entry: &Value) -> bool {
+    let Some(cmd) = entry.get("command").and_then(Value::as_str) else {
+        return false;
+    };
+    let base = cmd
+        .trim()
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if base != "node" && base != "node.exe" {
+        return false;
+    }
+    entry
+        .get("args")
+        .and_then(Value::as_array)
+        .is_some_and(|args| {
+            args.iter().filter_map(Value::as_str).any(|arg| {
+                let norm = arg.trim().replace('\\', "/").to_ascii_lowercase();
+                norm == "mcp.js"
+                    || norm.ends_with("/mcp.js")
+                    || norm == "src/mcp/index.js"
+                    || norm.ends_with("/src/mcp/index.js")
+            })
+        })
+}
+
 pub fn detect_client_status(config_path: &Path, format: McpConfigFormat) -> McpClientStatus {
     if config_path.exists() {
-        let configured = fs::read_to_string(config_path)
+        let parsed = fs::read_to_string(config_path)
             .ok()
-            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-            .is_some_and(|v| match format {
-                McpConfigFormat::VsCode => !v["mcp"]["servers"]["glyph_mcp"].is_null(),
-                _ => !v["mcpServers"]["glyph_mcp"].is_null(),
-            });
-        return if configured {
-            McpClientStatus::Configured
-        } else {
-            McpClientStatus::NotConfigured
-        };
+            .and_then(|s| serde_json::from_str::<Value>(&s).ok());
+        if let Some(v) = parsed {
+            let entry = match format {
+                McpConfigFormat::VsCode => &v["mcp"]["servers"]["glyph_mcp"],
+                _ => &v["mcpServers"]["glyph_mcp"],
+            };
+            if !entry.is_null() {
+                return if is_legacy_electron_mcp_entry(entry) {
+                    McpClientStatus::LegacyOutdated
+                } else {
+                    McpClientStatus::Configured
+                };
+            }
+        }
+        return McpClientStatus::NotConfigured;
     }
     if config_path.parent().is_some_and(Path::exists) {
         McpClientStatus::NotConfigured
@@ -213,6 +247,50 @@ pub fn auto_install_mcp_client(id: McpClientId, mcp_bin_path: &Path) -> Result<P
     let format = client_format(id);
     write_mcp_config_at(&config_path, format, None, mcp_bin_path)?;
     Ok(config_path)
+}
+
+/// Upgrades an existing `LegacyOutdated` Electron v2 MCP config entry in-place to `mcp_bin_path`.
+pub fn migrate_legacy_config_at(
+    config_path: &Path,
+    format: McpConfigFormat,
+    mcp_bin_path: &Path,
+) -> Result<bool> {
+    if !mcp_bin_path.is_file() {
+        return Ok(false);
+    }
+    if detect_client_status(config_path, format) != McpClientStatus::LegacyOutdated {
+        return Ok(false);
+    }
+    write_mcp_config_at(config_path, format, None, mcp_bin_path)?;
+    Ok(true)
+}
+
+/// Scans known MCP client config files and auto-migrates any legacy Electron v2 `mcp.js` entries.
+pub fn migrate_legacy_mcp_clients(mcp_bin_path: &Path) -> Vec<(McpClientId, PathBuf)> {
+    if !mcp_bin_path.is_file() {
+        return Vec::new();
+    }
+    let mut upgraded = Vec::new();
+    for &id in &McpClientId::ALL {
+        let Some(config_path) = client_config_path(id) else {
+            continue;
+        };
+        if !config_path.exists() {
+            continue;
+        }
+        let format = client_format(id);
+        match migrate_legacy_config_at(&config_path, format, mcp_bin_path) {
+            Ok(true) => upgraded.push((id, config_path)),
+            Ok(false) => {}
+            Err(e) => {
+                log::warn!(
+                    "Failed migrating legacy MCP config {}: {e}",
+                    config_path.display()
+                );
+            }
+        }
+    }
+    upgraded
 }
 
 pub fn write_mcp_config_at(
@@ -359,6 +437,101 @@ mod tests {
         assert_eq!(
             v3["aiTool"]["mcpServers"]["glyph_mcp"]["command"],
             "/opt/glyph-mcp"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn detects_and_migrates_legacy_electron_mcp_configs() {
+        let dir = std::env::temp_dir().join(format!("glyph_mcp_mig_{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+
+        let fake_bin = dir.join(if cfg!(windows) {
+            "glyph-mcp.exe"
+        } else {
+            "glyph-mcp"
+        });
+        fs::write(&fake_bin, b"stub").unwrap();
+
+        let legacy_entry = json!({
+            "command": "node",
+            "args": ["C:\\Users\\Test\\AppData\\Local\\Programs\\Glyph\\resources\\mcp.js"]
+        });
+        assert!(is_legacy_electron_mcp_entry(&legacy_entry));
+
+        let rust_entry = json!({
+            "command": "C:/Users/Test/AppData/Local/Programs/Glyph/glyph-mcp.exe",
+            "args": []
+        });
+        assert!(!is_legacy_electron_mcp_entry(&rust_entry));
+
+        let legacy_cfg = dir.join("antigravity.json");
+        fs::write(
+            &legacy_cfg,
+            serde_json::to_string_pretty(&json!({
+                "mcpServers": {
+                    "glyph_mcp": legacy_entry,
+                    "other": { "command": "npx", "args": ["-y", "foo"] }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            detect_client_status(&legacy_cfg, McpConfigFormat::McpServers),
+            McpClientStatus::LegacyOutdated
+        );
+
+        let migrated =
+            migrate_legacy_config_at(&legacy_cfg, McpConfigFormat::McpServers, &fake_bin).unwrap();
+        assert!(migrated);
+        assert_eq!(
+            detect_client_status(&legacy_cfg, McpConfigFormat::McpServers),
+            McpClientStatus::Configured
+        );
+
+        let parsed: Value = serde_json::from_str(&fs::read_to_string(&legacy_cfg).unwrap()).unwrap();
+        assert_eq!(parsed["mcpServers"]["other"]["command"], "npx");
+        assert_eq!(
+            parsed["mcpServers"]["glyph_mcp"]["command"],
+            fake_bin.to_string_lossy().replace('\\', "/")
+        );
+
+        // Second migration call is a no-op once already upgraded to Rust binary
+        assert!(!migrate_legacy_config_at(
+            &legacy_cfg,
+            McpConfigFormat::McpServers,
+            &fake_bin
+        )
+        .unwrap());
+
+        // Dev src/mcp/index.js variant in VS Code format also detected
+        let vs_cfg = dir.join("settings.json");
+        fs::write(
+            &vs_cfg,
+            serde_json::to_string_pretty(&json!({
+                "mcp": {
+                    "servers": {
+                        "glyph_mcp": {
+                            "type": "stdio",
+                            "command": "C:\\Program Files\\nodejs\\node.exe",
+                            "args": ["/repo/src/mcp/index.js"]
+                        }
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            detect_client_status(&vs_cfg, McpConfigFormat::VsCode),
+            McpClientStatus::LegacyOutdated
+        );
+        assert!(migrate_legacy_config_at(&vs_cfg, McpConfigFormat::VsCode, &fake_bin).unwrap());
+        assert_eq!(
+            detect_client_status(&vs_cfg, McpConfigFormat::VsCode),
+            McpClientStatus::Configured
         );
 
         let _ = fs::remove_dir_all(&dir);

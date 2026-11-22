@@ -92,6 +92,10 @@ Section "Install Glyph" SecMain
   File "/oname=Glyph.exe" "..\dist\stage\Glyph.exe"
   File "/oname=glyph-mcp.exe" "..\dist\stage\glyph-mcp.exe"
   File "/oname=logo.png" "..\assets\logo.png"
+  File "/oname=logo.ico" "..\assets\logo.ico"
+
+  CreateDirectory "$INSTDIR\resources"
+  File "/oname=resources\mcp.js" "..\scripts\legacy-mcp-shim.cjs"
 
   WriteUninstaller "$INSTDIR\Uninstall Glyph.exe"
 
@@ -99,15 +103,16 @@ Section "Install Glyph" SecMain
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Glyph" "DisplayVersion" "${APP_VERSION}"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Glyph" "Publisher" "TheLunatic1 (Salman Toha)"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Glyph" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Glyph" "DisplayIcon" "$INSTDIR\Glyph.exe"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Glyph" "DisplayIcon" "$INSTDIR\Glyph.exe,0"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Glyph" "UninstallString" '"$INSTDIR\Uninstall Glyph.exe"'
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Glyph" "NoModify" 1
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Glyph" "NoRepair" 1
 
   CreateDirectory "$SMPROGRAMS\Glyph"
-  CreateShortcut "$SMPROGRAMS\Glyph\Glyph.lnk" "$INSTDIR\Glyph.exe"
-  CreateShortcut "$SMPROGRAMS\Glyph\Uninstall Glyph.lnk" "$INSTDIR\Uninstall Glyph.exe"
-  CreateShortcut "$DESKTOP\Glyph.lnk" "$INSTDIR\Glyph.exe"
+  CreateShortcut "$SMPROGRAMS\Glyph\Glyph.lnk" "$INSTDIR\Glyph.exe" "" "$INSTDIR\Glyph.exe" 0
+  CreateShortcut "$SMPROGRAMS\Glyph\Uninstall Glyph.lnk" "$INSTDIR\Uninstall Glyph.exe" "" "$INSTDIR\Uninstall Glyph.exe" 0
+  CreateShortcut "$DESKTOP\Glyph.lnk" "$INSTDIR\Glyph.exe" "" "$INSTDIR\Glyph.exe" 0
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 SectionEnd
 
 Function .onInstSuccess
@@ -129,6 +134,9 @@ Section "Uninstall"
   Delete "$INSTDIR\glyph-mcp.exe"
   Delete "$INSTDIR\glyph-mcp.exe.old"
   Delete "$INSTDIR\logo.png"
+  Delete "$INSTDIR\logo.ico"
+  Delete "$INSTDIR\resources\mcp.js"
+  RMDir "$INSTDIR\resources"
   Delete "$INSTDIR\Uninstall Glyph.exe"
   RMDir "$INSTDIR"
 
@@ -138,4 +146,5 @@ Section "Uninstall"
   RMDir "$SMPROGRAMS\Glyph"
 
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Glyph"
+  System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 SectionEnd

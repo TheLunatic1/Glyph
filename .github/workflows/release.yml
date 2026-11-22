@@ -167,6 +167,16 @@ jobs:
             -output "dist/Glyph.app/Contents/MacOS/glyph-mcp"
           chmod +x "dist/Glyph.app/Contents/MacOS/Glyph" "dist/Glyph.app/Contents/MacOS/glyph-mcp"
           cp assets/logo.png "dist/Glyph.app/Contents/Resources/logo.png"
+          cp scripts/legacy-mcp-shim.cjs "dist/Glyph.app/Contents/Resources/mcp.js"
+          chmod +x "dist/Glyph.app/Contents/Resources/mcp.js"
+
+          mkdir -p dist/AppIcon.iconset
+          for px in 16 32 128 256 512; do
+            sips -z $px $px assets/logo.png --out "dist/AppIcon.iconset/icon_${px}x${px}.png" >/dev/null
+            double=$((px * 2))
+            sips -z $double $double assets/logo.png --out "dist/AppIcon.iconset/icon_${px}x${px}@2x.png" >/dev/null
+          done
+          iconutil -c icns dist/AppIcon.iconset -o "dist/Glyph.app/Contents/Resources/AppIcon.icns"
 
           printf '%s\n' \
             '<?xml version="1.0" encoding="UTF-8"?>' \
@@ -175,6 +185,7 @@ jobs:
             '<dict>' \
             '  <key>CFBundleDisplayName</key><string>Glyph</string>' \
             '  <key>CFBundleExecutable</key><string>Glyph</string>' \
+            '  <key>CFBundleIconFile</key><string>AppIcon</string>' \
             '  <key>CFBundleIdentifier</key><string>com.glyph.app</string>' \
             '  <key>CFBundleName</key><string>Glyph</string>' \
             '  <key>CFBundlePackageType</key><string>APPL</string>' \

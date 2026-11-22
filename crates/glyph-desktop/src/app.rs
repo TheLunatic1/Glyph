@@ -607,6 +607,16 @@ impl GlyphApp {
         app.locked = app.app_lock_cfg.enabled;
         app.trigger_os_icon_fetches(app.servers.iter().map(|s| s.os.as_deref()).collect());
 
+        let mcp_bin = glyph_core::mcp_config::resolve_mcp_binary_path();
+        let migrated = glyph_core::mcp_config::migrate_legacy_mcp_clients(&mcp_bin);
+        if !migrated.is_empty() {
+            log::info!(
+                "Auto-migrated {} legacy v2 MCP client config(s) to {}",
+                migrated.len(),
+                mcp_bin.display()
+            );
+        }
+
         let mut startup_tasks = vec![open_task.discard(), api_task];
         if std::env::var("GLYPH_DISABLE_AUTO_UPDATE").as_deref() != Ok("1") {
             startup_tasks.push(startup_update_check_task());

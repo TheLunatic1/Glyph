@@ -1862,16 +1862,17 @@ fn view_settings_mcp<'a>(st: &'a SettingsModalState) -> Element<'a, ModalMsg> {
     for c in &st.clients {
         let (badge_lbl, badge_col, badge_bg) = match c.status {
             McpClientStatus::Configured => ("Configured", GREEN_400, rgba(GREEN_500, 0.14)),
+            McpClientStatus::LegacyOutdated => ("Legacy v2", ORANGE_400, rgba(ORANGE_400, 0.14)),
             McpClientStatus::NotConfigured => ("Not set up", YELLOW_400, rgba(YELLOW_500, 0.14)),
             McpClientStatus::NotInstalled => ("Not installed", TEXT_MUTED, rgba(DARK_600, 0.35)),
         };
 
         let expanded = st.expanded_snippet == Some(c.id);
         let copied = st.copied_snippet == Some(c.id);
-        let btn_lbl = if c.status == McpClientStatus::Configured {
-            "Re-apply"
-        } else {
-            "Auto-Install"
+        let btn_lbl = match c.status {
+            McpClientStatus::Configured => "Re-apply",
+            McpClientStatus::LegacyOutdated => "Upgrade to v3",
+            _ => "Auto-Install",
         };
 
         let mut card_col = column![
