@@ -16,4 +16,5 @@ pub mod terminal_page;
 pub mod termius_modals;
 pub mod titlebar;
 pub mod tunnels_page;
+pub mod update_modal;
 pub mod vnc_page;

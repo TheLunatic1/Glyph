@@ -24,6 +24,7 @@ use crate::ui::splash;
 use crate::ui::terminal_page::{self, TerminalPageMsg, TerminalPageState};
 use crate::ui::titlebar::{self, TitleBarMsg};
 use crate::ui::tunnels_page::{self, TunnelsPageMsg, TunnelsPageState, UiTunnelDirection};
+use crate::ui::update_modal::{self, AppUpdateState, UpdateMsg, UpdateStage};
 use crate::ui::vnc_page::{self, VncPageMsg, VncPageState};
 use glyph_api::{
     default_mcp_token_path, ensure_mcp_token, start_local_api, ApiHostKeyPolicy, ApiUiEvent,
@@ -42,7 +43,11 @@ use glyph_core::ssh::{
     HostKeyPrompt, SessionEvent, ShellEvent, ShellHandle, SshSession, TrustedHostRecord,
 };
 use glyph_core::tunnels::TunnelInfo;
-use glyph_core::updater::{ensure_rustls_ring_provider, fetch_latest_release, is_newer_version, ReleaseInfo};
+use glyph_core::updater::{
+    download_update_asset, ensure_rustls_ring_provider, fetch_latest_release, is_newer_version,
+    launch_update_installer, DownloadedUpdate, ReleaseInfo, UpdateDownloadProgress,
+    UpdateInstallKind,
+};
 use glyph_core::vault::VaultManager;
 use glyph_terminal::TerminalEvent;
 use glyph_vnc::{connect_vnc_stream, VncClientHandle, VncEvent, VncUiEvent};
@@ -130,6 +135,8 @@ pub enum BusEvent {
     VncConnected(window::Id, Result<VncClientHandle, String>),
     VncEvent(window::Id, VncEvent),
     OsIconFetched(String, Vec<u8>),
+    UpdateDownloadProgress(UpdateDownloadProgress),
+    UpdateDownloadFinished(Result<DownloadedUpdate, String>),
 }
 
 impl fmt::Debug for BusEvent {
@@ -244,6 +251,14 @@ impl fmt::Debug for BusEvent {
                 .field(slug)
                 .field(&bytes.len())
                 .finish(),
+            Self::UpdateDownloadProgress(p) => f
+                .debug_struct("UpdateDownloadProgress")
+                .field("percent", &p.percent)
+                .finish(),
+            Self::UpdateDownloadFinished(r) => f
+                .debug_tuple("UpdateDownloadFinished")
+                .field(&r.as_ref().map(|d| &d.asset_name))
+                .finish(),
         }
     }
 }
@@ -347,6 +362,21 @@ fn start_local_api_task(
     )
 }
 
+fn startup_update_check_task() -> Task<Message> {
+    Task::perform(
+        async {
+            tokio::time::sleep(Duration::from_secs(4)).await;
+            fetch_latest_release("TheLunatic1/Glyph", None)
+                .await
+                .map_err(|e| e.to_string())
+        },
+        |result| Message::DesktopUpdateChecked {
+            silent: true,
+            result,
+        },
+    )
+}
+
 // ── Top-Level Messages & State ────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -397,7 +427,11 @@ pub enum Message {
     SshKeyFileLoaded(Result<Option<(String, String)>, String>),
     CustomMcpPathPicked(Option<String>),
     MobileReleaseFetched(Result<ReleaseInfo, String>),
-    DesktopUpdateChecked(Result<ReleaseInfo, String>),
+    DesktopUpdateChecked {
+        silent: bool,
+        result: Result<ReleaseInfo, String>,
+    },
+    Update(UpdateMsg),
     SftpUploadPicked(window::Id, Vec<PathBuf>),
     SftpDownloadSavePicked(window::Id, String, Option<PathBuf>),
     SecretsExportDone(window::Id, Result<Option<String>, String>),
@@ -490,6 +524,8 @@ pub struct GlyphApp {
     pub(crate) server_windows: BTreeMap<window::Id, ServerWindowState>,
     pub(crate) quick_windows: BTreeMap<window::Id, crate::ui::quick_terminal::QuickTerminalState>,
     pub(crate) transfer_cancels: HashMap<String, tokio_util::sync::CancellationToken>,
+    pub(crate) updater: AppUpdateState,
+    pub(crate) update_cancel: Option<tokio_util::sync::CancellationToken>,
     pub(crate) is_quitting: bool,
 }
 
@@ -563,13 +599,19 @@ impl GlyphApp {
             server_windows: BTreeMap::new(),
             quick_windows: BTreeMap::new(),
             transfer_cancels: HashMap::new(),
+            updater: AppUpdateState::default(),
+            update_cancel: None,
             is_quitting: false,
         };
         app.reload_termius_caches();
         app.locked = app.app_lock_cfg.enabled;
         app.trigger_os_icon_fetches(app.servers.iter().map(|s| s.os.as_deref()).collect());
 
-        (app, Task::batch([open_task.discard(), api_task]))
+        let mut startup_tasks = vec![open_task.discard(), api_task];
+        if std::env::var("GLYPH_DISABLE_AUTO_UPDATE").as_deref() != Ok("1") {
+            startup_tasks.push(startup_update_check_task());
+        }
+        (app, Task::batch(startup_tasks))
     }
 
     pub(crate) fn with_vault<R>(&self, f: impl FnOnce(&mut VaultManager) -> R) -> R {
@@ -751,6 +793,10 @@ impl GlyphApp {
                 if self.palette.open {
                     self.palette.open = false;
                     self.palette.query.clear();
+                } else if self.updater.modal_open {
+                    if self.updater.stage != UpdateStage::Installing {
+                        self.updater.modal_open = false;
+                    }
                 } else if self.termius_modal.is_some() {
                     self.termius_modal = None;
                     self.termius_modal_window = None;
@@ -1023,20 +1069,44 @@ impl GlyphApp {
                 }
                 Task::none()
             }
-            Message::DesktopUpdateChecked(res) => {
-                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
-                    st.checking_update = false;
-                    match res {
-                        Ok(rel) => {
-                            st.is_newer_available = is_newer_version(APP_VERSION, &rel.version);
-                            st.latest_release = Some(rel);
-                            st.update_error = None;
+            Message::DesktopUpdateChecked { silent, result } => {
+                if matches!(
+                    self.updater.stage,
+                    UpdateStage::Downloading | UpdateStage::Downloaded | UpdateStage::Installing
+                ) {
+                    return Task::none();
+                }
+                match result {
+                    Ok(rel) => {
+                        let newer = is_newer_version(APP_VERSION, &rel.version);
+                        self.updater.info = Some(rel);
+                        self.updater.error = None;
+                        if newer {
+                            self.updater.stage = UpdateStage::Available;
+                            self.updater.banner_dismissed = false;
+                        } else {
+                            self.updater.stage = if silent {
+                                UpdateStage::Idle
+                            } else {
+                                UpdateStage::UpToDate
+                            };
                         }
-                        Err(e) => st.update_error = Some(e),
+                    }
+                    Err(e) => {
+                        if silent {
+                            log::warn!("Silent update check failed: {e}");
+                            if self.updater.stage == UpdateStage::Checking {
+                                self.updater.stage = UpdateStage::Idle;
+                            }
+                        } else {
+                            self.updater.stage = UpdateStage::Error;
+                            self.updater.error = Some(e);
+                        }
                     }
                 }
                 Task::none()
             }
+            Message::Update(umsg) => self.handle_update_msg(umsg),
             Message::SftpUploadPicked(wid, paths) => {
                 if !paths.is_empty() {
                     if let Some(dir) = self.server_windows.get(&wid).map(|s| s.sftp.current_path.clone()) {
@@ -1814,6 +1884,40 @@ impl GlyphApp {
             }
             BusEvent::OsIconFetched(slug, bytes) => {
                 os_logo::register_fetched_svg(&slug, bytes);
+                Task::none()
+            }
+            BusEvent::UpdateDownloadProgress(prog) => {
+                if self.updater.stage == UpdateStage::Downloading {
+                    self.updater.progress = Some(prog);
+                }
+                Task::none()
+            }
+            BusEvent::UpdateDownloadFinished(res) => {
+                self.update_cancel = None;
+                match res {
+                    Ok(dl) => {
+                        self.updater.downloaded = Some(dl);
+                        self.updater.stage = UpdateStage::Downloaded;
+                        self.updater.modal_open = true;
+                        self.updater.error = None;
+                    }
+                    Err(e) => {
+                        let cancelled = e.to_ascii_lowercase().contains("cancel")
+                            || self.updater.stage != UpdateStage::Downloading;
+                        if cancelled {
+                            self.updater.progress = None;
+                            self.updater.stage = if self.updater.info.is_some() {
+                                UpdateStage::Available
+                            } else {
+                                UpdateStage::Idle
+                            };
+                        } else {
+                            self.updater.stage = UpdateStage::Error;
+                            self.updater.error = Some(e);
+                            self.updater.modal_open = true;
+                        }
+                    }
+                }
                 Task::none()
             }
         }
@@ -2817,26 +2921,19 @@ impl GlyphApp {
                 Task::none()
             }
             ModalMsg::OpenMobileFromSettings => self.open_mobile_modal(),
-            ModalMsg::CheckUpdates => {
-                if let Some(ManagerModal::Settings(st)) = &mut self.modal {
-                    st.checking_update = true;
-                    st.update_error = None;
-                }
-                let suffix = if cfg!(target_os = "windows") {
-                    Some(".exe")
-                } else if cfg!(target_os = "macos") {
-                    Some(".dmg")
-                } else {
-                    Some(".AppImage")
-                };
-                Task::perform(
-                    async move {
-                        fetch_latest_release("TheLunatic1/Glyph", suffix)
-                            .await
-                            .map_err(|e| e.to_string())
-                    },
-                    Message::DesktopUpdateChecked,
-                )
+            ModalMsg::CheckUpdates => self.trigger_manual_update_check(),
+            ModalMsg::OpenUpdateModal => {
+                self.modal = None;
+                self.updater.modal_open = true;
+                Task::none()
+            }
+            ModalMsg::StartUpdateDownload => {
+                self.modal = None;
+                self.start_update_download()
+            }
+            ModalMsg::InstallDownloadedUpdate => {
+                self.modal = None;
+                self.install_downloaded_update()
             }
             ModalMsg::OpenUpdateReleaseUrl(url) => {
                 titlebar::open_url_in_browser(&url);
@@ -3289,9 +3386,18 @@ impl GlyphApp {
             }
         }
         if let Some(modal) = &self.modal {
-            let overlay = modals::view(modal, &self.servers, &self.ssh_keys, &self.known_hosts)
-                .map(Message::Modal);
+            let overlay = modals::view(
+                modal,
+                &self.servers,
+                &self.ssh_keys,
+                &self.known_hosts,
+                &self.updater,
+            )
+            .map(Message::Modal);
             layers.push(overlay);
+        }
+        if self.updater.modal_open {
+            layers.push(update_modal::view_modal(&self.updater).map(Message::Update));
         }
         if self.palette.open {
             layers.push(crate::ui::palette::view(&self.palette).map(Message::Palette));
@@ -3309,7 +3415,11 @@ impl GlyphApp {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        column![title_el, body]
+        let mut root = column![title_el];
+        if let Some(banner) = update_modal::view_banner(&self.updater) {
+            root = root.push(banner.map(Message::Update));
+        }
+        root.push(body)
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
@@ -3382,7 +3492,12 @@ impl GlyphApp {
         .width(Length::Fill)
         .height(Length::Fill);
 
-        let base_window: Element<'a, Message> = column![title_el, content_row]
+        let mut base_col = column![title_el];
+        if let Some(banner) = update_modal::view_banner(&self.updater) {
+            base_col = base_col.push(banner.map(Message::Update));
+        }
+        let base_window: Element<'a, Message> = base_col
+            .push(content_row)
             .width(Length::Fill)
             .height(Length::Fill)
             .into();
@@ -3402,6 +3517,9 @@ impl GlyphApp {
                 );
             }
         }
+        if self.updater.modal_open {
+            layers.push(update_modal::view_modal(&self.updater).map(Message::Update));
+        }
         if self.palette.open {
             layers.push(crate::ui::palette::view(&self.palette).map(Message::Palette));
         }
@@ -3409,6 +3527,131 @@ impl GlyphApp {
             layers.pop().expect("non-empty")
         } else {
             stack(layers).width(Length::Fill).height(Length::Fill).into()
+        }
+    }
+
+    fn trigger_manual_update_check(&mut self) -> Task<Message> {
+        if matches!(
+            self.updater.stage,
+            UpdateStage::Checking | UpdateStage::Downloading | UpdateStage::Installing
+        ) {
+            return Task::none();
+        }
+        self.updater.stage = UpdateStage::Checking;
+        self.updater.error = None;
+        Task::perform(
+            async move {
+                fetch_latest_release("TheLunatic1/Glyph", None)
+                    .await
+                    .map_err(|e| e.to_string())
+            },
+            |result| Message::DesktopUpdateChecked {
+                silent: false,
+                result,
+            },
+        )
+    }
+
+    fn handle_update_msg(&mut self, msg: UpdateMsg) -> Task<Message> {
+        match msg {
+            UpdateMsg::OpenModal => {
+                self.updater.modal_open = true;
+                Task::none()
+            }
+            UpdateMsg::CloseModal => {
+                if self.updater.stage != UpdateStage::Installing {
+                    self.updater.modal_open = false;
+                }
+                Task::none()
+            }
+            UpdateMsg::DismissBanner => {
+                self.updater.banner_dismissed = true;
+                Task::none()
+            }
+            UpdateMsg::StartDownload => self.start_update_download(),
+            UpdateMsg::CancelDownload => {
+                if let Some(tok) = self.update_cancel.take() {
+                    tok.cancel();
+                }
+                self.updater.progress = None;
+                self.updater.stage = if self.updater.info.is_some() {
+                    UpdateStage::Available
+                } else {
+                    UpdateStage::Idle
+                };
+                Task::none()
+            }
+            UpdateMsg::InstallNow => self.install_downloaded_update(),
+            UpdateMsg::OpenReleasePage => {
+                let url = self
+                    .updater
+                    .info
+                    .as_ref()
+                    .map(|r| r.html_url.as_str())
+                    .unwrap_or("https://github.com/TheLunatic1/Glyph/releases/latest");
+                titlebar::open_url_in_browser(url);
+                Task::none()
+            }
+            UpdateMsg::CheckNow => self.trigger_manual_update_check(),
+            UpdateMsg::Noop => Task::none(),
+        }
+    }
+
+    fn start_update_download(&mut self) -> Task<Message> {
+        if matches!(
+            self.updater.stage,
+            UpdateStage::Downloading | UpdateStage::Installing
+        ) {
+            return Task::none();
+        }
+        let Some(rel) = self.updater.info.clone() else {
+            return self.trigger_manual_update_check();
+        };
+        if let Some(prev) = self.update_cancel.take() {
+            prev.cancel();
+        }
+        let token = tokio_util::sync::CancellationToken::new();
+        self.update_cancel = Some(token.clone());
+        self.updater.stage = UpdateStage::Downloading;
+        self.updater.modal_open = true;
+        self.updater.progress = None;
+        self.updater.downloaded = None;
+        self.updater.error = None;
+
+        let dest_dir = self.with_vault(|v| v.data_dir().join("updates").join(&rel.tag_name));
+        tokio::spawn(async move {
+            let tx = app_bus_sender();
+            let res = download_update_asset(&rel, &dest_dir, token, move |prog| {
+                let _ = tx.send(BusEvent::UpdateDownloadProgress(prog));
+            })
+            .await
+            .map_err(|e| e.to_string());
+            let _ = app_bus_sender().send(BusEvent::UpdateDownloadFinished(res));
+        });
+        Task::none()
+    }
+
+    fn install_downloaded_update(&mut self) -> Task<Message> {
+        let Some(dl) = self.updater.downloaded.clone() else {
+            return Task::none();
+        };
+        match launch_update_installer(&dl) {
+            Ok(()) => {
+                if dl.install_kind == UpdateInstallKind::MacOsDmgOpen {
+                    self.updater.modal_open = false;
+                    self.updater.stage = UpdateStage::Available;
+                    Task::none()
+                } else {
+                    self.updater.stage = UpdateStage::Installing;
+                    self.quit_all()
+                }
+            }
+            Err(e) => {
+                self.updater.stage = UpdateStage::Error;
+                self.updater.error = Some(e.to_string());
+                self.updater.modal_open = true;
+                Task::none()
+            }
         }
     }
 

@@ -8,6 +8,7 @@ use crate::theme::{
 };
 use crate::ui::icons;
 use crate::ui::os_logo::os_logo;
+use crate::ui::update_modal::{format_bytes, format_speed, AppUpdateState, UpdateStage};
 use glyph_core::mcp_config::{
     build_config_snippet, resolve_mcp_binary_path, scan_mcp_clients, McpClientId, McpClientInfo,
     McpClientStatus, McpConfigFormat,
@@ -16,7 +17,7 @@ use glyph_core::models::{
     HighlightRule, KnownHostEntry, ServerEntry, ServerSummary, SshKeyAlgorithm, SshKeySummary,
     SyncBackend,
 };
-use glyph_core::updater::ReleaseInfo;
+use glyph_core::updater::{is_newer_version, select_desktop_update_asset, UpdateInstallKind};
 use iced::widget::{
     button, checkbox, column, container, image, mouse_area, pick_list, row, scrollable, space,
     stack, text, text_input,
@@ -198,10 +199,6 @@ pub struct SettingsModalState {
     pub custom_key: String,
     pub mcp_status: Option<String>,
     pub mcp_error: Option<String>,
-    pub checking_update: bool,
-    pub latest_release: Option<ReleaseInfo>,
-    pub is_newer_available: bool,
-    pub update_error: Option<String>,
 
     // App Lock & Terminal Highlight Rules (Security tab)
     pub lock_enabled: bool,
@@ -252,10 +249,6 @@ impl SettingsModalState {
             custom_key: "mcpServers".to_string(),
             mcp_status: None,
             mcp_error: None,
-            checking_update: false,
-            latest_release: None,
-            is_newer_available: false,
-            update_error: None,
             lock_enabled: false,
             lock_idle_mins: "15".to_string(),
             lock_new_passcode: String::new(),
@@ -444,6 +437,9 @@ pub enum ModalMsg {
     WriteCustomMcp,
     OpenMobileFromSettings,
     CheckUpdates,
+    OpenUpdateModal,
+    StartUpdateDownload,
+    InstallDownloadedUpdate,
     OpenUpdateReleaseUrl(String),
 
     // Security -> App Lock & Highlights
@@ -483,6 +479,7 @@ pub fn view<'a>(
     servers: &'a [ServerSummary],
     ssh_keys: &'a [SshKeySummary],
     known_hosts: &'a [KnownHostEntry],
+    updater: &'a AppUpdateState,
 ) -> Element<'a, ModalMsg> {
     let dialog: Element<'a, ModalMsg> = match modal {
         ManagerModal::DeleteConfirm(st) => view_delete(st),
@@ -490,7 +487,7 @@ pub fn view<'a>(
         ManagerModal::Import(st) => view_import(st),
         ManagerModal::SshKeys(st) => view_ssh_keys(st, servers, ssh_keys),
         ManagerModal::Connecting(st) => view_connecting(st),
-        ManagerModal::Settings(st) => view_settings(st, known_hosts),
+        ManagerModal::Settings(st) => view_settings(st, known_hosts, updater),
         ManagerModal::Mobile(st) => view_mobile(st),
     };
 
@@ -1641,6 +1638,7 @@ fn view_connecting<'a>(st: &'a ConnectingModalState) -> Element<'a, ModalMsg> {
 fn view_settings<'a>(
     st: &'a SettingsModalState,
     known_hosts: &'a [KnownHostEntry],
+    updater: &'a AppUpdateState,
 ) -> Element<'a, ModalMsg> {
     let header = row![
         container(icons::settings(18.0, BRAND_400))
@@ -1764,7 +1762,7 @@ fn view_settings<'a>(
         SettingsTab::Security => view_settings_security(st, known_hosts),
         SettingsTab::Sync => view_settings_sync(st),
         SettingsTab::Mobile => view_settings_mobile(),
-        SettingsTab::Updates => view_settings_updates(st),
+        SettingsTab::Updates => view_settings_updates(updater),
     };
 
     let split = row![
@@ -2544,14 +2542,19 @@ fn view_settings_mobile<'a>() -> Element<'a, ModalMsg> {
     .into()
 }
 
-fn view_settings_updates<'a>(st: &'a SettingsModalState) -> Element<'a, ModalMsg> {
+fn view_settings_updates<'a>(updater: &'a AppUpdateState) -> Element<'a, ModalMsg> {
+    let busy = matches!(
+        updater.stage,
+        UpdateStage::Checking | UpdateStage::Downloading | UpdateStage::Installing
+    );
     let check_btn = button(
         row![
             icons::refresh_cw(14.0, Color::WHITE),
-            text(if st.checking_update {
-                "Checking GitHub..."
-            } else {
-                "Check for Updates"
+            text(match updater.stage {
+                UpdateStage::Checking => "Checking GitHub...",
+                UpdateStage::Downloading => "Downloading...",
+                UpdateStage::Installing => "Installing...",
+                _ => "Check for Updates",
             })
             .size(12)
             .font(FONT_MONO_BOLD)
@@ -2562,7 +2565,7 @@ fn view_settings_updates<'a>(st: &'a SettingsModalState) -> Element<'a, ModalMsg
     )
     .padding([9, 16])
     .style(brand_button);
-    let check_btn = if st.checking_update {
+    let check_btn = if busy {
         check_btn
     } else {
         check_btn.on_press(ModalMsg::CheckUpdates)
@@ -2592,43 +2595,149 @@ fn view_settings_updates<'a>(st: &'a SettingsModalState) -> Element<'a, ModalMsg
     ]
     .spacing(12);
 
-    if let Some(err) = &st.update_error {
+    if let Some(err) = &updater.error {
         col = col.push(error_banner(err));
     }
 
-    if let Some(rel) = &st.latest_release {
+    if updater.stage == UpdateStage::Downloading {
+        let pct = updater.progress.as_ref().map(|p| p.percent).unwrap_or(0);
+        let spd = updater
+            .progress
+            .as_ref()
+            .filter(|p| p.bytes_per_sec > 0.0)
+            .map(|p| format!(" · {}", format_speed(p.bytes_per_sec)))
+            .unwrap_or_default();
+        col = col.push(
+            container(
+                row![
+                    icons::download(15.0, BRAND_300),
+                    text(format!("Downloading update... {pct}%{spd}"))
+                        .size(12)
+                        .font(FONT_MONO_BOLD)
+                        .color(BRAND_300),
+                    space().width(Length::Fill),
+                    button(text("View Progress").size(11).color(Color::WHITE))
+                        .padding([6, 12])
+                        .style(brand_button)
+                        .on_press(ModalMsg::OpenUpdateModal),
+                ]
+                .spacing(8)
+                .align_y(alignment::Vertical::Center),
+            )
+            .width(Length::Fill)
+            .padding(14)
+            .style(dark_card),
+        );
+    }
+
+    if updater.stage == UpdateStage::Downloaded {
+        if let Some(dl) = &updater.downloaded {
+            let install_label = if dl.install_kind == UpdateInstallKind::MacOsDmgOpen {
+                "Open Disk Image"
+            } else {
+                "Restart & Install"
+            };
+            col = col.push(
+                container(
+                    row![
+                        icons::check(15.0, GREEN_400),
+                        text(format!("{} is ready ({})", dl.version, dl.asset_name))
+                            .size(12)
+                            .font(FONT_MONO_BOLD)
+                            .color(GREEN_400),
+                        space().width(Length::Fill),
+                        button(text(install_label).size(11).color(Color::WHITE))
+                            .padding([6, 12])
+                            .style(brand_button)
+                            .on_press(ModalMsg::InstallDownloadedUpdate),
+                    ]
+                    .spacing(8)
+                    .align_y(alignment::Vertical::Center),
+                )
+                .width(Length::Fill)
+                .padding(14)
+                .style(dark_card),
+            );
+        }
+    }
+
+    if let Some(rel) = &updater.info {
+        let newer = is_newer_version(APP_VERSION, &rel.version);
+        let mut btn_row = row![].spacing(8).align_y(alignment::Vertical::Center);
+        if newer && !matches!(updater.stage, UpdateStage::Downloading | UpdateStage::Downloaded) {
+            btn_row = btn_row.push(
+                button(
+                    row![
+                        icons::sparkles(12.0, Color::WHITE),
+                        text("Release Notes").size(11).color(Color::WHITE),
+                    ]
+                    .spacing(5)
+                    .align_y(alignment::Vertical::Center),
+                )
+                .padding([6, 10])
+                .style(secondary_button)
+                .on_press(ModalMsg::OpenUpdateModal),
+            );
+            if select_desktop_update_asset(rel).is_some() {
+                btn_row = btn_row.push(
+                    button(
+                        row![
+                            icons::download(12.0, Color::WHITE),
+                            text("Download & Install").size(11).color(Color::WHITE),
+                        ]
+                        .spacing(5)
+                        .align_y(alignment::Vertical::Center),
+                    )
+                    .padding([6, 10])
+                    .style(brand_button)
+                    .on_press(ModalMsg::StartUpdateDownload),
+                );
+            }
+        }
+        btn_row = btn_row.push(
+            button(
+                row![
+                    icons::external_link(12.0, TEXT_LIGHT),
+                    text("Open Release").size(11).color(TEXT_LIGHT),
+                ]
+                .spacing(5)
+                .align_y(alignment::Vertical::Center),
+            )
+            .padding([6, 10])
+            .style(secondary_button)
+            .on_press(ModalMsg::OpenUpdateReleaseUrl(rel.html_url.clone())),
+        );
+
         let mut release_card = column![
             row![
-                text(if st.is_newer_available {
+                text(if newer {
                     format!("New Release Available: {}", rel.tag_name)
                 } else {
                     format!("Up to date (Latest GitHub Release: {})", rel.tag_name)
                 })
                 .size(13)
                 .font(FONT_MONO_BOLD)
-                .color(if st.is_newer_available {
-                    BRAND_300
-                } else {
-                    GREEN_400
-                }),
+                .color(if newer { BRAND_300 } else { GREEN_400 }),
                 space().width(Length::Fill),
-                button(
-                    row![
-                        icons::external_link(13.0, Color::WHITE),
-                        text("Open Release").size(11).color(Color::WHITE),
-                    ]
-                    .spacing(5)
-                    .align_y(alignment::Vertical::Center),
-                )
-                .padding([6, 12])
-                .style(brand_button)
-                .on_press(ModalMsg::OpenUpdateReleaseUrl(rel.html_url.clone())),
+                btn_row,
             ]
             .align_y(alignment::Vertical::Center),
         ]
         .spacing(6);
 
-        if let Some(asset) = &rel.asset_name {
+        if let Some((asset, _)) = select_desktop_update_asset(rel) {
+            let sz = if asset.size > 0 {
+                format!(" ({})", format_bytes(asset.size))
+            } else {
+                String::new()
+            };
+            release_card = release_card.push(
+                text(format!("Recommended package: {}{}", asset.name, sz))
+                    .size(11)
+                    .font(FONT_MONO)
+                    .color(TEXT_MUTED),
+            );
+        } else if let Some(asset) = &rel.asset_name {
             release_card = release_card.push(
                 text(format!("Recommended binary: {asset}"))
                     .size(11)

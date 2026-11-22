@@ -228,6 +228,14 @@ pub fn arrow_left<'a>(size: f32, color: Color) -> text::Text<'a> {
     icon(Icon::ArrowLeft, size, color)
 }
 
+pub fn arrow_right<'a>(size: f32, color: Color) -> text::Text<'a> {
+    icon(Icon::ArrowRight, size, color)
+}
+
+pub fn rotate_ccw<'a>(size: f32, color: Color) -> text::Text<'a> {
+    icon(Icon::RotateCcw, size, color)
+}
+
 pub fn clipboard<'a>(size: f32, color: Color) -> text::Text<'a> {
     icon(Icon::Clipboard, size, color)
 }

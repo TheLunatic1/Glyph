@@ -1,7 +1,13 @@
-## v3.0.0 — Pure Rust Rewrite, Full Termius Parity & 36-Tool Visual MCP
+## v3.0.0 — Pure Rust Rewrite, Full Termius Parity, Native Auto-Updater & 36-Tool Visual MCP
+
+> **Upgrading from Glyph v2 (Electron)?** Glyph **v3.0.0** is now available as a **100% Pure Rust** native application — smaller binary size, instant startup, native GPU terminal rendering, full `.glyph` vault & SSH key compatibility, and an interactive **in-app auto-updater**. Click **Download & Install** in your update prompt or install [`Glyph-Setup-3.0.0.exe`](https://github.com/TheLunatic1/Glyph/releases/tag/v3.0.0) directly.
 
 ### Highlights
 - **100% Pure Rust Desktop & Engine:** Rebuilt from the ground up with `iced`, `alacritty_terminal`, `russh` (`ring`), and `axum` — zero Node.js, zero Chromium, and zero CMake/OpenSSL build dependencies across Windows, macOS Universal (`arm64` + `x64`), and Linux.
+- **Native In-App Auto-Updater + v2 Upgrade Bridge:**
+  - Silent startup release check + manual check under **Settings -> Updates**, live top notification banner, formatted release notes dialog, streaming progress bar (`%` and speed), and **SHA-256** verification against `SHA256SUMS.txt`.
+  - One-click **Restart & Install** across Windows (NSIS `Glyph-Setup`, standalone `.exe`, `.zip` bundle), Linux (`.AppImage` and `.tar.gz`), and macOS (Universal `.app` `.zip` and `.dmg`).
+  - Publishes `latest.yml`, `latest-mac.yml`, and `latest-linux.yml` manifests so legacy Electron v2.7.6 users automatically receive update notifications and can upgrade directly to Rust v3.0.0.
 - **Full Visual Parity + Termius-Grade Terminal & Connectivity:**
   - Bundled **IBM Plex Sans/Mono** typography, **Lucide** icon font, crisp frameless window controls, animated splash screen, and automatic distro OS icons (including Oracle Linux `ol`).
   - Split terminal panes, Broadcast Input (`Window Tabs` / `All Windows`), regex keyword highlighting, and asciinema v2 `.cast` + `.log` session recording.

@@ -69,9 +69,11 @@ Prebuilt installers and binaries for **Windows**, **macOS (Apple Silicon + Intel
 
 | Platform | Artifacts |
 |---|---|
-| **Windows (x64)** | `Glyph-v<version>-windows-x64.exe`, `Glyph-v<version>-windows-x64.zip` *(contains `Glyph.exe` + `glyph-mcp.exe`)* |
+| **Windows (x64)** | `Glyph-Setup-<version>.exe` *(installer with automatic in-app updates)*, `Glyph-v<version>-windows-x64.exe`, `Glyph-v<version>-windows-x64.zip` *(contains `Glyph.exe` + `glyph-mcp.exe`)* |
 | **macOS (Universal)** | `Glyph-v<version>-macos-universal.dmg`, `Glyph-v<version>-macos-universal.zip` *(contains `Glyph.app` with bundled `glyph-mcp`)* |
 | **Linux (x64)** | `Glyph-v<version>-linux-x64.AppImage`, `Glyph-v<version>-linux-x64.tar.gz` *(contains `glyph-desktop` + `glyph-mcp`)* |
+
+> **Built-In In-App Auto-Updater:** Glyph checks GitHub Releases on startup and in **Settings → Updates**, displays release notes with streaming download progress, verifies binaries against `SHA256SUMS.txt`, and supports one-click **Restart & Install**. Existing **Glyph v2.7.6 (Electron)** users also receive an automatic upgrade prompt via `latest.yml` / `latest-mac.yml` / `latest-linux.yml`.
 
 ---
 
