@@ -492,6 +492,7 @@ pub struct GlyphApp {
     pub(crate) ssh_keys: Vec<SshKeySummary>,
     pub(crate) known_hosts: Vec<KnownHostEntry>,
     pub(crate) tray: Option<TrayManager>,
+    pub(crate) tray_initialized: bool,
 
     pub(crate) groups: Vec<glyph_core::models::HostGroup>,
     pub(crate) identities: Vec<glyph_core::models::IdentitySummary>,
@@ -558,7 +559,11 @@ impl GlyphApp {
         let known_hosts = vault_raw.list_known_hosts().to_vec();
         let vault = Arc::new(Mutex::new(vault_raw));
         let api_sessions = Arc::new(AsyncMutex::new(HashMap::new()));
-        let tray = TrayManager::init(&servers);
+        // Defer NSStatusBar tray setup on macOS until WindowOpened so NSApplication is active first.
+        #[cfg(target_os = "macos")]
+        let (tray, tray_initialized) = (None, false);
+        #[cfg(not(target_os = "macos"))]
+        let (tray, tray_initialized) = (TrayManager::init(&servers), true);
 
         let (manager_id, open_task) = window::open(manager_window_settings());
         let api_task = start_local_api_task(Arc::clone(&vault), Arc::clone(&api_sessions));
@@ -570,6 +575,7 @@ impl GlyphApp {
             ssh_keys,
             known_hosts,
             tray,
+            tray_initialized,
             groups: Vec::new(),
             identities: Vec::new(),
             snippet_packages: Vec::new(),
@@ -928,8 +934,15 @@ impl GlyphApp {
             }
             Message::WindowCloseRequested(wid) => self.handle_window_close(wid),
             Message::WindowOpened(wid) => {
-                if Some(wid) == self.manager_window && self.show_splash && self.splash_started_at.is_none() {
-                    self.splash_started_at = Some(Instant::now());
+                if !self.tray_initialized {
+                    self.tray_initialized = true;
+                    self.tray = TrayManager::init(&self.servers);
+                }
+                if Some(wid) == self.manager_window {
+                    if self.show_splash && self.splash_started_at.is_none() {
+                        self.splash_started_at = Some(Instant::now());
+                    }
+                    return window::gain_focus(wid);
                 }
                 Task::none()
             }
