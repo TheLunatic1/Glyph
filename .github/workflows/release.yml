@@ -195,10 +195,16 @@ jobs:
             '</dict>' \
             '</plist>' > "dist/Glyph.app/Contents/Info.plist"
 
+          codesign --force --deep --sign - "dist/Glyph.app"
+          codesign --verify --deep --strict "dist/Glyph.app"
+
           ditto -c -k --keepParent "dist/Glyph.app" "dist/Glyph-$TAG-macos-universal.zip"
-          APP_MB=$(du -sm "dist/Glyph.app" | awk '{print $1}')
+          rm -rf dist/dmg-stage && mkdir -p dist/dmg-stage
+          ditto "dist/Glyph.app" "dist/dmg-stage/Glyph.app"
+          ln -s /Applications "dist/dmg-stage/Applications"
+          APP_MB=$(du -sm "dist/dmg-stage" | awk '{print $1}')
           DMG_MB=$((APP_MB + 100))
-          hdiutil create -volname "Glyph" -srcfolder "dist/Glyph.app" -size "${DMG_MB}m" -fs HFS+ -ov -format UDZO "dist/Glyph-$TAG-macos-universal.dmg"
+          hdiutil create -volname "Glyph" -srcfolder "dist/dmg-stage" -size "${DMG_MB}m" -fs HFS+ -ov -format UDZO "dist/Glyph-$TAG-macos-universal.dmg"
 
           python3 scripts/gen_update_metadata.py \
             --manifest dist/latest-mac.yml \

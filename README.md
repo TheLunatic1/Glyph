@@ -75,6 +75,14 @@ Prebuilt installers and binaries for **Windows**, **macOS (Apple Silicon + Intel
 
 > **Built-In In-App Auto-Updater:** Glyph checks GitHub Releases on startup and in **Settings → Updates**, displays release notes with streaming download progress, verifies binaries against `SHA256SUMS.txt`, and supports one-click **Restart & Install**. Existing **Glyph v2.7.6 (Electron)** users also receive an automatic upgrade prompt via `latest.yml` / `latest-mac.yml` / `latest-linux.yml`.
 
+### macOS First Launch (Gatekeeper)
+`Glyph.app` is ad-hoc signed without paid Apple notarization, so macOS shows *"Apple could not verify 'Glyph' is free of malware"* on first launch from GitHub Downloads:
+1. Drag `Glyph.app` to **`/Applications`**.
+2. Either go to **System Settings → Privacy & Security** and click **Open Anyway**, or run:
+   ```bash
+   xattr -cr /Applications/Glyph.app
+   ```
+
 ---
 
 ## AI Agent Integration (MCP — 36 Tools)

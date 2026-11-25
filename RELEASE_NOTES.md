@@ -8,6 +8,7 @@
   - Silent startup release check + manual check under **Settings -> Updates**, live top notification banner, formatted release notes dialog, streaming progress bar (`%` and speed), and **SHA-256** verification against `SHA256SUMS.txt`.
   - One-click **Restart & Install** across Windows (NSIS `Glyph-Setup`, standalone `.exe`, `.zip` bundle), Linux (`.AppImage` and `.tar.gz`), and macOS (Universal `.app` `.zip` and `.dmg`).
   - Publishes `latest.yml`, `latest-mac.yml`, and `latest-linux.yml` manifests so legacy Electron v2.7.6 users automatically receive update notifications and can upgrade directly to Rust v3.0.0.
+  - **macOS Universal Gatekeeper note:** Ad-hoc signed without paid Apple notarization — drag `Glyph.app` to `/Applications`, then open via **System Settings -> Privacy & Security -> Open Anyway** or `xattr -cr /Applications/Glyph.app`.
 - **Full Visual Parity + Termius-Grade Terminal & Connectivity:**
   - Bundled **IBM Plex Sans/Mono** typography, **Lucide** icon font, crisp frameless window controls, animated splash screen, and automatic distro OS icons (including Oracle Linux `ol`).
   - Split terminal panes, Broadcast Input (`Window Tabs` / `All Windows`), regex keyword highlighting, and asciinema v2 `.cast` + `.log` session recording.
