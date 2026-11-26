@@ -84,9 +84,12 @@ Section "Install Glyph" SecMain
   RMDir /r "$INSTDIR\swiftshader"
 
   ; Preserve any running glyph-mcp.exe handle while swapping binaries on disk
+  Delete "$INSTDIR\glyph-mcp.exe.old*"
   IfFileExists "$INSTDIR\glyph-mcp.exe" 0 no_prev_mcp
-    Delete "$INSTDIR\glyph-mcp.exe.old"
-    Rename "$INSTDIR\glyph-mcp.exe" "$INSTDIR\glyph-mcp.exe.old"
+    ClearErrors
+    Rename "$INSTDIR\glyph-mcp.exe" "$INSTDIR\glyph-mcp.exe.old.$HWNDPARENT"
+    IfErrors 0 no_prev_mcp
+      Rename "$INSTDIR\glyph-mcp.exe" "$INSTDIR\glyph-mcp.exe.old2.$HWNDPARENT"
   no_prev_mcp:
 
   File "/oname=Glyph.exe" "..\dist\stage\Glyph.exe"
@@ -132,7 +135,7 @@ Section "Uninstall"
 
   Delete "$INSTDIR\Glyph.exe"
   Delete "$INSTDIR\glyph-mcp.exe"
-  Delete "$INSTDIR\glyph-mcp.exe.old"
+  Delete "$INSTDIR\glyph-mcp.exe.old*"
   Delete "$INSTDIR\logo.png"
   Delete "$INSTDIR\logo.ico"
   Delete "$INSTDIR\resources\mcp.js"

@@ -1,3 +1,15 @@
+## v3.0.2 — Fixed Windows In-App Auto-Updater Launch
+
+> **Upgrading from Windows `v3.0.0` or `v3.0.1`?** Install [`Glyph-Setup-3.0.2.exe`](https://github.com/TheLunatic1/Glyph/releases/download/v3.0.2/Glyph-Setup-3.0.2.exe) once — `v3.0.0` / `v3.0.1` had a Windows process-creation bug that prevented the in-app **Restart & Install** launcher from executing `Glyph-Setup`. Starting from `v3.0.2`, one-click in-app updates work automatically end-to-end.
+
+### What's Fixed
+- **Windows In-App Update Launcher:**
+  - Launches downloaded `Glyph-Setup-*.exe` installers directly with `CREATE_NEW_PROCESS_GROUP` (`0x0000_0200`) instead of passing mutually exclusive Win32 creation flags (`CREATE_NO_WINDOW | DETACHED_PROCESS`) to `powershell.exe`.
+  - Uses valid `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP` (`0x0800_0200`) with null stdio handles and error logging (`~/.glyph/updater.log`) for portable `.exe`/`.zip` self-updates.
+- **Safe Locked `glyph-mcp.exe` Swap in NSIS Installer:** Rotates any active `glyph-mcp.exe` handle via uniquely suffixed `glyph-mcp.exe.old.$HWNDPARENT` names so updates succeed smoothly even while an AI agent holds `glyph-mcp.exe` open.
+
+---
+
 ## v3.0.1 — Window Lifecycle & Resizing, Live Activity Logger, and Focus-Safe MCP Execution
 
 ### What's New & Fixed

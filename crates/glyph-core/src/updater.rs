@@ -556,12 +556,39 @@ pub fn launch_update_installer(downloaded: &DownloadedUpdate) -> Result<()> {
 }
 
 #[cfg(target_os = "windows")]
+const WIN_CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+#[cfg(target_os = "windows")]
+const WIN_CREATE_NO_WINDOW_NEW_GROUP: u32 = 0x0800_0200;
+
+#[cfg(target_os = "windows")]
 fn launch_windows_updater(downloaded: &DownloadedUpdate) -> Result<()> {
     use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW_DETACHED: u32 = 0x0800_0008;
+
+    if !downloaded.file_path.exists() {
+        bail!(
+            "Downloaded update package does not exist at {}",
+            downloaded.file_path.display()
+        );
+    }
+
+    if downloaded.install_kind == UpdateInstallKind::WindowsInstaller {
+        std::process::Command::new(&downloaded.file_path)
+            .args(["/S", "--updated", "--force-run"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .creation_flags(WIN_CREATE_NEW_PROCESS_GROUP)
+            .spawn()
+            .with_context(|| {
+                format!(
+                    "Failed launching Windows NSIS installer at {}",
+                    downloaded.file_path.display()
+                )
+            })?;
+        return Ok(());
+    }
 
     let mode = match downloaded.install_kind {
-        UpdateInstallKind::WindowsInstaller => "installer",
         UpdateInstallKind::WindowsStandalone => "standalone",
         UpdateInstallKind::WindowsZipBundle => "zip",
         _ => bail!("Unsupported update package type for Windows"),
@@ -576,14 +603,16 @@ fn launch_windows_updater(downloaded: &DownloadedUpdate) -> Result<()> {
   [string]$Mode
 )
 $ErrorActionPreference = 'Stop'
-for ($i = 0; $i -lt 60; $i++) {
-  if (-not (Get-Process -Id $OldPid -ErrorAction SilentlyContinue)) { break }
-  Start-Sleep -Milliseconds 250
-}
-Start-Sleep -Milliseconds 300
-if ($Mode -eq 'installer') {
-  Start-Process -FilePath $SourcePath -ArgumentList @('/S', '--updated', '--force-run')
-  exit 0
+$logDir = Join-Path $env:USERPROFILE '.glyph'
+$logFile = Join-Path $logDir 'updater.log'
+function Write-UpdaterLog([string]$msg) {
+  try {
+    if (-not (Test-Path -LiteralPath $logDir)) {
+      New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    }
+    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    Add-Content -LiteralPath $logFile -Value "[$ts] $msg" -ErrorAction SilentlyContinue
+  } catch {}
 }
 function Copy-WithRetry([string]$Src, [string]$Dst) {
   $bak = "$Dst.bak"
@@ -607,44 +636,54 @@ function Copy-WithRetry([string]$Src, [string]$Dst) {
     throw
   }
 }
-if ($Mode -eq 'standalone') {
-  Copy-WithRetry -Src $SourcePath -Dst $TargetExe
-  Remove-Item -LiteralPath $SourcePath -Force -ErrorAction SilentlyContinue
-  Start-Process -FilePath $TargetExe
-  exit 0
-}
-if ($Mode -eq 'zip') {
-  $stage = Join-Path ([System.IO.Path]::GetTempPath()) ("glyph-upd-" + [Guid]::NewGuid().ToString('N'))
-  New-Item -ItemType Directory -Force -Path $stage | Out-Null
-  try {
-    Expand-Archive -LiteralPath $SourcePath -DestinationPath $stage -Force
-    $newExe = Get-ChildItem -LiteralPath $stage -Recurse -Filter 'Glyph.exe' | Select-Object -First 1
-    if (-not $newExe) {
-      $newExe = Get-ChildItem -LiteralPath $stage -Recurse -Filter 'glyph-desktop.exe' | Select-Object -First 1
-    }
-    if (-not $newExe) { throw 'Glyph executable missing in update zip' }
-    Copy-WithRetry -Src $newExe.FullName -Dst $TargetExe
-    $targetDir = Split-Path -Parent $TargetExe
-    $targetMcp = Join-Path $targetDir 'glyph-mcp.exe'
-    $newMcp = Get-ChildItem -LiteralPath $stage -Recurse -Filter 'glyph-mcp.exe' | Select-Object -First 1
-    if ($newMcp -and (Test-Path -LiteralPath $targetMcp)) {
-      $oldMcp = "$targetMcp.old"
-      Remove-Item -LiteralPath $oldMcp -Force -ErrorAction SilentlyContinue
-      try { Move-Item -LiteralPath $targetMcp -Destination $oldMcp -Force } catch {}
-      Copy-Item -LiteralPath $newMcp.FullName -Destination $targetMcp -Force -ErrorAction SilentlyContinue
-    }
+try {
+  for ($i = 0; $i -lt 60; $i++) {
+    if (-not (Get-Process -Id $OldPid -ErrorAction SilentlyContinue)) { break }
+    Start-Sleep -Milliseconds 250
+  }
+  Start-Sleep -Milliseconds 300
+  if ($Mode -eq 'standalone') {
+    Copy-WithRetry -Src $SourcePath -Dst $TargetExe
     Remove-Item -LiteralPath $SourcePath -Force -ErrorAction SilentlyContinue
     Start-Process -FilePath $TargetExe
-  } finally {
-    Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+    exit 0
   }
+  if ($Mode -eq 'zip') {
+    $stage = Join-Path ([System.IO.Path]::GetTempPath()) ("glyph-upd-" + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+    try {
+      Expand-Archive -LiteralPath $SourcePath -DestinationPath $stage -Force
+      $newExe = Get-ChildItem -LiteralPath $stage -Recurse -Filter 'Glyph.exe' | Select-Object -First 1
+      if (-not $newExe) {
+        $newExe = Get-ChildItem -LiteralPath $stage -Recurse -Filter 'glyph-desktop.exe' | Select-Object -First 1
+      }
+      if (-not $newExe) { throw 'Glyph executable missing in update zip' }
+      Copy-WithRetry -Src $newExe.FullName -Dst $TargetExe
+      $targetDir = Split-Path -Parent $TargetExe
+      $targetMcp = Join-Path $targetDir 'glyph-mcp.exe'
+      $newMcp = Get-ChildItem -LiteralPath $stage -Recurse -Filter 'glyph-mcp.exe' | Select-Object -First 1
+      if ($newMcp -and (Test-Path -LiteralPath $targetMcp)) {
+        $oldMcp = "$targetMcp.old"
+        Remove-Item -LiteralPath $oldMcp -Force -ErrorAction SilentlyContinue
+        try { Move-Item -LiteralPath $targetMcp -Destination $oldMcp -Force } catch {}
+        Copy-Item -LiteralPath $newMcp.FullName -Destination $targetMcp -Force -ErrorAction SilentlyContinue
+      }
+      Remove-Item -LiteralPath $SourcePath -Force -ErrorAction SilentlyContinue
+      Start-Process -FilePath $TargetExe
+    } finally {
+      Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+} catch {
+  Write-UpdaterLog "Updater failure (mode=$Mode): $($_.Exception.Message)"
+  throw
 }
 "#;
     std::fs::write(&script_path, script_body)
         .with_context(|| format!("Failed writing updater helper {}", script_path.display()))?;
 
     std::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File"])
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
         .arg(&script_path)
         .arg("-OldPid")
         .arg(std::process::id().to_string())
@@ -654,7 +693,10 @@ if ($Mode -eq 'zip') {
         .arg(&current_exe)
         .arg("-Mode")
         .arg(mode)
-        .creation_flags(CREATE_NO_WINDOW_DETACHED)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .creation_flags(WIN_CREATE_NO_WINDOW_NEW_GROUP)
         .spawn()
         .context("Failed launching Windows update helper")?;
     Ok(())
@@ -1110,5 +1152,38 @@ mod tests {
         assert!(!tmp_cancel.join(format!("{}.part", dl.asset_name)).exists());
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_powershell_helper_executes_under_create_no_window_new_group() {
+        use std::os::windows::process::CommandExt;
+
+        let dir = std::env::temp_dir().join(format!("glyph-ps-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("check.ps1");
+        let marker = dir.join("marker.txt");
+
+        std::fs::write(
+            &script,
+            "param([string]$OutFile)\nSet-Content -LiteralPath $OutFile -Value 'EXECUTED_OK' -NoNewline\n",
+        )
+        .unwrap();
+
+        let status = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&script)
+            .arg("-OutFile")
+            .arg(&marker)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .creation_flags(WIN_CREATE_NO_WINDOW_NEW_GROUP)
+            .status()
+            .unwrap();
+
+        assert!(status.success());
+        assert_eq!(std::fs::read_to_string(&marker).unwrap(), "EXECUTED_OK");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
