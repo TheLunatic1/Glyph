@@ -22,6 +22,7 @@ fn icon<'a>(glyph: Icon, size: f32, color: Color) -> text::Text<'a> {
 }
 
 /// Renders an `X` close icon without pinning color so parent button hover states can tint it.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub fn x_close_inherit<'a>(size: f32) -> text::Text<'a> {
     text(char::from(Icon::X).to_string())
         .font(FONT_LUCIDE)
@@ -338,4 +339,8 @@ pub fn tag<'a>(size: f32, color: Color) -> text::Text<'a> {
 
 pub fn file_down<'a>(size: f32, color: Color) -> text::Text<'a> {
     icon(Icon::FileDown, size, color)
+}
+
+pub fn scroll_text<'a>(size: f32, color: Color) -> text::Text<'a> {
+    icon(Icon::ScrollText, size, color)
 }

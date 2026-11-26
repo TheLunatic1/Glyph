@@ -7,15 +7,17 @@ use crate::ui::lock_screen::{LockScreenMsg, LockScreenState};
 use crate::ui::manager::ManagerMsg;
 use crate::ui::modals::{ManagerModal, ModalMsg, SettingsModalState, SettingsTab};
 use crate::ui::palette::{filtered_indices, PaletteAction, PaletteItem, PaletteMsg};
-use crate::ui::quick_terminal::{QuickProtocol, QuickTerminalMsg, QuickTerminalState, QuickTransport};
+use crate::ui::quick_terminal::{
+    QuickProtocol, QuickTerminalMsg, QuickTerminalState, QuickTransport,
+};
 use crate::ui::sftp_page::{
     list_local_dir, local_parent_path, DualPaneMode, QueuedTransfer, SftpPageMsg, TransferStatus,
 };
 use crate::ui::sidebar::ServerTab;
 use crate::ui::terminal_page::BroadcastMode;
 use crate::ui::termius_modals::{
-    GroupRunModalState, GroupRunTargetResult, HostImportModalState,
-    IdentitiesModalState, SnippetVarsModalState, TermiusModal, TermiusModalMsg,
+    GroupRunModalState, GroupRunTargetResult, HostImportModalState, IdentitiesModalState,
+    SnippetVarsModalState, TermiusModal, TermiusModalMsg,
 };
 use crate::ui::tunnels_page::{TunnelsPageMsg, UiTunnelDirection};
 use glyph_core::cloud_import::fetch_cloud_hosts;
@@ -71,7 +73,10 @@ impl GlyphApp {
         for (&wid, srv) in &self.server_windows {
             items.push(PaletteItem {
                 title: format!("Active: {}", display_server_name(&srv.server)),
-                subtitle: format!("{}@{}:{}", srv.server.username, srv.server.host, srv.server.port),
+                subtitle: format!(
+                    "{}@{}:{}",
+                    srv.server.username, srv.server.host, srv.server.port
+                ),
                 badge: "Window".to_string(),
                 action: PaletteAction::FocusServerWindow(wid),
             });
@@ -130,7 +135,8 @@ impl GlyphApp {
         });
         items.push(PaletteItem {
             title: "Import / Export Hosts".to_string(),
-            subtitle: "OpenSSH ~/.ssh/config, PuTTY .reg, CSV, DigitalOcean, Hetzner, Tailscale".to_string(),
+            subtitle: "OpenSSH ~/.ssh/config, PuTTY .reg, CSV, DigitalOcean, Hetzner, Tailscale"
+                .to_string(),
             badge: "Import".to_string(),
             action: PaletteAction::OpenHostImport,
         });
@@ -145,6 +151,13 @@ impl GlyphApp {
             subtitle: "MCP integrations, Master Passcode, Highlight Rules, Updates".to_string(),
             badge: "Settings".to_string(),
             action: PaletteAction::OpenSettings,
+        });
+        items.push(PaletteItem {
+            title: "Open Activity Logs".to_string(),
+            subtitle: "Inspect live success, info, warning, and error events (Ctrl+Shift+L)"
+                .to_string(),
+            badge: "Logs".to_string(),
+            action: PaletteAction::OpenLogs,
         });
         if self.app_lock_cfg.enabled {
             items.push(PaletteItem {
@@ -261,7 +274,7 @@ impl GlyphApp {
                 self.start_connect(sid);
                 self.show_manager_window()
             }
-            PaletteAction::FocusServerWindow(wid) => window::gain_focus(wid),
+            PaletteAction::FocusServerWindow(wid) => self.reveal_server_window(wid),
             PaletteAction::FilterGroup(gid) => {
                 self.selected_group_filter = gid;
                 self.show_manager_window()
@@ -271,7 +284,8 @@ impl GlyphApp {
             PaletteAction::OpenTelnet => self.open_quick_terminal(QuickProtocol::Telnet),
             PaletteAction::OpenIdentities => {
                 self.termius_modal_window = self.manager_window;
-                self.termius_modal = Some(TermiusModal::Identities(IdentitiesModalState::default()));
+                self.termius_modal =
+                    Some(TermiusModal::Identities(IdentitiesModalState::default()));
                 self.show_manager_window()
             }
             PaletteAction::OpenSshKeys => {
@@ -281,7 +295,8 @@ impl GlyphApp {
             }
             PaletteAction::OpenHostImport => {
                 self.termius_modal_window = self.manager_window;
-                self.termius_modal = Some(TermiusModal::ImportHosts(HostImportModalState::default()));
+                self.termius_modal =
+                    Some(TermiusModal::ImportHosts(HostImportModalState::default()));
                 self.show_manager_window()
             }
             PaletteAction::OpenSettings => {
@@ -291,6 +306,10 @@ impl GlyphApp {
             PaletteAction::OpenSyncSettings => {
                 self.open_settings_modal_tab(SettingsTab::Sync);
                 self.show_manager_window()
+            }
+            PaletteAction::OpenLogs => {
+                self.logger.open_panel();
+                iced::Task::none()
             }
             PaletteAction::LockVault => {
                 self.locked = true;
@@ -364,7 +383,11 @@ impl GlyphApp {
                         .unwrap_or_default();
                     qt.status = Some(format!("Saved .cast recording: {path}"));
                 } else {
-                    match SessionRecorder::start(&qt.title(), u32::from(qt.cols), u32::from(qt.rows)) {
+                    match SessionRecorder::start(
+                        &qt.title(),
+                        u32::from(qt.cols),
+                        u32::from(qt.rows),
+                    ) {
                         Ok(rec) => {
                             let path = rec.path().display().to_string();
                             qt.recorder = Some(rec);
@@ -426,7 +449,8 @@ impl GlyphApp {
                                         let _ = bus.send(BusEvent::QuickTerminalData(wid, bytes));
                                     }
                                     LocalPtyEvent::Closed(reason) => {
-                                        let _ = bus.send(BusEvent::QuickTerminalClosed(wid, reason));
+                                        let _ =
+                                            bus.send(BusEvent::QuickTerminalClosed(wid, reason));
                                         break;
                                     }
                                 }
@@ -464,7 +488,10 @@ impl GlyphApp {
                     Ok((handle, mut rx)) => {
                         qt.transport = QuickTransport::Serial(handle);
                         qt.error = None;
-                        qt.status = Some(format!("Connected {} @ {} baud", cfg.port_name, cfg.baud_rate));
+                        qt.status = Some(format!(
+                            "Connected {} @ {} baud",
+                            cfg.port_name, cfg.baud_rate
+                        ));
                         let bus = app_bus_sender();
                         tokio::spawn(async move {
                             while let Some(ev) = rx.recv().await {
@@ -473,7 +500,8 @@ impl GlyphApp {
                                         let _ = bus.send(BusEvent::QuickTerminalData(wid, bytes));
                                     }
                                     SerialEvent::Closed(reason) => {
-                                        let _ = bus.send(BusEvent::QuickTerminalClosed(wid, reason));
+                                        let _ =
+                                            bus.send(BusEvent::QuickTerminalClosed(wid, reason));
                                         break;
                                     }
                                 }
@@ -509,10 +537,14 @@ impl GlyphApp {
                                 while let Some(ev) = rx.recv().await {
                                     match ev {
                                         TelnetEvent::Data(bytes) => {
-                                            let _ = bus_d.send(BusEvent::QuickTerminalData(wid, bytes));
+                                            let _ =
+                                                bus_d.send(BusEvent::QuickTerminalData(wid, bytes));
                                         }
                                         TelnetEvent::Closed(reason) => {
-                                            let _ = bus_d.send(BusEvent::QuickTerminalClosed(wid, Some(reason)));
+                                            let _ = bus_d.send(BusEvent::QuickTerminalClosed(
+                                                wid,
+                                                Some(reason),
+                                            ));
                                             break;
                                         }
                                     }
@@ -521,7 +553,8 @@ impl GlyphApp {
                             let _ = bus.send(BusEvent::QuickTelnetConnected(wid, Ok(handle)));
                         }
                         Err(e) => {
-                            let _ = bus.send(BusEvent::QuickTelnetConnected(wid, Err(e.to_string())));
+                            let _ =
+                                bus.send(BusEvent::QuickTelnetConnected(wid, Err(e.to_string())));
                         }
                     }
                 });
@@ -810,15 +843,19 @@ impl GlyphApp {
                     passphrase: (!st.passphrase.is_empty()).then(|| st.passphrase.clone()),
                 };
                 let editing = st.editing_id.clone();
-                let res = self.vault.lock().map_err(|_| anyhow::anyhow!("Vault busy")).and_then(|mut v| {
-                    if let Some(id) = editing {
-                        v.edit_identity(&id, input)?;
-                        Ok("Updated identity".to_string())
-                    } else {
-                        v.add_identity(input)?;
-                        Ok("Saved new identity".to_string())
-                    }
-                });
+                let res = self
+                    .vault
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("Vault busy"))
+                    .and_then(|mut v| {
+                        if let Some(id) = editing {
+                            v.edit_identity(&id, input)?;
+                            Ok("Updated identity".to_string())
+                        } else {
+                            v.add_identity(input)?;
+                            Ok("Saved new identity".to_string())
+                        }
+                    });
                 match res {
                     Ok(msg) => {
                         if let Some(TermiusModal::Identities(st)) = &mut self.termius_modal {
@@ -897,7 +934,12 @@ impl GlyphApp {
                 let Some(TermiusModal::Group(st)) = &mut self.termius_modal else {
                     return iced::Task::none();
                 };
-                let default_port = st.default_port.trim().parse::<u16>().ok().filter(|&p| p > 0);
+                let default_port = st
+                    .default_port
+                    .trim()
+                    .parse::<u16>()
+                    .ok()
+                    .filter(|&p| p > 0);
                 let tags = st
                     .tags
                     .split(',')
@@ -978,7 +1020,8 @@ impl GlyphApp {
                         Ok(txt) => {
                             let parsed = parse_ssh_config(&txt);
                             st.selected = vec![true; parsed.len()];
-                            st.status = Some(format!("Parsed {} OpenSSH host block(s).", parsed.len()));
+                            st.status =
+                                Some(format!("Parsed {} OpenSSH host block(s).", parsed.len()));
                             st.error = None;
                             st.preview = parsed;
                         }
@@ -1037,7 +1080,9 @@ impl GlyphApp {
             TermiusModalMsg::ImportParsePuttyCsv => {
                 if let Some(TermiusModal::ImportHosts(st)) = &mut self.termius_modal {
                     let raw = st.putty_text.as_str();
-                    let parsed = if raw.contains("\\Sessions\\") || raw.starts_with("Windows Registry Editor") {
+                    let parsed = if raw.contains("\\Sessions\\")
+                        || raw.starts_with("Windows Registry Editor")
+                    {
                         parse_putty_reg(raw)
                     } else {
                         parse_hosts_csv(raw)
@@ -1073,7 +1118,8 @@ impl GlyphApp {
                 };
                 let provider = st.cloud_provider;
                 let token = st.cloud_token.clone();
-                let tailnet = (!st.cloud_tailnet.trim().is_empty()).then(|| st.cloud_tailnet.clone());
+                let tailnet =
+                    (!st.cloud_tailnet.trim().is_empty()).then(|| st.cloud_tailnet.clone());
                 st.loading = true;
                 st.error = None;
                 st.status = None;
@@ -1182,10 +1228,9 @@ impl GlyphApp {
             }
             TermiusModalMsg::GroupRunExecute => {
                 let (cmd, group_filter) = match &self.termius_modal {
-                    Some(TermiusModal::GroupRun(st)) => (
-                        st.command.trim().to_string(),
-                        st.selected_group_id.clone(),
-                    ),
+                    Some(TermiusModal::GroupRun(st)) => {
+                        (st.command.trim().to_string(), st.selected_group_id.clone())
+                    }
                     _ => return iced::Task::none(),
                 };
                 if cmd.is_empty() {
@@ -1205,12 +1250,7 @@ impl GlyphApp {
                         };
                         if matches {
                             let cfg = v.get_connection_config(&s.id).ok();
-                            list.push((
-                                s.id.clone(),
-                                display_server_name(s),
-                                cfg,
-                                known.clone(),
-                            ));
+                            list.push((s.id.clone(), display_server_name(s), cfg, known.clone()));
                         }
                     }
                     list
@@ -1250,9 +1290,7 @@ impl GlyphApp {
                         } else if let Some(cfg) = cfg_opt {
                             let (ev_tx, mut ev_rx) = mpsc::unbounded_channel::<SessionEvent>();
                             let (hk_tx, mut hk_rx) = mpsc::unbounded_channel::<HostKeyPrompt>();
-                            tokio::spawn(async move {
-                                while ev_rx.recv().await.is_some() {}
-                            });
+                            tokio::spawn(async move { while ev_rx.recv().await.is_some() {} });
                             tokio::spawn(async move {
                                 while let Some(prompt) = hk_rx.recv().await {
                                     let _ = prompt.responder.send(false);
@@ -1260,7 +1298,11 @@ impl GlyphApp {
                             });
                             match SshSession::connect(cfg, known_hosts, ev_tx, hk_tx).await {
                                 Ok(outcome) => {
-                                    let out = outcome.session.exec(&cmd_c).await.map_err(|e| e.to_string());
+                                    let out = outcome
+                                        .session
+                                        .exec(&cmd_c)
+                                        .await
+                                        .map_err(|e| e.to_string());
                                     outcome.session.disconnect().await;
                                     out
                                 }
@@ -1281,7 +1323,10 @@ impl GlyphApp {
         }
     }
 
-    pub(crate) fn handle_settings_termius_msg(&mut self, msg: ModalMsg) -> Option<iced::Task<Message>> {
+    pub(crate) fn handle_settings_termius_msg(
+        &mut self,
+        msg: ModalMsg,
+    ) -> Option<iced::Task<Message>> {
         match msg {
             ModalMsg::LockPasscodeInput(v) => {
                 if let Some(ManagerModal::Settings(st)) = &mut self.modal {
@@ -1507,7 +1552,8 @@ impl GlyphApp {
                     return Some(iced::Task::none());
                 }
                 let pass = st.sync_passphrase.clone();
-                let webdav_pw = (!st.sync_webdav_pass.is_empty()).then(|| st.sync_webdav_pass.clone());
+                let webdav_pw =
+                    (!st.sync_webdav_pass.is_empty()).then(|| st.sync_webdav_pass.clone());
                 st.sync_busy = true;
                 st.sync_error = None;
                 st.sync_status = None;
@@ -1603,7 +1649,13 @@ impl GlyphApp {
                     }
                 });
                 let res = sess_c
-                    .sftp_upload_file_with_cancel(&p, &remote_path, tid.clone(), Some(ptx), Some(cancel))
+                    .sftp_upload_file_with_cancel(
+                        &p,
+                        &remote_path,
+                        tid.clone(),
+                        Some(ptx),
+                        Some(cancel),
+                    )
                     .await
                     .map(|n| format!("Uploaded {name} ({n} bytes)"))
                     .map_err(|e| e.to_string());
@@ -1757,7 +1809,10 @@ impl GlyphApp {
                         }
                     }
                     Some(peer_wid) => {
-                        let peer_sess = self.server_windows.get(&peer_wid).map(|s| s.session.clone());
+                        let peer_sess = self
+                            .server_windows
+                            .get(&peer_wid)
+                            .map(|s| s.session.clone());
                         if let (Some(srv), Some(psess)) =
                             (self.server_windows.get_mut(&wid), peer_sess)
                         {
@@ -1811,13 +1866,21 @@ impl GlyphApp {
                 true
             }
             SftpPageMsg::LocalUploadFile(path) => {
-                if let Some(rdir) = self.server_windows.get(&wid).map(|s| s.sftp.current_path.clone()) {
+                if let Some(rdir) = self
+                    .server_windows
+                    .get(&wid)
+                    .map(|s| s.sftp.current_path.clone())
+                {
                     self.enqueue_upload_files(wid, rdir, vec![path]);
                 }
                 true
             }
             SftpPageMsg::DownloadToLocalPane(remote_path, name) => {
-                if let Some(ldir) = self.server_windows.get(&wid).map(|s| s.sftp.local_path.clone()) {
+                if let Some(ldir) = self
+                    .server_windows
+                    .get(&wid)
+                    .map(|s| s.sftp.local_path.clone())
+                {
                     let local_target = PathBuf::from(ldir).join(&name);
                     self.enqueue_download_file(wid, remote_path, local_target);
                 }
@@ -1827,7 +1890,10 @@ impl GlyphApp {
                 if let Some(DualPaneMode::RemoteServer(peer_wid)) =
                     self.server_windows.get(&wid).map(|s| s.sftp.dual_pane)
                 {
-                    let peer_sess = self.server_windows.get(&peer_wid).map(|s| s.session.clone());
+                    let peer_sess = self
+                        .server_windows
+                        .get(&peer_wid)
+                        .map(|s| s.session.clone());
                     if let (Some(srv), Some(ps)) = (self.server_windows.get_mut(&wid), peer_sess) {
                         let parent = crate::app::remote_parent(&srv.sftp.remote_peer_path);
                         srv.sftp.remote_peer_loading = true;
@@ -1840,7 +1906,10 @@ impl GlyphApp {
                 if let Some(DualPaneMode::RemoteServer(peer_wid)) =
                     self.server_windows.get(&wid).map(|s| s.sftp.dual_pane)
                 {
-                    let peer_sess = self.server_windows.get(&peer_wid).map(|s| s.session.clone());
+                    let peer_sess = self
+                        .server_windows
+                        .get(&peer_wid)
+                        .map(|s| s.session.clone());
                     if let (Some(srv), Some(ps)) = (self.server_windows.get_mut(&wid), peer_sess) {
                         srv.sftp.remote_peer_loading = true;
                         spawn_sftp_readdir_peer(wid, ps, path);
@@ -1852,7 +1921,10 @@ impl GlyphApp {
                 if let Some(DualPaneMode::RemoteServer(peer_wid)) =
                     self.server_windows.get(&wid).map(|s| s.sftp.dual_pane)
                 {
-                    let peer_sess = self.server_windows.get(&peer_wid).map(|s| s.session.clone());
+                    let peer_sess = self
+                        .server_windows
+                        .get(&peer_wid)
+                        .map(|s| s.session.clone());
                     if let (Some(srv), Some(ps)) = (self.server_windows.get_mut(&wid), peer_sess) {
                         srv.sftp.remote_peer_loading = true;
                         spawn_sftp_readdir_peer(wid, ps, srv.sftp.remote_peer_path.clone());
@@ -1861,32 +1933,46 @@ impl GlyphApp {
                 true
             }
             SftpPageMsg::CopyLeftToPeer(src_path, name) => {
-                let info = self.server_windows.get(&wid).and_then(|s| match s.sftp.dual_pane {
-                    DualPaneMode::RemoteServer(pwid) => Some((
-                        s.session.clone(),
-                        pwid,
-                        join_remote_path(&s.sftp.remote_peer_path, &name),
-                    )),
-                    _ => None,
-                });
+                let info = self
+                    .server_windows
+                    .get(&wid)
+                    .and_then(|s| match s.sftp.dual_pane {
+                        DualPaneMode::RemoteServer(pwid) => Some((
+                            s.session.clone(),
+                            pwid,
+                            join_remote_path(&s.sftp.remote_peer_path, &name),
+                        )),
+                        _ => None,
+                    });
                 if let Some((src_sess, peer_wid, dst_path)) = info {
-                    if let Some(dst_sess) = self.server_windows.get(&peer_wid).map(|s| s.session.clone()) {
+                    if let Some(dst_sess) = self
+                        .server_windows
+                        .get(&peer_wid)
+                        .map(|s| s.session.clone())
+                    {
                         self.enqueue_remote_copy(wid, src_sess, src_path, dst_sess, dst_path, name);
                     }
                 }
                 true
             }
             SftpPageMsg::CopyPeerToLeft(src_path, name) => {
-                let info = self.server_windows.get(&wid).and_then(|s| match s.sftp.dual_pane {
-                    DualPaneMode::RemoteServer(pwid) => Some((
-                        pwid,
-                        s.session.clone(),
-                        join_remote_path(&s.sftp.current_path, &name),
-                    )),
-                    _ => None,
-                });
+                let info = self
+                    .server_windows
+                    .get(&wid)
+                    .and_then(|s| match s.sftp.dual_pane {
+                        DualPaneMode::RemoteServer(pwid) => Some((
+                            pwid,
+                            s.session.clone(),
+                            join_remote_path(&s.sftp.current_path, &name),
+                        )),
+                        _ => None,
+                    });
                 if let Some((peer_wid, dst_sess, dst_path)) = info {
-                    if let Some(src_sess) = self.server_windows.get(&peer_wid).map(|s| s.session.clone()) {
+                    if let Some(src_sess) = self
+                        .server_windows
+                        .get(&peer_wid)
+                        .map(|s| s.session.clone())
+                    {
                         self.enqueue_remote_copy(wid, src_sess, src_path, dst_sess, dst_path, name);
                     }
                 }
@@ -1946,7 +2032,13 @@ impl GlyphApp {
                 true
             }
             TunnelsPageMsg::StartSavedProfile(rule_id) => {
-                if let Some(rule) = srv.server.saved_tunnels.iter().find(|r| r.id == rule_id).cloned() {
+                if let Some(rule) = srv
+                    .server
+                    .saved_tunnels
+                    .iter()
+                    .find(|r| r.id == rule_id)
+                    .cloned()
+                {
                     srv.tunnels.busy = true;
                     srv.tunnels.error = None;
                     tokio::spawn(async move {
@@ -2148,7 +2240,8 @@ impl GlyphApp {
             CommandsPageMsg::SwitchSubView(sv) => {
                 if let Some(srv) = self.server_windows.get_mut(&wid) {
                     srv.commands.sub_view = sv;
-                    if sv == CommandsSubView::Packages && srv.commands.selected_package_id.is_empty()
+                    if sv == CommandsSubView::Packages
+                        && srv.commands.selected_package_id.is_empty()
                     {
                         if let Some(first) = self.snippet_packages.first() {
                             srv.commands.selected_package_id = first.id.clone();

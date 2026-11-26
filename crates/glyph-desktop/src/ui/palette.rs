@@ -21,6 +21,7 @@ pub enum PaletteAction {
     OpenHostImport,
     OpenSettings,
     OpenSyncSettings,
+    OpenLogs,
     LockVault,
 }
 
@@ -73,7 +74,9 @@ pub fn filtered_indices(st: &CommandPaletteState) -> Vec<usize> {
 
 fn backdrop_style(_theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(Color::from_rgba(0.02, 0.024, 0.045, 0.72))),
+        background: Some(Background::Color(Color::from_rgba(
+            0.02, 0.024, 0.045, 0.72,
+        ))),
         snap: true,
         ..Default::default()
     }
@@ -133,14 +136,17 @@ pub fn view<'a>(st: &'a CommandPaletteState) -> Element<'a, PaletteMsg> {
     let header = row![
         icons::command(18.0, BRAND_400),
         space().width(8),
-        text_input("Jump to host, group, local shell, serial, or action...", &st.query)
-            .id("palette-search-input")
-            .on_input(PaletteMsg::QueryChanged)
-            .on_submit(PaletteMsg::ActivateSelected)
-            .padding([9, 12])
-            .size(14)
-            .width(Length::Fill)
-            .style(dark_input),
+        text_input(
+            "Jump to host, group, local shell, serial, or action...",
+            &st.query
+        )
+        .id("palette-search-input")
+        .on_input(PaletteMsg::QueryChanged)
+        .on_submit(PaletteMsg::ActivateSelected)
+        .padding([9, 12])
+        .size(14)
+        .width(Length::Fill)
+        .style(dark_input),
         space().width(8),
         button(text("Esc").size(11).color(TEXT_LIGHT))
             .on_press(PaletteMsg::Close)

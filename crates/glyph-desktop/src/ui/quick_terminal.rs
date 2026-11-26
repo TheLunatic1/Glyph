@@ -1,10 +1,11 @@
 use crate::theme::{
     brand_button, danger_ghost_button, dark_input, dark_pick_list, dark_scrollable, glass_panel,
-    logo_handle_for, rgba, secondary_button, truncate_ellipsis, window_close_button,
-    window_control_button, BRAND_400, BRAND_500, DARK_700, DARK_900, FONT_MONO, FONT_MONO_BOLD,
-    FONT_UI_BOLD, FONT_UI_SEMIBOLD, GREEN_400, RED_400, RED_500, TEXT_LIGHT, TEXT_PRIMARY,
-    TEXT_SECONDARY, YELLOW_400,
+    logo_handle_for, rgba, secondary_button, truncate_ellipsis, BRAND_400, BRAND_500, DARK_700,
+    DARK_900, FONT_MONO, FONT_MONO_BOLD, FONT_UI_BOLD, FONT_UI_SEMIBOLD, GREEN_400, RED_400,
+    RED_500, TEXT_LIGHT, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400,
 };
+#[cfg(not(target_os = "macos"))]
+use crate::theme::{window_close_button, window_control_button};
 use crate::ui::icons;
 use glyph_core::local_pty::LocalPtyHandle;
 use glyph_core::serial::{list_serial_ports, SerialHandle, SerialPortSummary};
@@ -244,23 +245,63 @@ pub fn view<'a>(
     st: &'a QuickTerminalState,
     highlight_rules: &'a [CompiledHighlightRule],
 ) -> Element<'a, QuickTerminalMsg> {
-    let minimize_glyph = container(
-        container(space().width(Length::Fixed(10.0)).height(Length::Fixed(1.5))).style(|_| {
-            container::Style {
+    let mut left_row = row![];
+    #[cfg(target_os = "macos")]
+    {
+        left_row = left_row.push(space().width(Length::Fixed(74.0)));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        left_row = left_row.push(space().width(10));
+    }
+    left_row = left_row
+        .push(
+            image(logo_handle_for(20))
+                .width(20)
+                .height(20)
+                .filter_method(image::FilterMethod::Linear),
+        )
+        .push(space().width(8))
+        .push(
+            text(truncate_ellipsis(&st.title(), 48))
+                .size(13)
+                .font(FONT_UI_SEMIBOLD)
+                .color(TEXT_PRIMARY),
+        )
+        .align_y(alignment::Vertical::Center)
+        .width(Length::Fill)
+        .height(Length::Fixed(34.0));
+
+    let drag_header = mouse_area(left_row)
+        .on_press(QuickTerminalMsg::StartDrag)
+        .on_double_click(QuickTerminalMsg::MaximizeWindow);
+
+    #[cfg(not(target_os = "macos"))]
+    let titlebar_row = {
+        let minimize_glyph = container(
+            container(
+                space()
+                    .width(Length::Fixed(10.0))
+                    .height(Length::Fixed(1.5)),
+            )
+            .style(|_| container::Style {
                 background: Some(Background::Color(TEXT_LIGHT)),
                 snap: true,
                 ..Default::default()
-            }
-        }),
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .center_x(Length::Fill)
-    .center_y(Length::Fill);
+            }),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill);
 
-    let maximize_glyph = container(
-        container(space().width(Length::Fixed(10.0)).height(Length::Fixed(10.0))).style(|_| {
-            container::Style {
+        let maximize_glyph = container(
+            container(
+                space()
+                    .width(Length::Fixed(10.0))
+                    .height(Length::Fixed(10.0)),
+            )
+            .style(|_| container::Style {
                 border: Border {
                     color: TEXT_LIGHT,
                     width: 1.5,
@@ -268,40 +309,21 @@ pub fn view<'a>(
                 },
                 snap: true,
                 ..Default::default()
-            }
-        }),
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .center_x(Length::Fill)
-    .center_y(Length::Fill);
-
-    let close_glyph = container(icons::x_close_inherit(14.0))
+            }),
+        )
         .width(Length::Fill)
         .height(Length::Fill)
         .center_x(Length::Fill)
         .center_y(Length::Fill);
 
-    let titlebar = container(
+        let close_glyph = container(icons::x_close_inherit(14.0))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill);
+
         row![
-            mouse_area(
-                row![
-                    space().width(10),
-                    image(logo_handle_for(20))
-                        .width(20)
-                        .height(20)
-                        .filter_method(image::FilterMethod::Linear),
-                    space().width(8),
-                    text(truncate_ellipsis(&st.title(), 48))
-                        .size(13)
-                        .font(FONT_UI_SEMIBOLD)
-                        .color(TEXT_PRIMARY),
-                ]
-                .align_y(alignment::Vertical::Center)
-                .width(Length::Fill)
-                .height(Length::Fixed(34.0)),
-            )
-            .on_press(QuickTerminalMsg::StartDrag),
+            drag_header,
             button(minimize_glyph)
                 .on_press(QuickTerminalMsg::MinimizeWindow)
                 .width(Length::Fixed(42.0))
@@ -321,12 +343,17 @@ pub fn view<'a>(
                 .padding(0)
                 .style(window_close_button),
         ]
-        .align_y(alignment::Vertical::Center),
-    )
-    .padding(0)
-    .width(Length::Fill)
-    .height(Length::Fixed(34.0))
-    .style(bar_bg);
+        .align_y(alignment::Vertical::Center)
+    };
+
+    #[cfg(target_os = "macos")]
+    let titlebar_row = row![drag_header].align_y(alignment::Vertical::Center);
+
+    let titlebar = container(titlebar_row)
+        .padding(0)
+        .width(Length::Fill)
+        .height(Length::Fixed(34.0))
+        .style(bar_bg);
 
     let connected = st.transport.is_connected();
     let status_dot_color = if connected { GREEN_400 } else { YELLOW_400 };
@@ -480,10 +507,14 @@ pub fn view<'a>(
                     .text_size(12)
                     .padding([4, 8])
                     .style(dark_pick_list),
-                pick_list(bits, Some(st.serial_data_bits), QuickTerminalMsg::SelectDataBits)
-                    .text_size(12)
-                    .padding([4, 6])
-                    .style(dark_pick_list),
+                pick_list(
+                    bits,
+                    Some(st.serial_data_bits),
+                    QuickTerminalMsg::SelectDataBits
+                )
+                .text_size(12)
+                .padding([4, 6])
+                .style(dark_pick_list),
                 pick_list(
                     parities,
                     Some(st.serial_parity.clone()),
@@ -492,10 +523,14 @@ pub fn view<'a>(
                 .text_size(12)
                 .padding([4, 8])
                 .style(dark_pick_list),
-                pick_list(stops, Some(st.serial_stop_bits), QuickTerminalMsg::SelectStopBits)
-                    .text_size(12)
-                    .padding([4, 6])
-                    .style(dark_pick_list),
+                pick_list(
+                    stops,
+                    Some(st.serial_stop_bits),
+                    QuickTerminalMsg::SelectStopBits
+                )
+                .text_size(12)
+                .padding([4, 6])
+                .style(dark_pick_list),
             ]
             .spacing(6)
             .align_y(alignment::Vertical::Center);

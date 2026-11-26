@@ -1,3 +1,19 @@
+## v3.0.1 — Window Lifecycle & Resizing, Live Activity Logger, and Focus-Safe MCP Execution
+
+### What's New & Fixed
+- **Independent Manager Window Close:** Closing the Glyph Manager window while child Server or Quick Terminal windows are open now cleanly closes only the Manager window without interrupting active child sessions (and reopens easily from the system tray or when no windows/tray remain).
+- **Full 8-Direction Window Resizing & Cross-Platform Titlebars:**
+  - Frameless Manager, Server, and Quick Terminal windows on Windows & Linux now support full edge and corner drag resizing (`N`, `S`, `E`, `W`, `NE`, `NW`, `SE`, `SW`) with resize cursors plus double-click titlebar maximize.
+  - macOS builds now use transparent full-size content titlebars with proper traffic-light spacing so native macOS resizing and snapping work natively.
+- **In-App Activity Logger (`Logs` button / `Ctrl+Shift+L`):**
+  - Live chronological feed of **Success**, **Info**, **Warning**, and **Error** events across SSH, SFTP, Tunnels, Docker/Compose, VNC, Vault, Updater, and MCP tool calls.
+  - Filter by severity or keyword, copy formatted logs to clipboard, view unread warning/error counts right in the titlebar, and persist sanitized events to `~/.glyph/activity.log`.
+- **Zero Focus Stealing for AI / MCP Work:**
+  - `glyph-mcp` background operations (and MCP auto-launch) no longer pop Glyph windows on top of your browser, video player, or active app.
+  - Background MCP server sessions appear under **Active Sessions** in Manager and in the `Ctrl+K` Command Palette so you can click to focus them on demand.
+
+---
+
 ## v3.0.0 — Pure Rust Rewrite, Full Termius Parity, Native Auto-Updater & 36-Tool Visual MCP
 
 > **Upgrading from Glyph v2 (Electron)?** Glyph **v3.0.0** is now available as a **100% Pure Rust** native application — smaller binary size, instant startup, native GPU terminal rendering, full `.glyph` vault & SSH key compatibility, and an interactive **in-app auto-updater**. Click **Download & Install** in your update prompt or install [`Glyph-Setup-3.0.0.exe`](https://github.com/TheLunatic1/Glyph/releases/tag/v3.0.0) directly.

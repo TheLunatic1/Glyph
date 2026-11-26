@@ -3,6 +3,7 @@ pub mod containers_page;
 pub mod dashboard;
 pub mod icons;
 pub mod lock_screen;
+pub mod logger_panel;
 pub mod manager;
 pub mod modals;
 pub mod os_logo;

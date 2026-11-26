@@ -391,6 +391,7 @@ pub fn ghost_icon_button(_: &Theme, status: button::Status) -> button::Style {
     }
 }
 
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub fn window_control_button(_: &Theme, status: button::Status) -> button::Style {
     let (bg, txt) = match status {
         button::Status::Hovered => (rgba(Color::WHITE, 0.10), TEXT_PRIMARY),
@@ -406,6 +407,7 @@ pub fn window_control_button(_: &Theme, status: button::Status) -> button::Style
     }
 }
 
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub fn window_close_button(_: &Theme, status: button::Status) -> button::Style {
     let (bg, txt) = match status {
         button::Status::Hovered => (RED_600, Color::WHITE),

@@ -100,7 +100,10 @@ async fn handle_request(method: String, params: Value, id: Value) -> Value {
         }),
         "tools/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
-            let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
+            let args = params
+                .get("arguments")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
             match execute_tool(name, &args).await {
                 Ok(text) => json!({
                     "jsonrpc": "2.0",
@@ -136,7 +139,12 @@ async fn execute_tool(name: &str, args: &Value) -> Result<String> {
         "glyph_list_servers" => call_glyph_api("GET", "/api/servers", None).await?,
         "glyph_connect_server" => {
             let server_id = req_str(args, "serverId")?;
-            call_glyph_api("POST", "/api/connect", Some(json!({ "serverId": server_id }))).await?
+            call_glyph_api(
+                "POST",
+                "/api/connect",
+                Some(json!({ "serverId": server_id })),
+            )
+            .await?
         }
         "glyph_execute_command" => {
             let server_id = req_str(args, "serverId")?;
@@ -355,8 +363,12 @@ async fn execute_tool(name: &str, args: &Value) -> Result<String> {
         }
         "glyph_list_secrets" => {
             let server_id = req_str(args, "serverId")?;
-            call_glyph_api("POST", "/api/secrets/list", Some(json!({ "serverId": server_id })))
-                .await?
+            call_glyph_api(
+                "POST",
+                "/api/secrets/list",
+                Some(json!({ "serverId": server_id })),
+            )
+            .await?
         }
         "glyph_add_secret" => {
             let server_id = req_str(args, "serverId")?;
@@ -427,7 +439,10 @@ async fn execute_tool(name: &str, args: &Value) -> Result<String> {
         "glyph_container_inspect" => {
             let server_id = req_str(args, "serverId")?;
             let container_id = req_str(args, "containerId")?;
-            let is_running = args.get("isRunning").and_then(Value::as_bool).unwrap_or(true);
+            let is_running = args
+                .get("isRunning")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
             call_glyph_api(
                 "POST",
                 "/api/containers/inspect",
@@ -485,7 +500,10 @@ async fn execute_tool(name: &str, args: &Value) -> Result<String> {
         }
         "glyph_add_snippet_package" => {
             let pkg_name = req_str(args, "name")?;
-            let description = args.get("description").and_then(Value::as_str).unwrap_or("");
+            let description = args
+                .get("description")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             let snippets = args.get("snippets").cloned().unwrap_or_else(|| json!([]));
             call_glyph_api(
                 "POST",
@@ -587,7 +605,10 @@ fn read_mcp_token() -> Result<String> {
     })?;
     let trimmed = content.trim().to_string();
     if trimmed.is_empty() {
-        return Err(anyhow!("Glyph MCP token file at {} is empty", path.display()));
+        return Err(anyhow!(
+            "Glyph MCP token file at {} is empty",
+            path.display()
+        ));
     }
     Ok(trimmed)
 }
@@ -664,7 +685,8 @@ async fn ensure_desktop_running(host_port: &str) -> Result<()> {
         if candidate.exists() {
             eprintln!("glyph-mcp: auto-launching {}", candidate.display());
             let mut cmd = Command::new(&candidate);
-            cmd.stdin(Stdio::null())
+            cmd.env("GLYPH_MCP_AUTOLAUNCH", "1")
+                .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null());
             #[cfg(windows)]

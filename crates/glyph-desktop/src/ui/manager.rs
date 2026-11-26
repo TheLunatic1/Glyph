@@ -1,10 +1,10 @@
 use crate::theme::{
     brand_button, danger_ghost_button, dark_900_bg, dark_card, dark_input, dark_pick_list,
-    dark_scrollable, ghost_icon_button, glass_panel, grid_card, logo_handle_for, mobile_pill_button,
-    pill_badge, rgba, secondary_button, truncate_ellipsis, APP_VERSION, BRAND_300, BRAND_400,
-    BRAND_500, DARK_600, DARK_700, DARK_800, DARK_900, FONT_MONO_MEDIUM, FONT_UI_BOLD,
-    FONT_UI_SEMIBOLD, GREEN_400, GREEN_500, RED_400, RED_500, RED_600, TEXT_DIM, TEXT_LIGHT,
-    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400, YELLOW_500,
+    dark_scrollable, ghost_icon_button, glass_panel, grid_card, logo_handle_for,
+    mobile_pill_button, pill_badge, rgba, secondary_button, truncate_ellipsis, APP_VERSION,
+    BRAND_300, BRAND_400, BRAND_500, DARK_600, DARK_700, DARK_800, DARK_900, FONT_MONO_MEDIUM,
+    FONT_UI_BOLD, FONT_UI_SEMIBOLD, GREEN_400, GREEN_500, RED_400, RED_500, RED_600, TEXT_DIM,
+    TEXT_LIGHT, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, YELLOW_400, YELLOW_500,
 };
 use crate::ui::icons;
 use crate::ui::os_logo::{os_display_name, os_logo};
@@ -13,8 +13,7 @@ use glyph_core::models::{
     IdentitySummary, ServerConfigInput, ServerSummary, SshKeySummary,
 };
 use iced::widget::{
-    button, checkbox, column, container, image, pick_list, row, scrollable, space, text,
-    text_input,
+    button, checkbox, column, container, image, pick_list, row, scrollable, space, text, text_input,
 };
 use iced::{alignment, Background, Border, Color, Element, Length};
 use std::collections::{BTreeSet, HashSet};
@@ -186,7 +185,9 @@ impl ServerFormState {
             .ok_or_else(|| "Port must be a number between 1 and 65535.".to_string())?;
         let username = self.username.trim().to_string();
         if username.is_empty() && self.identity_id.is_none() && self.group_id.is_none() {
-            return Err("Username is required unless an Identity or Group supplies it.".to_string());
+            return Err(
+                "Username is required unless an Identity or Group supplies it.".to_string(),
+            );
         }
         let tags: Vec<String> = self
             .tags
@@ -250,6 +251,7 @@ pub enum ManagerMsg {
     SelectTagFilter(Option<String>),
     OpenNewGroupModal,
     OpenEditGroupModal(String),
+    FocusActiveServer(String),
 
     OpenLocalTerminal,
     OpenSerialConsole,
@@ -288,11 +290,7 @@ pub enum ManagerMsg {
     SubmitForm,
 }
 
-fn is_in_group_subtree(
-    groups: &[HostGroup],
-    server: &ServerSummary,
-    target_gid: &str,
-) -> bool {
+fn is_in_group_subtree(groups: &[HostGroup], server: &ServerSummary, target_gid: &str) -> bool {
     let mut cur = server.group_id.as_deref();
     let mut seen = HashSet::new();
     while let Some(gid) = cur {
@@ -366,6 +364,7 @@ pub fn view<'a>(
     groups: &'a [HostGroup],
     identities: &'a [IdentitySummary],
     ssh_keys: &'a [SshKeySummary],
+    active_servers: &[(String, String, String)],
     form: Option<&'a ServerFormState>,
     search_query: &'a str,
     selected_group: Option<&'a str>,
@@ -409,19 +408,20 @@ pub fn view<'a>(
     }
 
     // ── Header + Quick Actions ────────────────────────────────────────────────
-    let mut header_right = row![
-        button(
-            row![
-                icons::command(13.0, BRAND_300),
-                text("Ctrl+K").size(12).font(FONT_MONO_MEDIUM).color(BRAND_300),
-            ]
-            .spacing(5)
-            .align_y(alignment::Vertical::Center),
-        )
-        .padding([8, 11])
-        .style(secondary_button)
-        .on_press(ManagerMsg::OpenPalette),
-    ]
+    let mut header_right = row![button(
+        row![
+            icons::command(13.0, BRAND_300),
+            text("Ctrl+K")
+                .size(12)
+                .font(FONT_MONO_MEDIUM)
+                .color(BRAND_300),
+        ]
+        .spacing(5)
+        .align_y(alignment::Vertical::Center),
+    )
+    .padding([8, 11])
+    .style(secondary_button)
+    .on_press(ManagerMsg::OpenPalette),]
     .spacing(8)
     .align_y(alignment::Vertical::Center);
 
@@ -447,18 +447,13 @@ pub fn view<'a>(
                 row![
                     icons::smartphone(14.0, BRAND_300),
                     text("Mobile App").size(12).color(BRAND_300),
-                    container(
-                        text("APK")
-                            .size(10)
-                            .font(FONT_UI_BOLD)
-                            .color(BRAND_300)
-                    )
-                    .padding([1, 5])
-                    .style(pill_badge(
-                        rgba(BRAND_500, 0.25),
-                        rgba(BRAND_500, 0.45),
-                        BRAND_300,
-                    )),
+                    container(text("APK").size(10).font(FONT_UI_BOLD).color(BRAND_300))
+                        .padding([1, 5])
+                        .style(pill_badge(
+                            rgba(BRAND_500, 0.25),
+                            rgba(BRAND_500, 0.45),
+                            BRAND_300,
+                        )),
                 ]
                 .spacing(6)
                 .align_y(alignment::Vertical::Center),
@@ -643,33 +638,27 @@ pub fn view<'a>(
     }
 
     let tags = collect_unique_tags(servers, groups);
-    let mut tags_col = column![
-        row![
-            icons::tag(13.0, BRAND_400),
-            text("TAGS")
-                .size(11)
-                .font(FONT_UI_BOLD)
-                .color(TEXT_MUTED)
-                .width(Length::Fill),
-        ]
-        .spacing(6)
-        .align_y(alignment::Vertical::Center),
+    let mut tags_col = column![row![
+        icons::tag(13.0, BRAND_400),
+        text("TAGS")
+            .size(11)
+            .font(FONT_UI_BOLD)
+            .color(TEXT_MUTED)
+            .width(Length::Fill),
     ]
+    .spacing(6)
+    .align_y(alignment::Vertical::Center),]
     .spacing(5);
 
     if tags.is_empty() {
         tags_col = tags_col.push(text("No tags yet").size(11).color(TEXT_MUTED));
     } else {
         tags_col = tags_col.push(
-            button(
-                text("All Tags")
-                    .size(11)
-                    .color(if selected_tag.is_none() {
-                        BRAND_300
-                    } else {
-                        TEXT_SECONDARY
-                    }),
-            )
+            button(text("All Tags").size(11).color(if selected_tag.is_none() {
+                BRAND_300
+            } else {
+                TEXT_SECONDARY
+            }))
             .padding([4, 8])
             .style(secondary_button)
             .on_press(ManagerMsg::SelectTagFilter(None)),
@@ -677,11 +666,11 @@ pub fn view<'a>(
         for t in tags {
             let active = selected_tag == Some(t.as_str());
             tags_col = tags_col.push(
-                button(
-                    text(format!("#{t}"))
-                        .size(11)
-                        .color(if active { Color::WHITE } else { TEXT_LIGHT }),
-                )
+                button(text(format!("#{t}")).size(11).color(if active {
+                    Color::WHITE
+                } else {
+                    TEXT_LIGHT
+                }))
                 .padding([4, 8])
                 .width(Length::Fill)
                 .style(if active {
@@ -715,12 +704,15 @@ pub fn view<'a>(
         format!("Identities ({})", identities.len())
     };
 
-    let search_bar = text_input("Search hosts by name, IP, username, or tag...", search_query)
-        .on_input(ManagerMsg::SearchChanged)
-        .padding([8, 12])
-        .size(13)
-        .width(Length::Fill)
-        .style(dark_input);
+    let search_bar = text_input(
+        "Search hosts by name, IP, username, or tag...",
+        search_query,
+    )
+    .on_input(ManagerMsg::SearchChanged)
+    .padding([8, 12])
+    .size(13)
+    .width(Length::Fill)
+    .style(dark_input);
 
     let action_pills = scrollable(
         row![
@@ -847,6 +839,55 @@ pub fn view<'a>(
     ]
     .spacing(14)
     .width(Length::Fill);
+
+    if !active_servers.is_empty() {
+        let mut active_row = row![
+            icons::circle_dot(13.0, GREEN_400),
+            text(format!("Active Sessions ({})", active_servers.len()))
+                .size(12)
+                .font(FONT_UI_SEMIBOLD)
+                .color(GREEN_400),
+        ]
+        .spacing(8)
+        .align_y(alignment::Vertical::Center);
+        for (sid, label, host_info) in active_servers {
+            active_row = active_row.push(
+                button(
+                    row![
+                        icons::terminal(12.0, BRAND_300),
+                        text(label.clone())
+                            .size(12)
+                            .font(FONT_UI_SEMIBOLD)
+                            .color(TEXT_PRIMARY),
+                        text(host_info.clone())
+                            .size(11)
+                            .font(FONT_MONO_MEDIUM)
+                            .color(TEXT_SECONDARY),
+                    ]
+                    .spacing(6)
+                    .align_y(alignment::Vertical::Center),
+                )
+                .padding([5, 10])
+                .style(secondary_button)
+                .on_press(ManagerMsg::FocusActiveServer(sid.clone())),
+            );
+        }
+        right_col = right_col.push(
+            container(scrollable(active_row).horizontal().style(dark_scrollable))
+                .width(Length::Fill)
+                .padding([8, 12])
+                .style(|_| container::Style {
+                    background: Some(Background::Color(DARK_800)),
+                    border: Border {
+                        color: rgba(GREEN_400, 0.3),
+                        width: 1.0,
+                        radius: 10.0.into(),
+                    },
+                    snap: true,
+                    ..Default::default()
+                }),
+        );
+    }
 
     if let Some(f) = form {
         right_col = right_col.push(view_server_form(f, servers, groups, identities, ssh_keys));
@@ -1167,7 +1208,10 @@ fn view_server_form<'a>(
     ]
     .spacing(12);
 
-    if f.show_advanced || f.auth_method == AuthMethod::VaultKey || f.auth_method == AuthMethod::KeyFile {
+    if f.show_advanced
+        || f.auth_method == AuthMethod::VaultKey
+        || f.auth_method == AuthMethod::KeyFile
+    {
         let mut key_options = vec![VaultKeyPick {
             id: None,
             label: "None (Use file path / password / agent)".to_string(),
@@ -1215,15 +1259,11 @@ fn view_server_form<'a>(
                     container(
                         column![
                             text("Vault SSH Key").size(11).color(TEXT_SECONDARY),
-                            pick_list(
-                                key_options,
-                                selected_key,
-                                ManagerMsg::FormSelectVaultKey,
-                            )
-                            .width(Length::Fill)
-                            .padding([8, 10])
-                            .text_size(12)
-                            .style(dark_pick_list),
+                            pick_list(key_options, selected_key, ManagerMsg::FormSelectVaultKey,)
+                                .width(Length::Fill)
+                                .padding([8, 10])
+                                .text_size(12)
+                                .style(dark_pick_list),
                         ]
                         .spacing(5),
                     )
@@ -1234,14 +1274,11 @@ fn view_server_form<'a>(
                                 .size(11)
                                 .color(TEXT_SECONDARY),
                             row![
-                                text_input(
-                                    "Optional ~/.ssh/id_ed25519 path",
-                                    &f.private_key_path,
-                                )
-                                .size(12)
-                                .padding([8, 10])
-                                .style(dark_input)
-                                .on_input(ManagerMsg::FormPrivateKeyPathChanged),
+                                text_input("Optional ~/.ssh/id_ed25519 path", &f.private_key_path,)
+                                    .size(12)
+                                    .padding([8, 10])
+                                    .style(dark_input)
+                                    .on_input(ManagerMsg::FormPrivateKeyPathChanged),
                                 button(text("Browse...").size(12).color(TEXT_LIGHT))
                                     .padding([8, 12])
                                     .style(secondary_button)
@@ -1302,15 +1339,11 @@ fn view_server_form<'a>(
                     text("ProxyJump / Bastion Host (optional)")
                         .size(11)
                         .color(TEXT_SECONDARY),
-                    pick_list(
-                        jump_options,
-                        selected_jump,
-                        ManagerMsg::FormSelectProxyJump,
-                    )
-                    .width(Length::Fill)
-                    .padding([8, 10])
-                    .text_size(12)
-                    .style(dark_pick_list),
+                    pick_list(jump_options, selected_jump, ManagerMsg::FormSelectProxyJump,)
+                        .width(Length::Fill)
+                        .padding([8, 10])
+                        .text_size(12)
+                        .style(dark_pick_list),
                 ]
                 .spacing(5),
                 row![
@@ -1353,7 +1386,9 @@ fn view_server_form<'a>(
                     text("SSH Agent Forwarding (-A)").size(12).color(TEXT_LIGHT),
                     space().width(16),
                     checkbox(f.auto_log).on_toggle(ManagerMsg::FormAutoLogToggled),
-                    text("Auto-Record Session (.cast log)").size(12).color(TEXT_LIGHT),
+                    text("Auto-Record Session (.cast log)")
+                        .size(12)
+                        .color(TEXT_LIGHT),
                 ]
                 .spacing(8)
                 .align_y(alignment::Vertical::Center),
@@ -1494,7 +1529,9 @@ fn view_server_card<'a>(s: &'a ServerSummary, groups: &'a [HostGroup]) -> Elemen
         .into()
     };
 
-    let mut badges = row![os_badge].spacing(5).align_y(alignment::Vertical::Center);
+    let mut badges = row![os_badge]
+        .spacing(5)
+        .align_y(alignment::Vertical::Center);
     if !s.zerotier.is_empty() {
         badges = badges.push(
             container(text("ZT").size(10).font(FONT_UI_BOLD).color(YELLOW_400))
