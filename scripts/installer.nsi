@@ -62,14 +62,14 @@ FunctionEnd
 Section "Install Glyph" SecMain
   SetOutPath "$INSTDIR"
 
-  ; Give exiting app process time to flush and exit during self-update or Electron upgrade
-  IfSilent 0 skip_kill
+  ; Give exiting app process time to flush and exit during self-update or interactive upgrade
+  IfSilent 0 do_kill
     Sleep 1500
-    nsExec::ExecToStack 'taskkill /F /IM Glyph.exe'
-    Pop $0
-    Pop $1
-    Sleep 500
-  skip_kill:
+  do_kill:
+  nsExec::ExecToStack 'taskkill /F /IM Glyph.exe'
+  Pop $0
+  Pop $1
+  Sleep 700
 
   ; Clean up legacy Electron v2 runtime binaries if upgrading over v2.7.6
   Delete "$INSTDIR\*.dll"

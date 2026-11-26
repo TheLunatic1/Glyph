@@ -1,16 +1,6 @@
-## v3.0.2 — Fixed Windows In-App Auto-Updater Launch
+## v3.0.1 — Window Lifecycle & Resizing, Live Activity Logger, Focus-Safe MCP & Updater Fix
 
-> **Upgrading from Windows `v3.0.0` or `v3.0.1`?** Install [`Glyph-Setup-3.0.2.exe`](https://github.com/TheLunatic1/Glyph/releases/download/v3.0.2/Glyph-Setup-3.0.2.exe) once — `v3.0.0` / `v3.0.1` had a Windows process-creation bug that prevented the in-app **Restart & Install** launcher from executing `Glyph-Setup`. Starting from `v3.0.2`, one-click in-app updates work automatically end-to-end.
-
-### What's Fixed
-- **Windows In-App Update Launcher:**
-  - Launches downloaded `Glyph-Setup-*.exe` installers directly with `CREATE_NEW_PROCESS_GROUP` (`0x0000_0200`) instead of passing mutually exclusive Win32 creation flags (`CREATE_NO_WINDOW | DETACHED_PROCESS`) to `powershell.exe`.
-  - Uses valid `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP` (`0x0800_0200`) with null stdio handles and error logging (`~/.glyph/updater.log`) for portable `.exe`/`.zip` self-updates.
-- **Safe Locked `glyph-mcp.exe` Swap in NSIS Installer:** Rotates any active `glyph-mcp.exe` handle via uniquely suffixed `glyph-mcp.exe.old.$HWNDPARENT` names so updates succeed smoothly even while an AI agent holds `glyph-mcp.exe` open.
-
----
-
-## v3.0.1 — Window Lifecycle & Resizing, Live Activity Logger, and Focus-Safe MCP Execution
+> **Upgrading from Windows `v3.0.0`?** Because `v3.0.0` contained a Windows self-updater launcher bug (`0x0800_0008`), install [`Glyph-Setup-3.0.1.exe`](https://github.com/TheLunatic1/Glyph/releases/download/v3.0.1/Glyph-Setup-3.0.1.exe) once directly. Starting from `v3.0.1`, one-click in-app **Restart & Install** updates work automatically end-to-end.
 
 ### What's New & Fixed
 - **Independent Manager Window Close:** Closing the Glyph Manager window while child Server or Quick Terminal windows are open now cleanly closes only the Manager window without interrupting active child sessions (and reopens easily from the system tray or when no windows/tray remain).
@@ -23,6 +13,9 @@
 - **Zero Focus Stealing for AI / MCP Work:**
   - `glyph-mcp` background operations (and MCP auto-launch) no longer pop Glyph windows on top of your browser, video player, or active app.
   - Background MCP server sessions appear under **Active Sessions** in Manager and in the `Ctrl+K` Command Palette so you can click to focus them on demand.
+- **Fixed Windows In-App Auto-Updater & NSIS Upgrade Swap:**
+  - Launches downloaded `Glyph-Setup-*.exe` installers directly with `CREATE_NEW_PROCESS_GROUP` (`0x0000_0200`) instead of passing mutually exclusive Win32 creation flags (`CREATE_NO_WINDOW | DETACHED_PROCESS`) to `powershell.exe`, and uses valid `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP` (`0x0800_0200`) with `~/.glyph/updater.log` fallback logging for standalone/zip updates.
+  - Cleanly closes any running `Glyph.exe` during both interactive and silent upgrades and rotates locked `glyph-mcp.exe` handles via `glyph-mcp.exe.old.$HWNDPARENT`.
 
 ---
 
