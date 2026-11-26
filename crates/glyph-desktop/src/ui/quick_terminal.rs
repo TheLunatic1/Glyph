@@ -169,8 +169,10 @@ impl QuickTerminalState {
 pub enum QuickTerminalMsg {
     // Window controls
     StartDrag,
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     MinimizeWindow,
     MaximizeWindow,
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     CloseWindow,
 
     // Toolbar controls

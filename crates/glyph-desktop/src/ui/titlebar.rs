@@ -18,8 +18,10 @@ use iced::{Background, Border};
 #[derive(Debug, Clone)]
 pub enum TitleBarMsg {
     Drag,
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     Minimize,
     ToggleMaximize,
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     Close,
     OpenGithub,
     ToggleLogs,
@@ -202,13 +204,16 @@ pub fn view<'a>(
     .into()
 }
 
+#[cfg_attr(
+    target_os = "macos",
+    allow(unused_variables, clippy::needless_pass_by_value)
+)]
 pub fn with_resize_handles<'a, M: Clone + 'a>(
     content: Element<'a, M>,
     on_resize: impl Fn(window::Direction) -> M,
 ) -> Element<'a, M> {
     #[cfg(target_os = "macos")]
     {
-        let _ = on_resize;
         content
     }
     #[cfg(not(target_os = "macos"))]
